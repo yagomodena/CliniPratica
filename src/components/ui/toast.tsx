@@ -35,7 +35,7 @@ const toastVariants = cva(
           "destructive group border-destructive bg-destructive text-destructive-foreground",
         success: // Use success color for border with opacity
           "success group border-[hsl(var(--success)/0.5)] bg-[hsl(var(--success))] text-[hsl(var(--success-foreground))]",
-        warning: // Add the new warning variant
+        warning: // Add the new warning variant.
           "warning group border-[hsl(var(--warning)/0.5)] bg-[hsl(var(--warning))] text-[hsl(var(--warning-foreground))]",
       },
     },
