@@ -1,12 +1,11 @@
-
 'use client';
 
-import React, { useState, FormEvent, useEffect } from 'react'; // Added useEffect
+import React, { useState, FormEvent, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar"; // ShadCN Calendar
-import { format, addDays, subDays, parse, isBefore, startOfDay } from 'date-fns'; // Added isBefore, startOfDay
+import { format, addDays, subDays, parse, isBefore, startOfDay, isToday } from 'date-fns'; // Added isBefore, startOfDay, isToday
 import { ptBR } from 'date-fns/locale';
 import {
   Dialog,
@@ -81,7 +80,7 @@ export default function AgendaPage() {
   const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo')); // Only allow active patients for new appointments
   const [isNewAppointmentDialogOpen, setIsNewAppointmentDialogOpen] = useState(false);
   const { toast } = useToast();
-  const today = startOfDay(new Date()); // Get the start of today for disabling dates
+  const today = startOfDay(new Date()); // Get the start of today for disabling dates/buttons
 
   const [newAppointment, setNewAppointment] = useState<NewAppointmentForm>({
     patientId: '',
@@ -100,15 +99,21 @@ export default function AgendaPage() {
 
 
   const handleDateChange = (date: Date | undefined) => {
-    // Prevent selecting past dates directly from calendar click
+    // No longer need to prevent past date selection here,
+    // but you might want to keep it if calendar interaction should be restricted.
+    // If keeping, uncomment the below:
+    /*
     if (date && isBefore(date, today)) {
          toast({
             title: "Data Inválida",
-            description: "Não é possível selecionar uma data passada.",
+            description: "Não é possível selecionar uma data passada para novas ações.",
             variant: "destructive",
          });
+        // Keep selectedDate as is or set to today if you want to force focus back
+        // setSelectedDate(today);
         return;
     }
+    */
     setSelectedDate(date);
   };
 
@@ -156,7 +161,8 @@ export default function AgendaPage() {
     const now = new Date();
     now.setSeconds(0, 0); // Ignore seconds/ms for comparison with HH:mm
 
-    if (isBefore(appointmentDateTime, now)) {
+    // Check if the selected *date* is before today OR if the selected date is today but the *time* is in the past
+     if (isBefore(startOfDay(appointmentDateTime), today) || (isToday(appointmentDateTime) && isBefore(appointmentDateTime, now))) {
       toast({
         title: "Data/Hora Inválida",
         description: "Não é possível agendar em datas ou horários passados.",
@@ -224,11 +230,8 @@ export default function AgendaPage() {
 
 
   const goToPreviousDay = () => {
-    setSelectedDate(prevDate => {
-        const newDate = prevDate ? subDays(prevDate, 1) : today;
-        // Prevent going to a date before today
-        return isBefore(newDate, today) ? today : newDate;
-    });
+    // Allow selecting previous day without restriction
+    setSelectedDate(prevDate => prevDate ? subDays(prevDate, 1) : subDays(today, 1));
   }
 
    const goToNextDay = () => {
@@ -241,6 +244,8 @@ export default function AgendaPage() {
    // Function to generate slug from name (matching the detail page logic)
    const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
 
+   const isSelectedDatePast = selectedDate ? isBefore(selectedDate, today) : false;
+
 
   return (
     <div className="space-y-6">
@@ -249,7 +254,7 @@ export default function AgendaPage() {
 
         <Dialog open={isNewAppointmentDialogOpen} onOpenChange={setIsNewAppointmentDialogOpen}>
           <DialogTrigger asChild>
-             <Button>
+             <Button disabled={isSelectedDatePast} title={isSelectedDatePast ? "Não é possível agendar em datas passadas" : undefined}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Novo Agendamento
              </Button>
@@ -320,7 +325,7 @@ export default function AgendaPage() {
                     value={newAppointment.date}
                     onChange={(e) => handleAppointmentInputChange('date', e.target.value)}
                     className="col-span-3"
-                    min={format(today, 'yyyy-MM-dd')} // Prevent selecting past dates in input
+                    min={format(today, 'yyyy-MM-dd')} // Keep preventing past dates in input as secondary check
                     required
                   />
                 </div>
@@ -337,7 +342,6 @@ export default function AgendaPage() {
                      onChange={(e) => handleAppointmentInputChange('time', e.target.value)}
                     className="col-span-3"
                     required
-                    // Note: <input type="time"> doesn't support min/max based on date in the same form easily.
                     // Validation is handled in handleAddAppointment.
                   />
                 </div>
@@ -383,7 +387,8 @@ export default function AgendaPage() {
               onSelect={handleDateChange}
               className="rounded-md border"
               locale={ptBR}
-              disabled={(date) => isBefore(date, today)} // Disable past dates
+              // disabled prop removed to allow viewing past dates
+              // disabled={(date) => isBefore(date, today)}
               initialFocus // Optional: focus calendar on load
             />
           </CardContent>
@@ -405,7 +410,8 @@ export default function AgendaPage() {
                          size="icon"
                          onClick={goToPreviousDay}
                          aria-label="Dia anterior"
-                         disabled={selectedDate ? selectedDate <= today : false} // Disable prev button if on today
+                        // Removed disable logic for previous day button
+                        // disabled={selectedDate ? selectedDate <= today : false}
                      >
                        <ChevronLeft className="h-4 w-4" />
                      </Button>
@@ -442,8 +448,8 @@ export default function AgendaPage() {
               <div className="text-center py-10 text-muted-foreground">
                  <CalendarPlus className="mx-auto h-12 w-12 mb-4" />
                 <p>Nenhum agendamento para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'esta data'}.</p>
-                 <Button variant="link" onClick={() => setIsNewAppointmentDialogOpen(true)}>
-                   Adicionar agendamento
+                 <Button variant="link" onClick={() => setIsNewAppointmentDialogOpen(true)} disabled={isSelectedDatePast}>
+                   {isSelectedDatePast ? "Não é possível agendar em datas passadas" : "Adicionar agendamento"}
                  </Button>
               </div>
             )}
@@ -453,5 +459,3 @@ export default function AgendaPage() {
     </div>
   );
 }
-
-    
