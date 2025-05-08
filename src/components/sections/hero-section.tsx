@@ -2,6 +2,7 @@
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { ArrowRight } from 'lucide-react';
+import nutriImage from '@/images/nutri.jpg';
 
 export function HeroSection() {
   const handleCTAClick = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
@@ -45,7 +46,7 @@ export function HeroSection() {
           </div>
           <div className="flex justify-center">
             <Image
-              src="https://picsum.photos/seed/saudeapp/600/450"
+              src={nutriImage}
               alt="Mockup do sistema CliniPrática"
               width={600}
               height={450}
