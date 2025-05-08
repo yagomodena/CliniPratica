@@ -55,23 +55,23 @@ export default function ContatoSuportePage() {
                 <Mail className="h-6 w-6 text-primary mt-1 flex-shrink-0" />
                 <div>
                   <h3 className="font-semibold">Email</h3>
-                  <a href="mailto:suporte@clinipratica.com.br" className="text-muted-foreground hover:text-primary">suporte@clinipratica.com.br</a>
+                  <a href="mailto:suporte@clinipratica.com.br" className="text-muted-foreground hover:text-primary">clinipratica@gmail.com.br</a>
                 </div>
               </div>
               <div className="flex items-start space-x-3">
                 <Phone className="h-6 w-6 text-primary mt-1 flex-shrink-0" />
                 <div>
                   <h3 className="font-semibold">Telefone</h3>
-                  <p className="text-muted-foreground">(XX) XXXXX-XXXX (Seg-Sex, 9h-18h)</p>
+                  <p className="text-muted-foreground">(16) 98857-7820 (Seg-Sex, 9h-18h)</p>
                 </div>
               </div>
-              <div className="flex items-start space-x-3">
+              {/* <div className="flex items-start space-x-3">
                 <MapPin className="h-6 w-6 text-primary mt-1 flex-shrink-0" />
                 <div>
                   <h3 className="font-semibold">Endereço</h3>
                   <p className="text-muted-foreground">Rua Fictícia, 123, Sala 45<br />Cidade Exemplo, Estado</p>
                 </div>
-              </div>
+              </div> */}
             </CardContent>
           </Card>
            <div className="text-center md:text-left">
