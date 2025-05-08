@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, FormEvent } from 'react'; // Import React
+import React, { useState, FormEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus } from "lucide-react";
@@ -116,7 +116,7 @@ export default function AgendaPage() {
     // Basic validation
     if (!newAppointment.patientId || !newAppointment.date || !newAppointment.time || !newAppointment.type) {
       toast({
-        title: "Erro",
+        title: "Erro de Validação",
         description: "Por favor, preencha os campos obrigatórios (Paciente, Data, Hora, Tipo).",
         variant: "destructive",
       });
@@ -129,8 +129,19 @@ export default function AgendaPage() {
         return;
     }
 
-    // Format the date key
+    // Format the date key and check for existing appointment
     const dateKey = newAppointment.date;
+    const existingAppointmentsOnDay = appointments[dateKey] || [];
+    const isTimeSlotTaken = existingAppointmentsOnDay.some(appt => appt.time === newAppointment.time);
+
+    if (isTimeSlotTaken) {
+       toast({
+        title: "Horário Ocupado",
+        description: `Já existe um agendamento para ${format(parse(newAppointment.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy')} às ${newAppointment.time}. Por favor, escolha outro horário.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     const newApptEntry: Appointment = {
       time: newAppointment.time,
@@ -384,5 +395,3 @@ export default function AgendaPage() {
     </div>
   );
 }
-
-    
