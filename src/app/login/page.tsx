@@ -1,10 +1,26 @@
+
+'use client'; // Add 'use client' for interactivity (router)
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { useRouter } from 'next/navigation'; // Import useRouter
+import type { FormEvent } from 'react';
 
 export default function LoginPage() {
+  const router = useRouter(); // Initialize router
+
+  // Simulate login and redirect
+  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    // In a real app, you'd validate credentials here
+    console.log("Simulating login...");
+    // Redirect to the dashboard
+    router.push('/dashboard');
+  };
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <Card className="w-full max-w-md shadow-xl">
@@ -13,7 +29,8 @@ export default function LoginPage() {
           <CardDescription>Acesse sua conta para gerenciar seus pacientes.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <form className="space-y-4">
+          {/* Use onSubmit for the form */}
+          <form className="space-y-4" onSubmit={handleLogin}>
             <div>
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" placeholder="seu@email.com" required />

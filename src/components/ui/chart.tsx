@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -41,6 +42,7 @@ const ChartContainer = React.forwardRef<
     children: React.ComponentProps<
       typeof RechartsPrimitive.ResponsiveContainer
     >["children"]
+    className?: string; // Ensure className is accepted
   }
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId()
@@ -53,7 +55,7 @@ const ChartContainer = React.forwardRef<
         ref={ref}
         className={cn(
           "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-none [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-sector]:outline-none [&_.recharts-surface]:outline-none",
-          className
+          className // Apply className here
         )}
         {...props}
       >
@@ -102,9 +104,19 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip
 
+// Type refinement for Tooltip payload item
+type TooltipPayloadItem = {
+  name?: string | number;
+  dataKey?: string | number;
+  value?: string | number | Array<string | number>;
+  payload?: Record<string, any>; // More flexible payload
+  color?: string;
+  fill?: string; // Added fill for bar charts
+};
+
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+  RechartsPrimitive.TooltipProps<number | string, string | number> & // Use more specific types from Recharts
     React.ComponentProps<"div"> & {
       hideLabel?: boolean
       hideIndicator?: boolean
@@ -125,40 +137,42 @@ const ChartTooltipContent = React.forwardRef<
       labelFormatter,
       labelClassName,
       formatter,
-      color,
-      nameKey,
-      labelKey,
+      color, // Explicit color prop
+      nameKey, // Key to identify the name in payload item
+      labelKey, // Key to identify the label in payload item
     },
     ref
   ) => {
     const { config } = useChart()
 
     const tooltipLabel = React.useMemo(() => {
-      if (hideLabel || !payload?.length) {
+      if (hideLabel || !payload || !payload.length) {
         return null
       }
 
-      const [item] = payload
-      const key = `${labelKey || item.dataKey || item.name || "value"}`
-      const itemConfig = getPayloadConfigFromPayload(config, item, key)
-      const value =
-        !labelKey && typeof label === "string"
-          ? config[label as keyof typeof config]?.label || label
-          : itemConfig?.label
+      const [item] = payload as TooltipPayloadItem[]; // Assert type here
+      const key = `${labelKey || item?.dataKey || item?.name || "value"}`;
+      const itemConfig = getPayloadConfigFromPayload(config, item, key);
+      let value: React.ReactNode;
 
-      if (labelFormatter) {
-        return (
-          <div className={cn("font-medium", labelClassName)}>
-            {labelFormatter(value, payload)}
-          </div>
-        )
-      }
+
+       if (labelFormatter) {
+         // Use the raw label value if labelFormatter is provided
+         value = labelFormatter(label, payload as any); // Pass the raw label
+       } else {
+         // Determine the label value based on provided props or item config
+         value = !labelKey && typeof label === "string"
+             ? config[label as keyof typeof config]?.label || label
+             : itemConfig?.label;
+       }
+
 
       if (!value) {
-        return null
+        return null;
       }
 
-      return <div className={cn("font-medium", labelClassName)}>{value}</div>
+
+      return <div className={cn("font-medium", labelClassName)}>{value}</div>;
     }, [
       label,
       labelFormatter,
@@ -167,9 +181,10 @@ const ChartTooltipContent = React.forwardRef<
       labelClassName,
       config,
       labelKey,
-    ])
+    ]);
 
-    if (!active || !payload?.length) {
+
+    if (!active || !payload || !payload.length) {
       return null
     }
 
@@ -185,24 +200,26 @@ const ChartTooltipContent = React.forwardRef<
       >
         {!nestLabel ? tooltipLabel : null}
         <div className="grid gap-1.5">
-          {payload.map((item, index) => {
+          {payload.map((item: TooltipPayloadItem, index: number) => { // Assert type here
             const key = `${nameKey || item.name || item.dataKey || "value"}`
             const itemConfig = getPayloadConfigFromPayload(config, item, key)
-            const indicatorColor = color || item.payload.fill || item.color
+            const indicatorColor = color || item?.payload?.fill || item?.color || item?.fill || "hsl(var(--foreground))"; // Handle potential undefined & use fill for bars
+
+            // Ensure value is defined before formatting
+             const formattedValue = (formatter && item?.value !== undefined && item.name !== undefined)
+              ? formatter(item.value, item.name, item as any, index, item.payload)
+              : (item?.value !== undefined ? item.value.toLocaleString() : '-'); // Default formatting or '-'
 
             return (
               <div
-                key={item.dataKey}
+                key={`${item.dataKey}-${index}`} // More robust key
                 className={cn(
                   "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                   indicator === "dot" && "items-center"
                 )}
               >
-                {formatter && item?.value !== undefined && item.name ? (
-                  formatter(item.value, item.name, item, index, item.payload)
-                ) : (
                   <>
-                    {itemConfig?.icon ? (
+                    {itemConfig?.icon && !hideIndicator ? ( // Only show icon if not hiding indicator
                       <itemConfig.icon />
                     ) : (
                       !hideIndicator && (
@@ -238,14 +255,12 @@ const ChartTooltipContent = React.forwardRef<
                           {itemConfig?.label || item.name}
                         </span>
                       </div>
-                      {item.value && (
-                        <span className="font-mono font-medium tabular-nums text-foreground">
-                          {item.value.toLocaleString()}
-                        </span>
-                      )}
+                      {/* Use the pre-formatted value */}
+                      <span className="font-mono font-medium tabular-nums text-foreground">
+                          {formattedValue}
+                       </span>
                     </div>
                   </>
-                )}
               </div>
             )
           })}
@@ -254,7 +269,7 @@ const ChartTooltipContent = React.forwardRef<
     )
   }
 )
-ChartTooltipContent.displayName = "ChartTooltip"
+ChartTooltipContent.displayName = "ChartTooltipContent" // Corrected display name
 
 const ChartLegend = RechartsPrimitive.Legend
 
@@ -299,14 +314,16 @@ const ChartLegendContent = React.forwardRef<
               {itemConfig?.icon && !hideIcon ? (
                 <itemConfig.icon />
               ) : (
-                <div
-                  className="h-2 w-2 shrink-0 rounded-[2px]"
-                  style={{
-                    backgroundColor: item.color,
-                  }}
-                />
+                 !hideIcon && ( // Conditionally render the color box
+                     <div
+                       className="h-2 w-2 shrink-0 rounded-[2px]"
+                       style={{
+                         backgroundColor: item.color,
+                       }}
+                     />
+                 )
               )}
-              {itemConfig?.label}
+              {itemConfig?.label || item.value} {/* Fallback to item.value if label is missing */}
             </div>
           )
         })}
