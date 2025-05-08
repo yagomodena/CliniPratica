@@ -1,12 +1,12 @@
 
 'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react'; // Added useEffect
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar"; // ShadCN Calendar
-import { format, addDays, subDays, parse } from 'date-fns';
+import { format, addDays, subDays, parse, isBefore, startOfDay } from 'date-fns'; // Added isBefore, startOfDay
 import { ptBR } from 'date-fns/locale';
 import {
   Dialog,
@@ -59,7 +59,8 @@ const initialAppointments: AppointmentsData = {
   '2024-08-07': [
     { time: '14:00', patient: 'Beatriz Lima', type: 'Consulta' },
   ],
-   '2024-08-08': [
+   // Use a future date for initial data to avoid conflicts with validation
+   [format(addDays(new Date(), 2), 'yyyy-MM-dd')]: [
      { time: '11:00', patient: 'Daniel Costa', type: 'Consulta' },
      { time: '15:00', patient: 'Fernanda Oliveira', type: 'Consulta' },
    ]
@@ -80,6 +81,7 @@ export default function AgendaPage() {
   const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo')); // Only allow active patients for new appointments
   const [isNewAppointmentDialogOpen, setIsNewAppointmentDialogOpen] = useState(false);
   const { toast } = useToast();
+  const today = startOfDay(new Date()); // Get the start of today for disabling dates
 
   const [newAppointment, setNewAppointment] = useState<NewAppointmentForm>({
     patientId: '',
@@ -90,7 +92,7 @@ export default function AgendaPage() {
   });
 
    // Update date in form when calendar selection changes
-   React.useEffect(() => {
+   useEffect(() => {
     if (selectedDate) {
       setNewAppointment(prev => ({ ...prev, date: format(selectedDate, 'yyyy-MM-dd') }));
     }
@@ -98,6 +100,15 @@ export default function AgendaPage() {
 
 
   const handleDateChange = (date: Date | undefined) => {
+    // Prevent selecting past dates directly from calendar click
+    if (date && isBefore(date, today)) {
+         toast({
+            title: "Data Inválida",
+            description: "Não é possível selecionar uma data passada.",
+            variant: "destructive",
+         });
+        return;
+    }
     setSelectedDate(date);
   };
 
@@ -122,6 +133,39 @@ export default function AgendaPage() {
       });
       return;
     }
+
+    // --- Past Date/Time Validation ---
+    const appointmentDateTimeString = `${newAppointment.date} ${newAppointment.time}`;
+    let appointmentDateTime: Date;
+    try {
+      appointmentDateTime = parse(appointmentDateTimeString, 'yyyy-MM-dd HH:mm', new Date());
+      if (isNaN(appointmentDateTime.getTime())) { // Check if parsing failed
+        throw new Error('Invalid date/time format');
+      }
+    } catch (error) {
+      console.error("Error parsing date/time:", error);
+      toast({
+        title: "Erro de Formato",
+        description: "A data ou hora fornecida é inválida.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+
+    const now = new Date();
+    now.setSeconds(0, 0); // Ignore seconds/ms for comparison with HH:mm
+
+    if (isBefore(appointmentDateTime, now)) {
+      toast({
+        title: "Data/Hora Inválida",
+        description: "Não é possível agendar em datas ou horários passados.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // --- End Past Date/Time Validation ---
+
 
     const selectedPatient = patients.find(p => p.id === newAppointment.patientId);
     if (!selectedPatient) {
@@ -180,11 +224,15 @@ export default function AgendaPage() {
 
 
   const goToPreviousDay = () => {
-    setSelectedDate(prevDate => prevDate ? subDays(prevDate, 1) : new Date());
+    setSelectedDate(prevDate => {
+        const newDate = prevDate ? subDays(prevDate, 1) : today;
+        // Prevent going to a date before today
+        return isBefore(newDate, today) ? today : newDate;
+    });
   }
 
    const goToNextDay = () => {
-    setSelectedDate(prevDate => prevDate ? addDays(prevDate, 1) : new Date());
+    setSelectedDate(prevDate => prevDate ? addDays(prevDate, 1) : addDays(today, 1));
   }
 
   const formattedDateKey = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
@@ -272,6 +320,7 @@ export default function AgendaPage() {
                     value={newAppointment.date}
                     onChange={(e) => handleAppointmentInputChange('date', e.target.value)}
                     className="col-span-3"
+                    min={format(today, 'yyyy-MM-dd')} // Prevent selecting past dates in input
                     required
                   />
                 </div>
@@ -288,6 +337,8 @@ export default function AgendaPage() {
                      onChange={(e) => handleAppointmentInputChange('time', e.target.value)}
                     className="col-span-3"
                     required
+                    // Note: <input type="time"> doesn't support min/max based on date in the same form easily.
+                    // Validation is handled in handleAddAppointment.
                   />
                 </div>
 
@@ -332,8 +383,8 @@ export default function AgendaPage() {
               onSelect={handleDateChange}
               className="rounded-md border"
               locale={ptBR}
-              // Disabled dates example (optional)
-              // disabled={(date) => date < new Date("1900-01-01")}
+              disabled={(date) => isBefore(date, today)} // Disable past dates
+              initialFocus // Optional: focus calendar on load
             />
           </CardContent>
         </Card>
@@ -349,7 +400,13 @@ export default function AgendaPage() {
                  <CardDescription>Compromissos do dia selecionado.</CardDescription>
                </div>
                  <div className="flex items-center gap-2">
-                     <Button variant="outline" size="icon" onClick={goToPreviousDay} aria-label="Dia anterior">
+                     <Button
+                         variant="outline"
+                         size="icon"
+                         onClick={goToPreviousDay}
+                         aria-label="Dia anterior"
+                         disabled={selectedDate ? selectedDate <= today : false} // Disable prev button if on today
+                     >
                        <ChevronLeft className="h-4 w-4" />
                      </Button>
                      <Button variant="outline" size="icon" onClick={goToNextDay} aria-label="Próximo dia">
@@ -396,3 +453,5 @@ export default function AgendaPage() {
     </div>
   );
 }
+
+    
