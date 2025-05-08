@@ -98,10 +98,12 @@ export default function PacientesPage() {
           p.internalId === patientInternalId ? { ...p, status: newStatus } : p
       ));
       const patientName = patients.find(p => p.internalId === patientInternalId)?.name || 'Paciente';
+      const isInactive = newStatus.toLowerCase() === "inativo";
       toast({
           title: "Status Atualizado",
           description: `Status de ${patientName} alterado para ${newStatus}.`,
-          variant: "success"
+          //variant: "success"
+          variant: isInactive ? "warning" : "success"
       });
       console.log(`Paciente ${patientInternalId} status alterado para ${newStatus}`);
       // Note: In a real app, make an API call here.
