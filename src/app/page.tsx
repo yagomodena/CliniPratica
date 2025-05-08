@@ -1,6 +1,6 @@
 import { Header } from '@/components/layout/header';
 import { HeroSection } from '@/components/sections/hero-section';
-import { BenefitsSection } from '@/components/sections/benefits-section';
+import { BenefitsSection } from '@/components/sections/benefits-section'; // Corrected import path if needed
 import { PlansSection } from '@/components/sections/plans-section';
 import { FaqSection } from '@/components/sections/faq-section';
 import { ContactSection } from '@/components/sections/contact-section';
