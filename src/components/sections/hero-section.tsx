@@ -2,14 +2,17 @@
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { ArrowRight } from 'lucide-react';
-import nutriImage from '@/images/nutri.jpg';
+// import nutriImage from '@/images/nutri.jpg'; // Commented out potentially problematic local import
+
+// Use a placeholder image URL
+const placeholderImageSrc = "https://picsum.photos/seed/clinipratica/600/450";
 
 export function HeroSection() {
   const handleCTAClick = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
     e.preventDefault();
     const contactSection = document.getElementById('contato');
     if (contactSection) {
-      const headerOffset = 80; 
+      const headerOffset = 80;
       const elementPosition = contactSection.getBoundingClientRect().top;
       const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
       window.scrollTo({
@@ -20,8 +23,8 @@ export function HeroSection() {
   };
 
   return (
-    <section 
-      id="inicio" 
+    <section
+      id="inicio"
       className="relative bg-gradient-to-br from-primary to-accent text-primary-foreground pt-32 pb-20 md:pt-40 md:pb-28 min-h-[calc(100vh-0px)] flex items-center"
     >
       <div className="absolute inset-0 bg-black/20 backdrop-blur-sm"></div>
@@ -46,12 +49,12 @@ export function HeroSection() {
           </div>
           <div className="flex justify-center">
             <Image
-              src={nutriImage}
+              src={placeholderImageSrc} // Use placeholder URL
               alt="Mockup do sistema CliniPrática"
               width={600}
               height={450}
               className="rounded-xl shadow-2xl object-cover"
-              data-ai-hint="saas dashboard health"
+              data-ai-hint="saas dashboard health" // Keep the hint
               priority
             />
           </div>

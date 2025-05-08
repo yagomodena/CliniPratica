@@ -6,8 +6,11 @@ export interface PlanFeature {
 
 export interface Plan {
   name: string;
-  price: string;
-  priceDetail?: string;
+  price: string; // Represents the effective *annual* monthly price
+  monthlyPrice: string; // The actual monthly price when billed monthly
+  priceDetail?: string; // Detail shown for annual pricing (e.g., /mês, faturado anualmente)
+  monthlyPriceDetail?: string; // Detail shown for monthly pricing (e.g., /mês)
+  annualBillingValue?: number; // Calculated annual total for display/discount
   features: PlanFeature[];
   popular?: boolean;
   cta: string;
@@ -18,7 +21,9 @@ export const plans: Plan[] = [
   {
     name: 'Gratuito',
     price: 'R$0',
+    monthlyPrice: 'R$0',
     priceDetail: 'para sempre',
+    monthlyPriceDetail: 'para sempre',
     level: 0, // Base level
     features: [
       { text: 'Até 10 pacientes', included: true },
@@ -26,12 +31,15 @@ export const plans: Plan[] = [
       { text: 'Suporte comunitário', included: true },
       { text: 'Upload de exames (limitado)', included: false },
     ],
-    cta: 'Plano Atual', // Updated CTA for modal context
+    cta: 'Começar Gratuitamente', // Updated CTA for modal context
   },
   {
     name: 'Essencial',
-    price: 'R$29,90',
-    priceDetail: '/mês',
+    price: 'R$29,90', // Annual effective monthly
+    monthlyPrice: 'R$39,90', // Monthly actual
+    priceDetail: '/mês (faturado R$358,80 anualmente)',
+    monthlyPriceDetail: '/mês',
+    annualBillingValue: 358.80,
     level: 1,
     features: [
       { text: 'Até 50 pacientes', included: true },
@@ -44,8 +52,11 @@ export const plans: Plan[] = [
   },
   {
     name: 'Profissional',
-    price: 'R$49,90',
-    priceDetail: '/mês',
+    price: 'R$49,90', // Annual effective monthly
+    monthlyPrice: 'R$59,90', // Monthly actual
+    priceDetail: '/mês (faturado R$598,80 anualmente)',
+    monthlyPriceDetail: '/mês',
+    annualBillingValue: 598.80,
     level: 2,
     features: [
       { text: 'Pacientes ilimitados', included: true },
@@ -57,8 +68,11 @@ export const plans: Plan[] = [
   },
   {
     name: 'Clínica',
-    price: 'R$79,90',
-    priceDetail: '/mês',
+    price: 'R$79,90', // Annual effective monthly
+    monthlyPrice: 'R$89,90', // Monthly actual
+    priceDetail: '/mês (faturado R$958,80 anualmente)',
+    monthlyPriceDetail: '/mês',
+    annualBillingValue: 958.80,
     level: 3,
     features: [
       { text: 'Múltiplos profissionais', included: true },
