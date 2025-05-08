@@ -31,6 +31,9 @@
     --success: 140 60% 80%; /* Adjusted Light green background - less pale */
     --success-foreground: 140 80% 15%; /* Dark green text */
 
+    --warning: 30 90% 55%; /* Orange */
+    --warning-foreground: 30 90% 10%; /* Dark Orange/Brown */
+
     --border: 0 0% 89.8%;
     --input: 0 0% 93%;
     --ring: 215 90% 58%; /* Primary color for rings */
@@ -81,6 +84,9 @@
 
     --success: 140 70% 15%; /* Darker green background for dark mode */
     --success-foreground: 140 60% 90%; /* Light green text for dark mode */
+
+    --warning: 30 80% 65%; /* Lighter Orange for dark mode */
+    --warning-foreground: 30 90% 95%; /* Very light orange/almost white */
 
     --border: 222 70% 15%;
     --input: 222 70% 15%;

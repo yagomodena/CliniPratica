@@ -178,7 +178,7 @@ export default function PacienteDetalhePage() {
       toast({
          title: "Status Alterado",
          description: `Status de ${patient.name} alterado para ${newStatus}.`,
-         variant: "success"
+         variant: newStatus === 'Inativo' ? 'warning' : 'success' // Use 'warning' for Inativo, 'success' for Ativo
       });
       console.log(`Status toggled for ${patient.name} to ${newStatus}`);
    };
@@ -212,7 +212,7 @@ export default function PacienteDetalhePage() {
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument),
+      url: URL.createObjectURL(newDocument), // In real app, upload to server and get URL
     };
     const updatedPatient = { ...patient, documents: [newDocEntry, ...patient.documents] };
     setPatient(updatedPatient);

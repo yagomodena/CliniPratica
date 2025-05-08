@@ -34,7 +34,9 @@ const toastVariants = cva(
         destructive:
           "destructive group border-destructive bg-destructive text-destructive-foreground",
         success: // Use success color for border with opacity
-          "group border-[hsl(var(--success)/0.5)] bg-[hsl(var(--success))] text-[hsl(var(--success-foreground))]",
+          "success group border-[hsl(var(--success)/0.5)] bg-[hsl(var(--success))] text-[hsl(var(--success-foreground))]",
+        warning: // Add the new warning variant
+          "warning group border-[hsl(var(--warning)/0.5)] bg-[hsl(var(--warning))] text-[hsl(var(--warning-foreground))]",
       },
     },
     defaultVariants: {
@@ -65,7 +67,7 @@ const ToastAction = React.forwardRef<
   <ToastPrimitives.Action
     ref={ref}
     className={cn(
-      "inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-muted/40 group-[.destructive]:hover:border-destructive/30 group-[.destructive]:hover:bg-destructive group-[.destructive]:hover:text-destructive-foreground group-[.destructive]:focus:ring-destructive group-[.success]:border-success/50 group-[.success]:hover:border-success/70 group-[.success]:hover:bg-success/10 group-[.success]:hover:text-success-foreground group-[.success]:focus:ring-success", // Adjusted success styles for action button
+      "inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-muted/40 group-[.destructive]:hover:border-destructive/30 group-[.destructive]:hover:bg-destructive group-[.destructive]:hover:text-destructive-foreground group-[.destructive]:focus:ring-destructive group-[.success]:border-success/50 group-[.success]:hover:border-success/70 group-[.success]:hover:bg-success/10 group-[.success]:hover:text-success-foreground group-[.success]:focus:ring-success group-[.warning]:border-warning/50 group-[.warning]:hover:border-warning/70 group-[.warning]:hover:bg-warning/10 group-[.warning]:hover:text-warning-foreground group-[.warning]:focus:ring-warning", // Adjusted success & warning styles for action button
       className
     )}
     {...props}
@@ -80,7 +82,7 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600 group-[.success]:text-success-foreground/70 group-[.success]:hover:text-success-foreground group-[.success]:focus:ring-success-foreground group-[.success]:focus:ring-offset-success", // Adjusted success styles for close button
+      "absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600 group-[.success]:text-success-foreground/70 group-[.success]:hover:text-success-foreground group-[.success]:focus:ring-success-foreground group-[.success]:focus:ring-offset-success group-[.warning]:text-warning-foreground/70 group-[.warning]:hover:text-warning-foreground group-[.warning]:focus:ring-warning-foreground group-[.warning]:focus:ring-offset-warning", // Adjusted success & warning styles for close button
       className
     )}
     toast-close=""
