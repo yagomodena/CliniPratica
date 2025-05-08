@@ -117,7 +117,7 @@ export default function MensagensPage() {
                  {/* Adjusted grid layout for responsiveness */}
                  <div className="grid gap-4 py-4 px-1">
                     {/* Patient Selection */}
-                    <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
                       <Label htmlFor="patientId" className="sm:text-right">
                         Paciente*
                       </Label>
@@ -126,7 +126,7 @@ export default function MensagensPage() {
                         onValueChange={(value) => handleSelectChange('patientId', value)}
                         required
                       >
-                        <SelectTrigger className="sm:col-span-3">
+                        <SelectTrigger className="col-span-1 sm:col-span-3">
                           <SelectValue placeholder="Selecione o paciente" />
                         </SelectTrigger>
                         <SelectContent>
@@ -141,7 +141,7 @@ export default function MensagensPage() {
                     </div>
 
                     {/* Message Content */}
-                     <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-4">
+                     <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-x-4 gap-y-2">
                       <Label htmlFor="message" className="sm:text-right sm:pt-2">
                         Mensagem*
                       </Label>
@@ -149,7 +149,7 @@ export default function MensagensPage() {
                         id="message"
                         value={newMessage.message}
                         onChange={(e) => handleInputChange('message', e.target.value)}
-                        className="sm:col-span-3"
+                        className="col-span-1 sm:col-span-3"
                         rows={5}
                         placeholder="Digite sua mensagem aqui..."
                         required
