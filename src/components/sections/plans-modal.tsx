@@ -82,7 +82,8 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
      <>
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[80vw] lg:max-w-[900px] max-h-[90vh] overflow-y-auto p-0">
-            <DialogHeader className="p-6 pb-4 border-b">
+            {/* Adjusted padding top for header */}
+            <DialogHeader className="p-6 pb-4 border-b pt-6">
             <DialogTitle className="text-2xl">Planos Disponíveis</DialogTitle>
             <DialogDescription>
                 Escolha o plano que melhor se adapta às suas necessidades. Seu plano atual é: <strong>{currentPlanName}</strong>.
@@ -92,23 +93,24 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
             {plans.map((plan) => (
                 <Card
                 key={plan.name}
-                className={`flex flex-col shadow-md hover:shadow-lg transition-shadow duration-300 relative pt-4 ${ // Added pt-4 for top space
+                className={`flex flex-col shadow-md hover:shadow-lg transition-shadow duration-300 relative pt-4 ${
                     plan.name === currentPlanName ? 'border-primary border-2 ring-2 ring-primary/30' : (plan.popular ? 'border-foreground/20 border-2' : 'bg-card')
                 }`}
                 >
                 {plan.popular && plan.name !== currentPlanName && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-1 text-xs font-semibold rounded-full shadow-md z-10 whitespace-nowrap"> {/* Added whitespace-nowrap */}
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-1 text-xs font-semibold rounded-full shadow-md z-10 whitespace-nowrap">
                     Mais Popular
                     </div>
                 )}
-                {plan.name === currentPlanName && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold rounded-full shadow-md z-10 whitespace-nowrap"> {/* Added whitespace-nowrap */}
+                {plan.name === currentPlanName && ( // This condition correctly shows the badge ONLY on the current plan
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold rounded-full shadow-md z-10 whitespace-nowrap">
                     Plano Atual
                     </div>
                 )}
-                <CardHeader className="pb-4 pt-2"> {/* Adjusted padding top */}
+                {/* Card header moved slightly down */}
+                <CardHeader className="pb-4 pt-2">
                     <CardTitle className="text-xl font-semibold text-center text-card-foreground">{plan.name}</CardTitle>
-                    <CardDescription className="text-center text-muted-foreground h-16 flex flex-col justify-center"> {/* Fixed height for alignment */}
+                    <CardDescription className="text-center text-muted-foreground h-16 flex flex-col justify-center">
                     <span className="text-3xl font-bold text-primary">{plan.price}</span>
                     {plan.priceDetail && <span className="text-xs">{plan.priceDetail}</span>}
                     </CardDescription>
@@ -125,7 +127,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                 </CardContent>
                 <CardFooter>
                     <Button
-                    onClick={() => handlePlanSelectionClick(plan)} // Use the click handler
+                    onClick={() => handlePlanSelectionClick(plan)}
                     className="w-full"
                     variant={plan.name === currentPlanName ? 'secondary' : (plan.popular ? 'default' : 'outline')}
                     disabled={plan.name === currentPlanName}
@@ -149,8 +151,8 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
          <AlertDialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
             <AlertDialogContent>
                <AlertDialogHeader>
-                 <AlertDialogTitle className="flex items-center gap-2"> {/* Flex container for title and icon */}
-                     {isDowngrade && <AlertTriangle className="h-5 w-5 text-destructive" />} {/* Conditionally show warning icon */}
+                 <AlertDialogTitle className="flex items-center gap-2">
+                     {isDowngrade && <AlertTriangle className="h-5 w-5 text-destructive" />}
                     Confirmar Mudança de Plano
                  </AlertDialogTitle>
                  <AlertDialogDescription>
