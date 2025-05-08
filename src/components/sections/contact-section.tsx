@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
@@ -45,6 +46,7 @@ export function ContactSection() {
       toast({
         title: 'Sucesso!',
         description: state.message,
+        variant: "success", // Use success variant
       });
       form.reset();
     } else if (state.status === 'error') {

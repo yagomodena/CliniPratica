@@ -28,6 +28,9 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
+    --success: 140 60% 90%; /* Light green background */
+    --success-foreground: 140 80% 15%; /* Dark green text */
+
     --border: 0 0% 89.8%;
     --input: 0 0% 93%;
     --ring: 215 90% 58%; /* Primary color for rings */
@@ -39,7 +42,7 @@
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    
+
     /* Sidebar variables, can keep as is or adjust if sidebar is used heavily */
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -55,7 +58,7 @@
     --background: 222 84% 5%; /* Dark blue background */
     --foreground: 0 0% 96.9%; /* Light gray text */
 
-    --card: 222 80% 8%; 
+    --card: 222 80% 8%;
     --card-foreground: 0 0% 96.9%;
 
     --popover: 222 80% 8%;
@@ -76,10 +79,13 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
 
+    --success: 140 70% 15%; /* Darker green background for dark mode */
+    --success-foreground: 140 60% 90%; /* Light green text for dark mode */
+
     --border: 222 70% 15%;
     --input: 222 70% 15%;
     --ring: 215 90% 58%;
-    
+
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;

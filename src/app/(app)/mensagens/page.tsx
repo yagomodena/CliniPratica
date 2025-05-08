@@ -84,6 +84,7 @@ export default function MensagensPage() {
      toast({
          title: "Sucesso!",
          description: `Mensagem enviada para ${selectedPatient.name}.`,
+         variant: "success", // Use success variant
      });
   };
 
@@ -142,9 +143,9 @@ export default function MensagensPage() {
 
                     {/* Message Content */}
                      <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-x-4 gap-y-2">
-                      <Label htmlFor="message" className="sm:text-right sm:pt-2">
-                        Mensagem*
-                      </Label>
+                       <Label htmlFor="message" className="sm:text-right sm:pt-2">
+                         Mensagem*
+                       </Label>
                       <Textarea
                         id="message"
                         value={newMessage.message}

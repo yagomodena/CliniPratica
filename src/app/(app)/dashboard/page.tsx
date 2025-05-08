@@ -142,6 +142,7 @@ export default function DashboardPage() {
      toast({
          title: "Sucesso!",
          description: `Alerta adicionado para ${selectedPatient.name}.`,
+         variant: "success", // Use success variant
      });
      console.log("New alert added:", newAlertEntry);
   };
@@ -184,6 +185,7 @@ export default function DashboardPage() {
      toast({
          title: "Sucesso!",
          description: "Alerta atualizado com sucesso.",
+         variant: "success", // Use success variant
      });
      console.log("Alert updated:", editingAlert.id);
   };
@@ -492,4 +494,3 @@ export default function DashboardPage() {
 }
 
 
-    

@@ -63,6 +63,7 @@ export default function ConfiguracoesPage() {
     toast({
       title: "Sucesso!",
       description: "Seu perfil foi atualizado com sucesso.",
+      variant: "success", // Use success variant
     });
   };
 

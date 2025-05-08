@@ -173,6 +173,7 @@ export default function AgendaPage() {
     toast({
         title: "Sucesso!",
         description: "Agendamento adicionado com sucesso.",
+        variant: "success", // Use success variant
     });
     console.log("New appointment added:", newApptEntry, "on", dateKey);
   };

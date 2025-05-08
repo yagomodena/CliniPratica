@@ -63,6 +63,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
     toast({
       title: "Sucesso!",
       description: `Seu plano foi alterado para ${selectedPlanForConfirmation.name}. A cobrança será ajustada no próximo ciclo.`,
+      variant: "success", // Use success variant
     });
 
     // Close both dialogs
