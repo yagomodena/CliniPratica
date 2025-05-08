@@ -94,8 +94,8 @@ export default function PacientesPage() {
       setPatients(prev => prev.filter(p => p.id !== patientId));
       toast({
           title: "Paciente Excluído",
-          description: `Paciente ${patientName} foi excluído com sucesso.`,
-          variant: "success"
+          description: `Paciente ${patientName} foi removido com sucesso.`,
+          variant: "destructive" // Changed variant to destructive
       });
       console.log("Paciente excluído:", patientId);
       // Note: In a real application, this would involve an API call to delete the patient from the backend.

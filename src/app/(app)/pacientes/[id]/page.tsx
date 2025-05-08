@@ -184,7 +184,7 @@ export default function PacienteDetalhePage() {
       const patientName = patient.name;
       delete patientStore[patientId]; // Remove from store
       console.log("Patient deleted:", patientName);
-      toast({ title: "Paciente Excluído", description: `Paciente ${patientName} foi excluído com sucesso.`, variant: "success" });
+      toast({ title: "Paciente Excluído", description: `Paciente ${patientName} foi removido com sucesso.`, variant: "destructive" }); // Changed variant to destructive
       router.push('/pacientes'); // Redirect back to patient list
       // Note: In a real app, you would make an API call here.
   };
