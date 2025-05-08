@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil } from "lucide-react";
 import {
   ChartContainer,
   ChartTooltip,
@@ -50,7 +50,7 @@ type Alert = {
 };
 
 // New Alert Form structure
-type NewAlertForm = {
+type AlertForm = {
     patientId: string;
     reason: string;
 }
@@ -58,7 +58,7 @@ type NewAlertForm = {
 // Initial alert data (replace static with state)
 const initialAlerts: Alert[] = [
     { id: 'a001', patientId: 'p005', patientName: "Fernanda Oliveira", reason: "Retorno agendado para revisão", createdAt: new Date(2024, 7, 1), status: 'active' },
-    { id: 'a002', patientId: 'pXXX', patientName: "Ricardo Pereira", reason: "Verificar resultados de exame", createdAt: new Date(2024, 7, 3), status: 'active' }, // Assuming Ricardo is not in initialPatients
+    { id: 'a002', patientId: 'p002', patientName: "Carlos Souza", reason: "Verificar resultados de exame", createdAt: new Date(2024, 7, 3), status: 'active' }, // Assuming Carlos is in initialPatients
 ];
 
 // Placeholder data for charts and appointments
@@ -91,25 +91,27 @@ const monthlyBilling = isFreePlan ? null : 450.80; // Example value for paid pla
 export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>(initialAlerts);
   const [isNewAlertDialogOpen, setIsNewAlertDialogOpen] = useState(false);
+  const [isEditAlertDialogOpen, setIsEditAlertDialogOpen] = useState(false);
+  const [editingAlert, setEditingAlert] = useState<Alert | null>(null);
   const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo'));
   const { toast } = useToast();
 
-  const [newAlert, setNewAlert] = useState<NewAlertForm>({
+  const [alertForm, setAlertForm] = useState<AlertForm>({
     patientId: '',
     reason: '',
   });
 
-  const handleAlertInputChange = (field: keyof NewAlertForm, value: string) => {
-    setNewAlert(prev => ({ ...prev, [field]: value }));
+  const handleAlertFormInputChange = (field: keyof AlertForm, value: string) => {
+    setAlertForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAlertSelectChange = (field: keyof NewAlertForm, value: string) => {
-     setNewAlert(prev => ({ ...prev, [field]: value }));
+  const handleAlertFormSelectChange = (field: keyof AlertForm, value: string) => {
+     setAlertForm(prev => ({ ...prev, [field]: value }));
    };
 
   const handleAddAlert = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-     if (!newAlert.patientId || !newAlert.reason.trim()) {
+     if (!alertForm.patientId || !alertForm.reason.trim()) {
        toast({
          title: "Erro de Validação",
          description: "Por favor, selecione um paciente e descreva o motivo do alerta.",
@@ -118,7 +120,7 @@ export default function DashboardPage() {
        return;
      }
 
-     const selectedPatient = patients.find(p => p.id === newAlert.patientId);
+     const selectedPatient = patients.find(p => p.id === alertForm.patientId);
      if (!selectedPatient) {
          toast({ title: "Erro", description: "Paciente selecionado inválido.", variant: "destructive" });
          return;
@@ -128,14 +130,14 @@ export default function DashboardPage() {
        id: `a${Date.now()}`, // Simple unique ID
        patientId: selectedPatient.id,
        patientName: selectedPatient.name,
-       reason: newAlert.reason.trim(),
+       reason: alertForm.reason.trim(),
        createdAt: new Date(),
        status: 'active',
      };
 
-     setAlerts(prev => [newAlertEntry, ...prev.filter(a => a.status === 'active')]); // Add new alert and keep existing active ones
+     setAlerts(prev => [newAlertEntry, ...prev]); // Add new alert to the beginning
 
-     setNewAlert({ patientId: '', reason: '' });
+     setAlertForm({ patientId: '', reason: '' }); // Reset form
      setIsNewAlertDialogOpen(false);
      toast({
          title: "Sucesso!",
@@ -144,10 +146,51 @@ export default function DashboardPage() {
      console.log("New alert added:", newAlertEntry);
   };
 
+  const handleOpenEditAlert = (alertToEdit: Alert) => {
+      setEditingAlert(alertToEdit);
+      setAlertForm({ // Pre-fill form for editing
+          patientId: alertToEdit.patientId,
+          reason: alertToEdit.reason,
+      });
+      setIsEditAlertDialogOpen(true);
+  };
+
+  const handleEditAlert = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingAlert || !alertForm.patientId || !alertForm.reason.trim()) {
+         toast({
+             title: "Erro de Validação",
+             description: "Por favor, preencha todos os campos.",
+             variant: "destructive",
+         });
+         return;
+     }
+
+     const selectedPatient = patients.find(p => p.id === alertForm.patientId);
+     if (!selectedPatient) {
+         toast({ title: "Erro", description: "Paciente selecionado inválido.", variant: "destructive" });
+         return;
+     }
+
+     setAlerts(prev => prev.map(alert =>
+        alert.id === editingAlert.id
+            ? { ...alert, patientId: selectedPatient.id, patientName: selectedPatient.name, reason: alertForm.reason.trim() }
+            : alert
+     ));
+
+     setEditingAlert(null);
+     setAlertForm({ patientId: '', reason: '' }); // Reset form
+     setIsEditAlertDialogOpen(false);
+     toast({
+         title: "Sucesso!",
+         description: "Alerta atualizado com sucesso.",
+     });
+     console.log("Alert updated:", editingAlert.id);
+  };
+
+
   const handleResolveAlert = (alertId: string) => {
      setAlerts(prev => prev.filter(alert => alert.id !== alertId));
-     // Optionally, you could change status to 'resolved' instead of filtering out
-     // setAlerts(prev => prev.map(alert => alert.id === alertId ? { ...alert, status: 'resolved' } : alert));
      toast({
         title: "Alerta Resolvido",
         description: "O alerta foi removido da lista de pendentes.",
@@ -164,73 +207,8 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-            {/* Add New Alert Dialog Trigger */}
-            <Dialog open={isNewAlertDialogOpen} onOpenChange={setIsNewAlertDialogOpen}>
-                <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        Novo Alerta
-                    </Button>
-                </DialogTrigger>
-                 <DialogContent className="sm:max-w-[480px]">
-                    <DialogHeader>
-                    <DialogTitle>Criar Novo Alerta</DialogTitle>
-                    <DialogDescription>
-                        Selecione o paciente e descreva o motivo do alerta. Ele aparecerá no Dashboard.
-                    </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleAddAlert}>
-                    <div className="grid gap-4 py-4">
-                        {/* Patient Selection */}
-                        <div className="grid grid-cols-4 items-center gap-4">
-                        <Label htmlFor="alertPatientId" className="text-right">
-                            Paciente*
-                        </Label>
-                            <Select
-                                value={newAlert.patientId}
-                                onValueChange={(value) => handleAlertSelectChange('patientId', value)}
-                                required
-                            >
-                            <SelectTrigger className="col-span-3">
-                            <SelectValue placeholder="Selecione o paciente" />
-                            </SelectTrigger>
-                            <SelectContent>
-                            {patients.map((patient) => (
-                                <SelectItem key={patient.id} value={patient.id}>
-                                {patient.name}
-                                </SelectItem>
-                            ))}
-                            {patients.length === 0 && <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>}
-                            </SelectContent>
-                        </Select>
-                        </div>
-
-                         {/* Alert Reason */}
-                         <div className="grid grid-cols-4 items-start gap-4">
-                          <Label htmlFor="alertReason" className="text-right pt-2">
-                            Motivo*
-                          </Label>
-                          <Textarea
-                            id="alertReason"
-                            value={newAlert.reason}
-                             onChange={(e) => handleAlertInputChange('reason', e.target.value)}
-                            className="col-span-3"
-                            rows={3}
-                            placeholder="Descreva o alerta (ex: Verificar exame, Agendar retorno urgente)"
-                            required
-                          />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <DialogClose asChild>
-                        <Button type="button" variant="outline">Cancelar</Button>
-                        </DialogClose>
-                        <Button type="submit">Salvar Alerta</Button>
-                    </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-       </div>
+          {/* Add New Alert Dialog Trigger moved to card header */}
+      </div>
 
 
       {isFreePlan && (
@@ -301,10 +279,75 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="shadow-md">
+           {/* Card Header with Title and New Alert Button */}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Alertas Importantes</CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
+             <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">Alertas Importantes</CardTitle>
+             </div>
+            <Dialog open={isNewAlertDialogOpen} onOpenChange={setIsNewAlertDialogOpen}>
+                <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" title="Novo Alerta">
+                        <PlusCircle className="h-4 w-4" />
+                    </Button>
+                </DialogTrigger>
+                 <DialogContent className="sm:max-w-[480px]">
+                    <DialogHeader>
+                    <DialogTitle>Criar Novo Alerta</DialogTitle>
+                    <DialogDescription>
+                        Selecione o paciente e descreva o motivo do alerta. Ele aparecerá no Dashboard.
+                    </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleAddAlert}>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="alertPatientId" className="text-right">
+                                Paciente*
+                            </Label>
+                            <Select
+                                value={alertForm.patientId}
+                                onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
+                                required
+                            >
+                            <SelectTrigger className="col-span-3">
+                                <SelectValue placeholder="Selecione o paciente" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {patients.map((patient) => (
+                                    <SelectItem key={patient.id} value={patient.id}>
+                                        {patient.name}
+                                    </SelectItem>
+                                ))}
+                                {patients.length === 0 && <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>}
+                            </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid grid-cols-4 items-start gap-4">
+                          <Label htmlFor="alertReason" className="text-right pt-2">
+                            Motivo*
+                          </Label>
+                          <Textarea
+                            id="alertReason"
+                            value={alertForm.reason}
+                             onChange={(e) => handleAlertFormInputChange('reason', e.target.value)}
+                            className="col-span-3"
+                            rows={3}
+                            placeholder="Descreva o alerta (ex: Verificar exame, Agendar retorno urgente)"
+                            required
+                          />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <DialogClose asChild>
+                            <Button type="button" variant="outline">Cancelar</Button>
+                        </DialogClose>
+                        <Button type="submit">Salvar Alerta</Button>
+                    </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
           </CardHeader>
+          {/* Card Content */}
           <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
              {activeAlerts.length > 0 ? (
               activeAlerts.map((alert) => (
@@ -316,14 +359,15 @@ export default function DashboardPage() {
                           <span className="text-muted-foreground">{alert.reason}</span>
                       </div>
                    </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-green-500 hover:bg-green-100" onClick={() => handleResolveAlert(alert.id)} title="Marcar como resolvido">
-                        <CheckCircle className="h-4 w-4"/>
-                    </Button>
-                     {/* Optional: Add delete button if needed
-                     <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:bg-red-100" onClick={() => handleDeleteAlert(alert.id)} title="Excluir Alerta">
-                         <Trash2 className="h-4 w-4"/>
-                     </Button>
-                      */}
+                   {/* Action Buttons: Edit and Resolve */}
+                   <div className="flex items-center space-x-1 flex-shrink-0">
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditAlert(alert)} title="Editar Alerta">
+                            <Pencil className="h-4 w-4"/>
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-green-500 hover:bg-green-100" onClick={() => handleResolveAlert(alert.id)} title="Marcar como resolvido">
+                            <CheckCircle className="h-4 w-4"/>
+                        </Button>
+                   </div>
                 </div>
               ))
             ) : (
@@ -384,7 +428,68 @@ export default function DashboardPage() {
             </CardContent>
          </Card>
        </div>
+
+        {/* Edit Alert Dialog */}
+        <Dialog open={isEditAlertDialogOpen} onOpenChange={setIsEditAlertDialogOpen}>
+            <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader>
+                <DialogTitle>Editar Alerta</DialogTitle>
+                <DialogDescription>
+                    Modifique as informações do alerta.
+                </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleEditAlert}>
+                <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="editAlertPatientId" className="text-right">
+                    Paciente*
+                    </Label>
+                    <Select
+                        value={alertForm.patientId} // Use alertForm state here too
+                        onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
+                        required
+                    >
+                        <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Selecione o paciente" />
+                        </SelectTrigger>
+                        <SelectContent>
+                        {patients.map((patient) => (
+                            <SelectItem key={patient.id} value={patient.id}>
+                            {patient.name}
+                            </SelectItem>
+                        ))}
+                        {patients.length === 0 && <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="grid grid-cols-4 items-start gap-4">
+                    <Label htmlFor="editAlertReason" className="text-right pt-2">
+                    Motivo*
+                    </Label>
+                    <Textarea
+                    id="editAlertReason"
+                    value={alertForm.reason} // Use alertForm state here too
+                    onChange={(e) => handleAlertFormInputChange('reason', e.target.value)}
+                    className="col-span-3"
+                    rows={3}
+                    placeholder="Descreva o alerta"
+                    required
+                    />
+                </div>
+                </div>
+                <DialogFooter>
+                <DialogClose asChild>
+                    <Button type="button" variant="outline" onClick={() => { setEditingAlert(null); setAlertForm({patientId:'', reason:''}); }}>Cancelar</Button>
+                </DialogClose>
+                <Button type="submit">Salvar Alterações</Button>
+                </DialogFooter>
+            </form>
+            </DialogContent>
+        </Dialog>
+
     </div>
   );
 }
 
+
+    
