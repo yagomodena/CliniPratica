@@ -1,13 +1,77 @@
 
+'use client'; // Add 'use client' for state and interactivity
+
+import React, { useState } from 'react'; // Import useState
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CreditCard, User, Bell, KeyRound } from "lucide-react";
+import { Check, CreditCard, User, Bell, KeyRound, Save } from "lucide-react"; // Added Save icon
+import { useToast } from '@/hooks/use-toast'; // Import useToast
+
+
+// Define the structure for profile data
+type ProfileData = {
+  name: string;
+  email: string;
+  phone: string;
+  specialty: string;
+};
 
 export default function ConfiguracoesPage() {
+  const { toast } = useToast(); // Initialize toast
+
+  // State for profile data
+  const [profile, setProfile] = useState<ProfileData>({
+    name: 'Usuário Exemplo',
+    email: 'usuario@clinipratica.com.br', // Keep email disabled for now
+    phone: '',
+    specialty: '',
+  });
+
+  // Handle input changes
+  const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setProfile(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Handle saving changes
+  const handleSaveChanges = () => {
+    // Simulate saving data (e.g., API call)
+    console.log("Saving profile changes:", profile);
+
+    // Show success toast
+    toast({
+      title: "Sucesso!",
+      description: "Seu perfil foi atualizado com sucesso.",
+    });
+  };
+
+  // Placeholder for changing photo
+  const handleChangePhoto = () => {
+    // In a real app, this would open a file picker and handle upload
+    toast({
+      title: "Funcionalidade Indisponível",
+      description: "A alteração de foto ainda não está implementada.",
+      variant: "default", // Use default or a custom variant if needed
+    });
+    console.log("Attempted to change photo");
+  };
+
+  // Placeholder for changing password
+  const handleChangePassword = (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+       // In a real app, validate fields and call API
+      toast({
+        title: "Funcionalidade Indisponível",
+        description: "A alteração de senha ainda não está implementada.",
+        variant: "default",
+      });
+      console.log("Attempted to change password");
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-foreground">Configurações</h1>
@@ -30,30 +94,57 @@ export default function ConfiguracoesPage() {
             <CardContent className="space-y-6">
                <div className="flex items-center space-x-4">
                  <Avatar className="h-16 w-16">
-                    <AvatarImage src="https://picsum.photos/100/100" alt="User Avatar" data-ai-hint="user avatar"/>
-                    <AvatarFallback>CP</AvatarFallback>
+                    {/* Use a placeholder or dynamic avatar */}
+                    <AvatarImage src={profile.email === 'usuario@clinipratica.com.br' ? "https://picsum.photos/100/100" : undefined} alt="User Avatar" data-ai-hint="user avatar"/>
+                    <AvatarFallback>{profile.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'CP'}</AvatarFallback>
                  </Avatar>
-                 <Button variant="outline">Alterar Foto</Button>
+                 <Button variant="outline" onClick={handleChangePhoto}>Alterar Foto</Button>
                </div>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <div className="space-y-2">
                     <Label htmlFor="name">Nome Completo</Label>
-                    <Input id="name" defaultValue="Usuário Exemplo" />
+                    <Input
+                      id="name"
+                      name="name" // Add name attribute
+                      value={profile.name} // Bind value to state
+                      onChange={handleProfileChange} // Handle changes
+                    />
                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" defaultValue="usuario@clinipratica.com.br" disabled />
+                    <Input
+                      id="email"
+                      name="email" // Add name attribute
+                      type="email"
+                      value={profile.email} // Bind value to state
+                      disabled // Keep disabled as email change might need verification
+                    />
                  </div>
                  <div className="space-y-2">
                     <Label htmlFor="phone">Telefone (Opcional)</Label>
-                    <Input id="phone" type="tel" placeholder="(XX) XXXXX-XXXX" />
+                    <Input
+                      id="phone"
+                      name="phone" // Add name attribute
+                      type="tel"
+                      placeholder="(XX) XXXXX-XXXX"
+                      value={profile.phone} // Bind value to state
+                      onChange={handleProfileChange} // Handle changes
+                    />
                  </div>
                    <div className="space-y-2">
                     <Label htmlFor="specialty">Especialidade (Opcional)</Label>
-                    <Input id="specialty" placeholder="Ex: Nutricionista" />
+                    <Input
+                      id="specialty"
+                      name="specialty" // Add name attribute
+                      placeholder="Ex: Nutricionista"
+                      value={profile.specialty} // Bind value to state
+                      onChange={handleProfileChange} // Handle changes
+                    />
                  </div>
                </div>
-               <Button>Salvar Alterações</Button>
+               <Button onClick={handleSaveChanges}>
+                  <Save className="mr-2 h-4 w-4"/> Salvar Alterações
+               </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -112,19 +203,22 @@ export default function ConfiguracoesPage() {
               <CardDescription>Gerencie sua senha e configurações de segurança.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-               <div className="space-y-2">
-                <Label htmlFor="current-password">Senha Atual</Label>
-                <Input id="current-password" type="password" />
-               </div>
-                <div className="space-y-2">
-                <Label htmlFor="new-password">Nova Senha</Label>
-                <Input id="new-password" type="password" />
-               </div>
-                <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
-                <Input id="confirm-password" type="password" />
-               </div>
-               <Button>Alterar Senha</Button>
+               {/* Simple form for password change simulation */}
+               <form onSubmit={handleChangePassword} className="space-y-4">
+                 <div className="space-y-2">
+                  <Label htmlFor="current-password">Senha Atual</Label>
+                  <Input id="current-password" type="password" />
+                 </div>
+                  <div className="space-y-2">
+                  <Label htmlFor="new-password">Nova Senha</Label>
+                  <Input id="new-password" type="password" />
+                 </div>
+                  <div className="space-y-2">
+                  <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
+                  <Input id="confirm-password" type="password" />
+                 </div>
+                 <Button type="submit">Alterar Senha</Button>
+               </form>
                <div className="border-t pt-6">
                    <h4 className="font-semibold mb-2">Autenticação de Dois Fatores (2FA)</h4>
                    <p className="text-sm text-muted-foreground mb-3">Adicione uma camada extra de segurança à sua conta.</p>
