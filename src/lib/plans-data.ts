@@ -11,6 +11,7 @@ export interface Plan {
   features: PlanFeature[];
   popular?: boolean;
   cta: string;
+  level: number; // Added level for comparison
 }
 
 export const plans: Plan[] = [
@@ -18,6 +19,7 @@ export const plans: Plan[] = [
     name: 'Gratuito',
     price: 'R$0',
     priceDetail: 'para sempre',
+    level: 0, // Base level
     features: [
       { text: 'Até 10 pacientes', included: true },
       { text: 'Agenda básica', included: true },
@@ -30,6 +32,7 @@ export const plans: Plan[] = [
     name: 'Essencial',
     price: 'R$29,90',
     priceDetail: '/mês',
+    level: 1,
     features: [
       { text: 'Até 50 pacientes', included: true },
       { text: 'Agenda completa com alertas', included: true },
@@ -43,6 +46,7 @@ export const plans: Plan[] = [
     name: 'Profissional',
     price: 'R$49,90',
     priceDetail: '/mês',
+    level: 2,
     features: [
       { text: 'Pacientes ilimitados', included: true },
       { text: 'Todas as funcionalidades Essencial', included: true },
@@ -55,6 +59,7 @@ export const plans: Plan[] = [
     name: 'Clínica',
     price: 'R$79,90',
     priceDetail: '/mês',
+    level: 3,
     features: [
       { text: 'Múltiplos profissionais', included: true },
       { text: 'Todas as funcionalidades Profissional', included: true },

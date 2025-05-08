@@ -55,7 +55,7 @@ const AlertDialogHeader = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col space-y-2 text-center sm:text-left px-6 pt-6 pb-4", // Added padding
+      "flex flex-col space-y-2 text-center sm:text-left", // Removed padding here, handled by content
       className
     )}
     {...props}
@@ -69,7 +69,7 @@ const AlertDialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 px-6 pb-6 pt-4", // Added padding
+      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 pt-4", // Added padding top
       className
     )}
     {...props}
@@ -83,7 +83,7 @@ const AlertDialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Title
     ref={ref}
-    className={cn("text-lg font-semibold", className)}
+    className={cn("text-lg font-semibold", className)} // Allow flex via className if needed externally
     {...props}
   />
 ))

@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Check } from 'lucide-react';
+import { Check, AlertTriangle } from 'lucide-react'; // Added AlertTriangle
 import { plans, type Plan } from '@/lib/plans-data'; // Import shared plans data
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -31,6 +31,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
   const { toast } = useToast();
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [selectedPlanForConfirmation, setSelectedPlanForConfirmation] = useState<Plan | null>(null);
+  const [isDowngrade, setIsDowngrade] = useState(false);
 
 
   const handlePlanSelectionClick = (plan: Plan) => {
@@ -41,6 +42,12 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
       });
       return;
     }
+
+    // Determine if it's a downgrade
+    const currentPlan = plans.find(p => p.name === currentPlanName);
+    const downgrade = currentPlan ? plan.level < currentPlan.level : false;
+    setIsDowngrade(downgrade);
+
     // Set the plan to be confirmed and open the confirmation dialog
     setSelectedPlanForConfirmation(plan);
     setIsConfirmDialogOpen(true);
@@ -67,6 +74,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
   const handleCancelConfirmation = () => {
       setIsConfirmDialogOpen(false);
       setSelectedPlanForConfirmation(null);
+      // Keep the main plans modal open unless the user explicitly closes it
   }
 
   return (
@@ -88,12 +96,12 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                 }`}
                 >
                 {plan.popular && plan.name !== currentPlanName && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-1 text-xs font-semibold rounded-full shadow-md z-10">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-1 text-xs font-semibold rounded-full shadow-md z-10 whitespace-nowrap"> {/* Added whitespace-nowrap */}
                     Mais Popular
                     </div>
                 )}
                 {plan.name === currentPlanName && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold rounded-full shadow-md z-10">
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold rounded-full shadow-md z-10 whitespace-nowrap"> {/* Added whitespace-nowrap */}
                     Plano Atual
                     </div>
                 )}
@@ -140,11 +148,26 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
          <AlertDialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
             <AlertDialogContent>
                <AlertDialogHeader>
-                 <AlertDialogTitle>Confirmar Mudança de Plano</AlertDialogTitle>
+                 <AlertDialogTitle className="flex items-center gap-2"> {/* Flex container for title and icon */}
+                     {isDowngrade && <AlertTriangle className="h-5 w-5 text-destructive" />} {/* Conditionally show warning icon */}
+                    Confirmar Mudança de Plano
+                 </AlertDialogTitle>
                  <AlertDialogDescription>
-                    Você está saindo do plano <strong>{currentPlanName}</strong> e mudando para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
-                    <br />
-                    Tem certeza que deseja continuar? A cobrança será ajustada no próximo ciclo de faturamento.
+                    {isDowngrade ? (
+                        <>
+                        Você está mudando do plano <strong>{currentPlanName}</strong> para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
+                        <br /><br />
+                        <strong className="text-destructive-foreground">Atenção:</strong> Ao fazer o downgrade, você perderá acesso a funcionalidades exclusivas do plano {currentPlanName}.
+                        <br />
+                        Tem certeza que deseja continuar? A cobrança será ajustada no próximo ciclo.
+                        </>
+                    ) : (
+                        <>
+                        Você está saindo do plano <strong>{currentPlanName}</strong> e mudando para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
+                        <br />
+                        Tem certeza que deseja continuar? A cobrança será ajustada no próximo ciclo de faturamento.
+                        </>
+                    )}
                  </AlertDialogDescription>
                </AlertDialogHeader>
                <AlertDialogFooter>
