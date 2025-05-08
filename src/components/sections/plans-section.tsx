@@ -1,81 +1,17 @@
+
 'use client';
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check } from 'lucide-react';
-
-interface PlanFeature {
-  text: string;
-  included: boolean;
-}
-
-interface Plan {
-  name: string;
-  price: string;
-  priceDetail?: string;
-  features: PlanFeature[];
-  popular?: boolean;
-  cta: string;
-}
-
-const plans: Plan[] = [
-  {
-    name: 'Gratuito',
-    price: 'R$0',
-    priceDetail: 'para sempre',
-    features: [
-      { text: 'Até 10 pacientes', included: true },
-      { text: 'Agenda básica', included: true },
-      { text: 'Suporte comunitário', included: true },
-      { text: 'Upload de exames (limitado)', included: false },
-    ],
-    cta: 'Começar Gratuitamente',
-  },
-  {
-    name: 'Essencial',
-    price: 'R$29,90',
-    priceDetail: '/mês',
-    features: [
-      { text: 'Até 50 pacientes', included: true },
-      { text: 'Agenda completa com alertas', included: true },
-      { text: 'Upload de exames (1GB)', included: true },
-      { text: 'Suporte por e-mail', included: true },
-    ],
-    popular: true,
-    cta: 'Escolher Essencial',
-  },
-  {
-    name: 'Profissional',
-    price: 'R$49,90',
-    priceDetail: '/mês',
-    features: [
-      { text: 'Pacientes ilimitados', included: true },
-      { text: 'Todas as funcionalidades Essencial', included: true },
-      { text: 'Envio automático de mensagens', included: true },
-      { text: 'Suporte prioritário', included: true },
-    ],
-    cta: 'Escolher Profissional',
-  },
-  {
-    name: 'Clínica',
-    price: 'R$79,90',
-    priceDetail: '/mês',
-    features: [
-      { text: 'Múltiplos profissionais', included: true },
-      { text: 'Todas as funcionalidades Profissional', included: true },
-      { text: 'Relatórios avançados', included: true },
-      { text: 'Gerente de contas dedicado', included: true },
-    ],
-    cta: 'Escolher Clínica',
-  },
-];
+import { plans } from '@/lib/plans-data'; // Import plans data
 
 export function PlansSection() {
   const handleCTAClick = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
     e.preventDefault();
     const contactSection = document.getElementById('contato');
     if (contactSection) {
-      const headerOffset = 80; 
+      const headerOffset = 80;
       const elementPosition = contactSection.getBoundingClientRect().top;
       const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
       window.scrollTo({
@@ -84,6 +20,13 @@ export function PlansSection() {
       });
     }
   };
+
+  // Adjust CTA for landing page context if needed
+  const landingPagePlans = plans.map(plan => ({
+    ...plan,
+    cta: plan.name === 'Gratuito' ? 'Começar Gratuitamente' : plan.cta // Keep original CTA for non-free plans or specific text
+  }));
+
 
   return (
     <section id="planos" className="py-16 md:py-24 bg-secondary">
@@ -95,7 +38,7 @@ export function PlansSection() {
           Escolha o plano ideal para você e comece a transformar a gestão do seu consultório hoje mesmo.
         </p>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 items-stretch">
-          {plans.map((plan) => (
+          {landingPagePlans.map((plan) => ( // Use landingPagePlans
             <Card
               key={plan.name}
               className={`flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300 ${
@@ -125,9 +68,9 @@ export function PlansSection() {
                 </ul>
               </CardContent>
               <CardFooter>
-                <Button 
-                  onClick={handleCTAClick} 
-                  className="w-full" 
+                <Button
+                  onClick={handleCTAClick}
+                  className="w-full"
                   variant={plan.popular ? 'default' : 'outline'}
                   aria-label={`Assinar o plano ${plan.name}`}
                 >

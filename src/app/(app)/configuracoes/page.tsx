@@ -2,14 +2,26 @@
 'use client'; // Add 'use client' for state and interactivity
 
 import React, { useState } from 'react'; // Import useState
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CreditCard, User, Bell, KeyRound, Save } from "lucide-react"; // Added Save icon
+import { Check, CreditCard, User, Bell, KeyRound, Save, AlertTriangle } from "lucide-react"; // Added Save, AlertTriangle icons
 import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { PlansModal } from '@/components/sections/plans-modal'; // Import the PlansModal component
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 
 // Define the structure for profile data
@@ -20,8 +32,13 @@ type ProfileData = {
   specialty: string;
 };
 
+type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica'; // Define possible plan names
+
 export default function ConfiguracoesPage() {
   const { toast } = useToast(); // Initialize toast
+  const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
+  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [currentUserPlan, setCurrentUserPlan] = useState<PlanName>('Gratuito'); // Default to 'Gratuito'
 
   // State for profile data
   const [profile, setProfile] = useState<ProfileData>({
@@ -71,6 +88,27 @@ export default function ConfiguracoesPage() {
       });
       console.log("Attempted to change password");
   }
+
+  // Handle plan selection from modal
+  const handleSelectPlan = (planName: PlanName) => {
+    // Simulate updating the user's plan
+    console.log("Updating plan to:", planName);
+    setCurrentUserPlan(planName); // Update the local state
+    // In a real app, trigger API call to update subscription
+  };
+
+  // Handle subscription cancellation
+  const handleCancelSubscription = () => {
+    console.log("Cancelling subscription for plan:", currentUserPlan);
+    // Simulate API call for cancellation
+    setCurrentUserPlan('Gratuito'); // Downgrade to free plan locally
+    setIsCancelConfirmOpen(false); // Close confirmation dialog
+    toast({
+      title: "Assinatura Cancelada",
+      description: "Sua assinatura foi cancelada e você foi movido para o plano Gratuito.",
+      variant: "default",
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -159,17 +197,75 @@ export default function ConfiguracoesPage() {
             <CardContent className="space-y-6">
               <Card className="bg-muted/50">
                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg">Plano Atual: Gratuito</CardTitle>
+                    <CardTitle className="text-lg">Plano Atual: {currentUserPlan}</CardTitle>
                  </CardHeader>
                  <CardContent className="space-y-2">
-                    <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Até 10 pacientes ativos</div>
-                    <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Agenda básica</div>
-                    <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Suporte comunitário</div>
+                     {/* Dynamic features based on current plan - simplified for now */}
+                    {currentUserPlan === 'Gratuito' && (
+                        <>
+                         <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Até 10 pacientes ativos</div>
+                         <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Agenda básica</div>
+                         <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Suporte comunitário</div>
+                        </>
+                    )}
+                     {currentUserPlan === 'Essencial' && (
+                        <>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Até 50 pacientes</div>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Agenda completa com alertas</div>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Upload de exames (1GB)</div>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Suporte por e-mail</div>
+                        </>
+                     )}
+                      {currentUserPlan === 'Profissional' && (
+                        <>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Pacientes ilimitados</div>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Todas as funcionalidades Essencial</div>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Envio automático de mensagens</div>
+                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Suporte prioritário</div>
+                        </>
+                     )}
+                      {currentUserPlan === 'Clínica' && (
+                         <>
+                            <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Múltiplos profissionais</div>
+                            <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Todas as funcionalidades Profissional</div>
+                            <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Relatórios avançados</div>
+                            <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Gerente de contas dedicado</div>
+                         </>
+                      )}
                  </CardContent>
               </Card>
-              <Button asChild>
-                  <a href="/#planos" target="_blank" rel="noopener noreferrer">Ver Planos e Fazer Upgrade</a>
-              </Button>
+              <div className="flex flex-wrap gap-4 items-center">
+                 {/* Button to open the Plans Modal */}
+                 <Button onClick={() => setIsPlansModalOpen(true)}>
+                   Ver Planos e Fazer Upgrade
+                 </Button>
+
+                  {/* Conditional Cancel Button */}
+                  {currentUserPlan !== 'Gratuito' && (
+                      <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
+                          <AlertDialogTrigger asChild>
+                             <Button variant="outline" className="text-destructive hover:bg-destructive/10 border-destructive/50 hover:border-destructive/80">
+                                <AlertTriangle className="mr-2 h-4 w-4" /> Cancelar Assinatura
+                             </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                             <AlertDialogHeader>
+                               <AlertDialogTitle>Confirmar Cancelamento</AlertDialogTitle>
+                               <AlertDialogDescription>
+                                 Tem certeza que deseja cancelar sua assinatura do plano {currentUserPlan}? Você será movido para o plano Gratuito e perderá acesso às funcionalidades pagas ao final do ciclo de cobrança atual.
+                               </AlertDialogDescription>
+                             </AlertDialogHeader>
+                             <AlertDialogFooter>
+                               <AlertDialogCancel>Voltar</AlertDialogCancel>
+                               <AlertDialogAction onClick={handleCancelSubscription} className="bg-destructive hover:bg-destructive/90">
+                                 Confirmar Cancelamento
+                               </AlertDialogAction>
+                             </AlertDialogFooter>
+                          </AlertDialogContent>
+                      </AlertDialog>
+                  )}
+              </div>
+
               {/* Placeholder for payment details if plan is paid */}
               {/* <div>
                  <h3 className="font-semibold mb-2">Detalhes de Pagamento</h3>
@@ -228,6 +324,14 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+       {/* Plans Modal */}
+       <PlansModal
+        isOpen={isPlansModalOpen}
+        onOpenChange={setIsPlansModalOpen}
+        currentPlanName={currentUserPlan}
+        onSelectPlan={handleSelectPlan}
+      />
     </div>
   );
 }
