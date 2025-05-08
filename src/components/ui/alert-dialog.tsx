@@ -108,6 +108,7 @@ const AlertDialogAction = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Action
     ref={ref}
+    // Apply buttonVariants directly here to inherit styles, including destructive
     className={cn(buttonVariants(), className)}
     {...props}
   />

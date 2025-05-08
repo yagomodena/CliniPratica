@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -21,8 +22,21 @@ import {
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
-import { format, parseISO } from 'date-fns'; // Import date-fns functions
-import { ptBR } from 'date-fns/locale'; // Import locale
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"; // Added AlertDialog
+import { format, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { useToast } from '@/hooks/use-toast'; // Added useToast
+
 
 // Placeholder data structure (should ideally come from API/DB)
 type HistoryItem = { date: string; type: string; notes: string };
@@ -78,6 +92,7 @@ const patientStore: { [key: string]: Patient } = {
 export default function PacienteDetalhePage() {
   const params = useParams();
   const router = useRouter();
+  const { toast } = useToast(); // Initialize toast
   const patientId = params.id as string;
 
   // State for patient data and edit mode
@@ -94,6 +109,7 @@ export default function PacienteDetalhePage() {
        patientStore[patientId] = { ...editedPatient };
        setPatient({ ...editedPatient }); // Update local state to reflect saved changes
        console.log("Patient data saved:", editedPatient);
+       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
      } else if (patient) {
        // Enter edit mode, copy current patient data
        setEditedPatient({ ...patient });
@@ -124,6 +140,7 @@ export default function PacienteDetalhePage() {
     setPatient(updatedPatient);
     setNewHistoryNote('');
     setNewHistoryType('Consulta'); // Reset type
+    toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
     console.log("New history added:", newEntry);
   };
 
@@ -148,27 +165,28 @@ export default function PacienteDetalhePage() {
     // Clear the file input visually if possible (might need state/ref)
     const fileInput = document.getElementById('document-upload') as HTMLInputElement;
      if (fileInput) fileInput.value = '';
+    toast({ title: "Documento Enviado", description: `Documento "${newDocEntry.name}" anexado.`, variant: "success" });
     console.log("Document uploaded:", newDocEntry);
   };
 
   const handleDeleteDocument = (docName: string) => {
       if (!patient) return;
-      if (confirm(`Tem certeza que deseja excluir o documento "${docName}"?`)) {
-          const updatedDocs = patient.documents.filter(doc => doc.name !== docName);
-          const updatedPatient = { ...patient, documents: updatedDocs };
-          patientStore[patientId] = updatedPatient; // Update store
-          setPatient(updatedPatient);
-          console.log("Document deleted:", docName);
-      }
+      const updatedDocs = patient.documents.filter(doc => doc.name !== docName);
+      const updatedPatient = { ...patient, documents: updatedDocs };
+      patientStore[patientId] = updatedPatient; // Update store
+      setPatient(updatedPatient);
+      toast({ title: "Documento Excluído", description: `Documento "${docName}" removido.`, variant: "default" });
+      console.log("Document deleted:", docName);
   };
 
   const handleDeletePatient = () => {
       if (!patient) return;
-      if (confirm(`Tem certeza que deseja excluir o paciente "${patient.name}"? Esta ação não pode ser desfeita.`)) {
-          delete patientStore[patientId]; // Remove from store
-          console.log("Patient deleted:", patient.name);
-          router.push('/pacientes'); // Redirect back to patient list
-      }
+      const patientName = patient.name;
+      delete patientStore[patientId]; // Remove from store
+      console.log("Patient deleted:", patientName);
+      toast({ title: "Paciente Excluído", description: `Paciente ${patientName} foi excluído com sucesso.`, variant: "success" });
+      router.push('/pacientes'); // Redirect back to patient list
+      // Note: In a real app, you would make an API call here.
   };
 
 
@@ -230,27 +248,30 @@ export default function PacienteDetalhePage() {
                  {isEditing ? 'Salvar Alterações' : 'Editar Cadastro'}
               </Button>
                {!isEditing && (
-                   <Dialog>
-                       <DialogTrigger asChild>
+                   <AlertDialog>
+                       <AlertDialogTrigger asChild>
                            <Button variant="destructive" size="sm">
                                <Trash2 className="mr-2 h-4 w-4" /> Excluir Paciente
                            </Button>
-                       </DialogTrigger>
-                       <DialogContent>
-                           <DialogHeader>
-                               <DialogTitle>Confirmar Exclusão</DialogTitle>
-                               <DialogDescription>
+                       </AlertDialogTrigger>
+                       <AlertDialogContent>
+                           <AlertDialogHeader>
+                               <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                               <AlertDialogDescription>
                                    Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita.
-                               </DialogDescription>
-                           </DialogHeader>
-                           <DialogFooter>
-                               <DialogClose asChild>
-                                   <Button variant="outline">Cancelar</Button>
-                               </DialogClose>
-                               <Button variant="destructive" onClick={handleDeletePatient}>Excluir</Button>
-                           </DialogFooter>
-                       </DialogContent>
-                   </Dialog>
+                               </AlertDialogDescription>
+                           </AlertDialogHeader>
+                           <AlertDialogFooter>
+                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                               <AlertDialogAction
+                                   className="bg-destructive hover:bg-destructive/90"
+                                   onClick={handleDeletePatient} // Use the same handler
+                                >
+                                   Excluir
+                                </AlertDialogAction>
+                           </AlertDialogFooter>
+                       </AlertDialogContent>
+                   </AlertDialog>
                 )}
             </div>
        </div>
@@ -377,25 +398,25 @@ export default function PacienteDetalhePage() {
                                        <p className="text-xs text-muted-foreground">Upload em: {formatDate(doc.uploadDate)}</p>
                                    </div>
                                </div>
-                               <Dialog>
-                                   <DialogTrigger asChild>
+                                <AlertDialog>
+                                   <AlertDialogTrigger asChild>
                                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive flex-shrink-0" title="Excluir documento">
                                           <Trash2 className="h-4 w-4"/>
                                       </Button>
-                                    </DialogTrigger>
-                                    <DialogContent>
-                                        <DialogHeader>
-                                          <DialogTitle>Confirmar Exclusão</DialogTitle>
-                                          <DialogDescription>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                                          <AlertDialogDescription>
                                               Tem certeza que deseja excluir o documento "{doc.name}"?
-                                          </DialogDescription>
-                                        </DialogHeader>
-                                        <DialogFooter>
-                                           <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
-                                           <DialogClose asChild><Button variant="destructive" onClick={() => handleDeleteDocument(doc.name)}>Excluir</Button></DialogClose>
-                                        </DialogFooter>
-                                    </DialogContent>
-                               </Dialog>
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                           <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                           <AlertDialogAction variant="destructive" onClick={() => handleDeleteDocument(doc.name)}>Excluir</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                               </AlertDialog>
                            </li>
                        ))}
                      </ul>

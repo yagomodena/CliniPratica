@@ -6,6 +6,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { buttonVariants } from "@/components/ui/button"; // Import buttonVariants
 
 const Dialog = DialogPrimitive.Root
 
@@ -112,6 +113,21 @@ const DialogDescription = React.forwardRef<
 ))
 DialogDescription.displayName = DialogPrimitive.Description.displayName
 
+// Add DialogAction component (similar to AlertDialogAction but for Dialog)
+const DialogAction = React.forwardRef<
+  HTMLButtonElement, // Assuming it's a button
+  React.ButtonHTMLAttributes<HTMLButtonElement> // Standard button props
+>(({ className, ...props }, ref) => (
+  <button
+    ref={ref}
+    // Apply buttonVariants directly to get styling
+    className={cn(buttonVariants(), className)}
+    {...props}
+  />
+))
+DialogAction.displayName = "DialogAction"
+
+
 export {
   Dialog,
   DialogPortal,
@@ -123,4 +139,5 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
+  DialogAction, // Export DialogAction
 }

@@ -1,10 +1,11 @@
+
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Search, UserPlus } from "lucide-react";
+import { PlusCircle, Search, UserPlus, Trash2 } from "lucide-react"; // Added Trash2
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,8 +17,20 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogClose, // Import DialogClose
+  DialogClose,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog" // Added AlertDialog
+import { useToast } from '@/hooks/use-toast'; // Added useToast
 
 // Placeholder data
 const initialPatients = [
@@ -34,6 +47,7 @@ export default function PacientesPage() {
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [searchTerm, setSearchTerm] = useState('');
   const [isNewPatientDialogOpen, setIsNewPatientDialogOpen] = useState(false);
+  const { toast } = useToast(); // Initialize toast hook
 
   // Form state for new patient
   const [newPatient, setNewPatient] = useState<Partial<Patient>>({
@@ -54,7 +68,7 @@ export default function PacientesPage() {
     e.preventDefault();
     // Basic validation example (in a real app, use a library like zod)
     if (!newPatient.name || !newPatient.email) {
-      alert("Nome e Email são obrigatórios.");
+       toast({ title: "Erro", description: "Nome e Email são obrigatórios.", variant: "destructive" });
       return;
     }
     const newId = `p${(Math.random() * 1000).toFixed(0).padStart(3, '0')}`; // Simple ID generation
@@ -72,8 +86,21 @@ export default function PacientesPage() {
     setPatients(prev => [patientToAdd, ...prev]);
     setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo' }); // Reset form
     setIsNewPatientDialogOpen(false); // Close dialog
+     toast({ title: "Sucesso!", description: `Paciente ${patientToAdd.name} adicionado.`, variant: "success" });
     console.log("Novo paciente adicionado:", patientToAdd);
   };
+
+  const handleDeletePatient = (patientId: string, patientName: string) => {
+      setPatients(prev => prev.filter(p => p.id !== patientId));
+      toast({
+          title: "Paciente Excluído",
+          description: `Paciente ${patientName} foi excluído com sucesso.`,
+          variant: "success"
+      });
+      console.log("Paciente excluído:", patientId);
+      // Note: In a real application, this would involve an API call to delete the patient from the backend.
+  };
+
 
   const filteredPatients = patients.filter(patient =>
     patient.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -214,13 +241,38 @@ export default function PacientesPage() {
                   <TableCell className="hidden sm:table-cell">{patient.lastVisit}</TableCell>
                   <TableCell className="hidden md:table-cell">{patient.nextVisit}</TableCell>
                   <TableCell>{patient.status}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right space-x-2"> {/* Added space-x-2 */}
                     {/* Link the button to the patient detail page */}
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/pacientes/${generateSlug(patient.name)}`}>
                          Ver Detalhes
                       </Link>
                     </Button>
+                    {/* Delete Button with Confirmation */}
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 h-8 w-8" title="Excluir Paciente">
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                    className="bg-destructive hover:bg-destructive/90"
+                                    onClick={() => handleDeletePatient(patient.id, patient.name)}
+                                >
+                                    Excluir
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}
