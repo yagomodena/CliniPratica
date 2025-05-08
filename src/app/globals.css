@@ -28,7 +28,7 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --success: 140 60% 90%; /* Light green background */
+    --success: 140 60% 80%; /* Adjusted Light green background - less pale */
     --success-foreground: 140 80% 15%; /* Dark green text */
 
     --border: 0 0% 89.8%;
