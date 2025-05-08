@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -89,22 +90,23 @@ export default function MensagensPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <h1 className="text-3xl font-bold text-foreground">Mensagens</h1>
-        <div className="flex gap-2">
-           <Button variant="outline" onClick={() => setActiveTab('automacoes')}>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+           <Button variant="outline" className="w-full sm:w-auto" onClick={() => setActiveTab('automacoes')}>
              <Settings className="mr-2 h-4 w-4" />
              Configurar Automações
            </Button>
 
            <Dialog open={isNovaMensagemDialogOpen} onOpenChange={setIsNovaMensagemDialogOpen}>
              <DialogTrigger asChild>
-               <Button>
+               <Button className="w-full sm:w-auto">
                   <MessageSquarePlus className="mr-2 h-4 w-4" />
                   Nova Mensagem
                </Button>
              </DialogTrigger>
-             <DialogContent className="sm:max-w-[480px]">
+             {/* Adjusted max-width for responsiveness */}
+             <DialogContent className="w-[90vw] max-w-[480px] sm:max-w-[550px] max-h-[85vh] overflow-y-auto">
                <DialogHeader>
                  <DialogTitle>Nova Mensagem Manual</DialogTitle>
                  <DialogDescription>
@@ -112,18 +114,19 @@ export default function MensagensPage() {
                  </DialogDescription>
                </DialogHeader>
                <form onSubmit={handleSendMessage}>
-                 <div className="grid gap-4 py-4">
+                 {/* Adjusted grid layout for responsiveness */}
+                 <div className="grid gap-4 py-4 px-1">
                     {/* Patient Selection */}
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="patientId" className="text-right">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-4">
+                      <Label htmlFor="patientId" className="sm:text-right">
                         Paciente*
                       </Label>
-                        <Select
-                            value={newMessage.patientId}
-                            onValueChange={(value) => handleSelectChange('patientId', value)}
-                            required
-                        >
-                        <SelectTrigger className="col-span-3">
+                      <Select
+                        value={newMessage.patientId}
+                        onValueChange={(value) => handleSelectChange('patientId', value)}
+                        required
+                      >
+                        <SelectTrigger className="sm:col-span-3">
                           <SelectValue placeholder="Selecione o paciente" />
                         </SelectTrigger>
                         <SelectContent>
@@ -138,15 +141,15 @@ export default function MensagensPage() {
                     </div>
 
                     {/* Message Content */}
-                    <div className="grid grid-cols-4 items-start gap-4">
-                      <Label htmlFor="message" className="text-right pt-2">
+                     <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-4">
+                      <Label htmlFor="message" className="sm:text-right sm:pt-2">
                         Mensagem*
                       </Label>
                       <Textarea
                         id="message"
                         value={newMessage.message}
-                         onChange={(e) => handleInputChange('message', e.target.value)}
-                        className="col-span-3"
+                        onChange={(e) => handleInputChange('message', e.target.value)}
+                        className="sm:col-span-3"
                         rows={5}
                         placeholder="Digite sua mensagem aqui..."
                         required
@@ -154,10 +157,9 @@ export default function MensagensPage() {
                     </div>
 
                     {/* Channel/Scheduling Placeholders (Future) */}
-                    <p className="col-span-4 text-xs text-muted-foreground text-center mt-2">
+                    <p className="col-span-1 sm:col-span-4 text-xs text-muted-foreground text-center mt-2">
                       (Funcionalidade de seleção de canal e agendamento em breve)
                     </p>
-
                  </div>
                  <DialogFooter>
                    <DialogClose asChild>
@@ -168,7 +170,6 @@ export default function MensagensPage() {
                </form>
              </DialogContent>
            </Dialog>
-
         </div>
       </div>
 
@@ -223,7 +224,6 @@ export default function MensagensPage() {
              </Card>
            </TabsContent>
        </Tabs>
-
     </div>
   );
 }
