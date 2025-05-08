@@ -1,12 +1,12 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Added useEffect
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX } from "lucide-react"; // Added UserCheck, UserX
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -32,31 +32,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"; // Added AlertDialog
+} from "@/components/ui/alert-dialog";
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useToast } from '@/hooks/use-toast'; // Added useToast
+import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge'; // Import Badge
 
-
-// Placeholder data structure (should ideally come from API/DB)
-type HistoryItem = { date: string; type: string; notes: string };
-type DocumentItem = { name: string; uploadDate: string; url: string };
-type Patient = {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  dob: string;
-  address: string;
-  status: 'Ativo' | 'Inativo';
-  avatar: string;
-  history: HistoryItem[];
-  documents: DocumentItem[];
-};
-
-// In-memory store for demonstration. Replace with actual data fetching.
-const patientStore: { [key: string]: Patient } = {
+// --- In-memory Store Simulation ---
+// NOTE: This is a basic simulation. Changes here won't persist across page reloads
+// or be shared between different patient detail pages without more complex state management.
+// A real application would use a proper database and API.
+let patientStore: { [key: string]: Patient } = {
    'ana-silva': {
+    internalId: 'int-p001', // Added internalId
     id: 'p001',
     name: 'Ana Silva',
     email: 'ana.silva@email.com',
@@ -75,50 +63,100 @@ const patientStore: { [key: string]: Patient } = {
     ]
   },
   'carlos-souza': {
-     id: 'p002', name: 'Carlos Souza', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ', status: 'Ativo', avatar: 'https://picsum.photos/seed/p002/100/100', history: [], documents: []
+     internalId: 'int-p002', id: 'p002', name: 'Carlos Souza', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ', status: 'Ativo', avatar: 'https://picsum.photos/seed/p002/100/100', history: [], documents: []
   },
    'beatriz-lima': {
-     id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo', avatar: 'https://picsum.photos/seed/p003/100/100', history: [], documents: []
+     internalId: 'int-p003', id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo', avatar: 'https://picsum.photos/seed/p003/100/100', history: [], documents: []
   },
    'daniel-costa': {
-      id: 'p004', name: 'Daniel Costa', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR', status: 'Inativo', avatar: 'https://picsum.photos/seed/p004/100/100', history: [], documents: []
+      internalId: 'int-p004', id: 'p004', name: 'Daniel Costa', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR', status: 'Inativo', avatar: 'https://picsum.photos/seed/p004/100/100', history: [], documents: []
    },
    'fernanda-oliveira': {
-        id: 'p005', name: 'Fernanda Oliveira', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS', status: 'Ativo', avatar: 'https://picsum.photos/seed/p005/100/100', history: [], documents: []
+        internalId: 'int-p005', id: 'p005', name: 'Fernanda Oliveira', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS', status: 'Ativo', avatar: 'https://picsum.photos/seed/p005/100/100', history: [], documents: []
    }
+};
+// Function to update the global store (simulated)
+const updatePatientInStore = (slug: string, updatedData: Patient) => {
+    if (patientStore[slug]) {
+        patientStore[slug] = updatedData;
+        console.log("Patient store updated for:", slug);
+    }
+};
+const deletePatientFromStore = (slug: string) => {
+    if (patientStore[slug]) {
+        delete patientStore[slug];
+        console.log("Patient deleted from store:", slug);
+    }
+};
+// --- End In-memory Store Simulation ---
+
+
+// Data structure definitions
+type HistoryItem = { date: string; type: string; notes: string };
+type DocumentItem = { name: string; uploadDate: string; url: string };
+type Patient = {
+  internalId: string; // Added internal ID for more reliable state updates
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  dob: string;
+  address: string;
+  status: 'Ativo' | 'Inativo';
+  avatar: string;
+  history: HistoryItem[];
+  documents: DocumentItem[];
 };
 
 
 export default function PacienteDetalhePage() {
   const params = useParams();
   const router = useRouter();
-  const { toast } = useToast(); // Initialize toast
-  const patientId = params.id as string;
+  const { toast } = useToast();
+  const patientSlug = params.id as string; // Use slug from URL
 
   // State for patient data and edit mode
-  const [patient, setPatient] = useState<Patient | undefined>(patientStore[patientId]);
+  const [patient, setPatient] = useState<Patient | undefined>(undefined);
   const [isEditing, setIsEditing] = useState(false);
-  const [editedPatient, setEditedPatient] = useState<Patient | undefined>(patient ? { ...patient } : undefined);
+  const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
   const [newHistoryNote, setNewHistoryNote] = useState('');
   const [newHistoryType, setNewHistoryType] = useState('Consulta');
   const [newDocument, setNewDocument] = useState<File | null>(null);
+  const [isLoading, setIsLoading] = useState(true); // Loading state
+
+   // Fetch patient data on mount (simulation)
+   useEffect(() => {
+     const currentPatientData = patientStore[patientSlug];
+     if (currentPatientData) {
+        setPatient(currentPatientData);
+        setEditedPatient({ ...currentPatientData }); // Initialize edited state as well
+     } else {
+        // Handle patient not found (maybe redirect or show error)
+        console.error("Patient not found with slug:", patientSlug);
+        // Could redirect here: router.push('/pacientes');
+     }
+     setIsLoading(false);
+   }, [patientSlug]); // Depend on slug
 
   const handleEditToggle = () => {
-     if (isEditing && editedPatient && patient) {
-       // Save changes (update the in-memory store for demo)
-       patientStore[patientId] = { ...editedPatient };
-       setPatient({ ...editedPatient }); // Update local state to reflect saved changes
+     if (isEditing && editedPatient) {
+       // Save changes
+       setPatient({ ...editedPatient }); // Update local display state
+       updatePatientInStore(patientSlug, editedPatient); // Update simulated global store
        console.log("Patient data saved:", editedPatient);
        toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
+       setIsEditing(false); // Exit edit mode AFTER saving
      } else if (patient) {
-       // Enter edit mode, copy current patient data
+       // Enter edit mode, ensure editedPatient is synced with current patient data
        setEditedPatient({ ...patient });
+       setIsEditing(true);
      }
-     setIsEditing(!isEditing);
   };
 
   const handleCancelEdit = () => {
-     setEditedPatient(patient ? { ...patient } : undefined); // Reset changes
+     if (patient) {
+        setEditedPatient({ ...patient }); // Reset changes to original patient data
+     }
      setIsEditing(false);
   };
 
@@ -128,18 +166,37 @@ export default function PacienteDetalhePage() {
      setEditedPatient(prev => prev ? { ...prev, [name]: value } : undefined);
   };
 
+   const handleToggleStatus = () => {
+      if (!patient) return;
+      const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
+      const updatedPatient = { ...patient, status: newStatus };
+
+      setPatient(updatedPatient); // Update local display state
+      setEditedPatient(updatedPatient); // Keep edited state in sync
+      updatePatientInStore(patientSlug, updatedPatient); // Update simulated global store
+
+      toast({
+         title: "Status Alterado",
+         description: `Status de ${patient.name} alterado para ${newStatus}.`,
+         variant: "success"
+      });
+      console.log(`Status toggled for ${patient.name} to ${newStatus}`);
+   };
+
+
   const handleAddHistory = () => {
     if (!newHistoryNote.trim() || !patient) return;
     const newEntry: HistoryItem = {
-      date: new Date().toISOString().split('T')[0], // Current date
+      date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
       notes: newHistoryNote,
     };
     const updatedPatient = { ...patient, history: [newEntry, ...patient.history] };
-    patientStore[patientId] = updatedPatient; // Update store
     setPatient(updatedPatient);
+    setEditedPatient(updatedPatient); // Keep edited state in sync
+    updatePatientInStore(patientSlug, updatedPatient);
     setNewHistoryNote('');
-    setNewHistoryType('Consulta'); // Reset type
+    setNewHistoryType('Consulta');
     toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
     console.log("New history added:", newEntry);
   };
@@ -152,17 +209,16 @@ export default function PacienteDetalhePage() {
 
   const handleDocumentUpload = () => {
     if (!newDocument || !patient) return;
-    // Simulate upload
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument), // In real app, this would be the server URL
+      url: URL.createObjectURL(newDocument),
     };
     const updatedPatient = { ...patient, documents: [newDocEntry, ...patient.documents] };
-    patientStore[patientId] = updatedPatient; // Update store
     setPatient(updatedPatient);
+    setEditedPatient(updatedPatient);
+    updatePatientInStore(patientSlug, updatedPatient);
     setNewDocument(null);
-    // Clear the file input visually if possible (might need state/ref)
     const fileInput = document.getElementById('document-upload') as HTMLInputElement;
      if (fileInput) fileInput.value = '';
     toast({ title: "Documento Enviado", description: `Documento "${newDocEntry.name}" anexado.`, variant: "success" });
@@ -173,8 +229,9 @@ export default function PacienteDetalhePage() {
       if (!patient) return;
       const updatedDocs = patient.documents.filter(doc => doc.name !== docName);
       const updatedPatient = { ...patient, documents: updatedDocs };
-      patientStore[patientId] = updatedPatient; // Update store
       setPatient(updatedPatient);
+      setEditedPatient(updatedPatient);
+      updatePatientInStore(patientSlug, updatedPatient);
       toast({ title: "Documento Excluído", description: `Documento "${docName}" removido.`, variant: "default" });
       console.log("Document deleted:", docName);
   };
@@ -182,16 +239,24 @@ export default function PacienteDetalhePage() {
   const handleDeletePatient = () => {
       if (!patient) return;
       const patientName = patient.name;
-      delete patientStore[patientId]; // Remove from store
+      deletePatientFromStore(patientSlug); // Remove from simulated store
       console.log("Patient deleted:", patientName);
-      toast({ title: "Paciente Excluído", description: `Paciente ${patientName} foi removido com sucesso.`, variant: "destructive" }); // Changed variant to destructive
-      router.push('/pacientes'); // Redirect back to patient list
-      // Note: In a real app, you would make an API call here.
+      toast({ title: "Paciente Excluído", description: `Paciente ${patientName} foi removido com sucesso.`, variant: "destructive" });
+      router.push('/pacientes');
   };
 
+   // Loading state display
+   if (isLoading) {
+       return (
+           <div className="text-center py-10">
+               <p>Carregando dados do paciente...</p>
+               {/* Optional: Add a spinner */}
+           </div>
+       );
+   }
 
+  // Patient not found after loading
   if (!patient) {
-    // Handle case where patient is not found after initial load or delete
      return (
         <div className="text-center py-10">
            <h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1>
@@ -203,14 +268,14 @@ export default function PacienteDetalhePage() {
   const calculateAge = (dob: string) => {
       if (!dob) return '-';
       try {
-        const birthDate = parseISO(dob); // Use parseISO for 'yyyy-MM-dd'
+        const birthDate = parseISO(dob);
         const today = new Date();
         let age = today.getFullYear() - birthDate.getFullYear();
         const m = today.getMonth() - birthDate.getMonth();
         if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
             age--;
         }
-        return age >= 0 ? age : '-'; // Ensure age is non-negative
+        return age >= 0 ? age : '-';
       } catch (e) {
           console.error("Error parsing date:", dob, e);
           return '-';
@@ -220,58 +285,97 @@ export default function PacienteDetalhePage() {
    const formatDate = (dateString: string, formatStr = 'PPP') => {
     if (!dateString) return '-';
     try {
-      // Assuming dateString is 'yyyy-MM-dd'
       const date = parseISO(dateString);
       return format(date, formatStr, { locale: ptBR });
     } catch (e) {
       console.error("Error formatting date:", dateString, e);
-      return dateString; // Return original if error
+      return dateString;
     }
   };
 
+  // Determine which patient data to display (current or edited)
   const displayPatient = isEditing ? editedPatient : patient;
 
   return (
     <div className="space-y-6">
-       <div className="flex items-center justify-between mb-4">
+       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap"> {/* Added flex-wrap */}
          <Button variant="outline" onClick={() => router.back()}>
            <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
          </Button>
-          <div className="flex gap-2">
-              {isEditing && (
-                  <Button variant="outline" size="sm" onClick={handleCancelEdit}>
-                      <X className="mr-2 h-4 w-4" /> Cancelar
-                  </Button>
-              )}
-              <Button variant={isEditing ? "default" : "outline"} size="sm" onClick={handleEditToggle}>
-                 {isEditing ? <Save className="mr-2 h-4 w-4"/> : <Edit className="mr-2 h-4 w-4" />}
-                 {isEditing ? 'Salvar Alterações' : 'Editar Cadastro'}
-              </Button>
-               {!isEditing && (
-                   <AlertDialog>
-                       <AlertDialogTrigger asChild>
+          <div className="flex gap-2 flex-wrap"> {/* Added flex-wrap */}
+              {isEditing ? (
+                 <>
+                     <Button variant="outline" size="sm" onClick={handleCancelEdit}>
+                         <X className="mr-2 h-4 w-4" /> Cancelar
+                     </Button>
+                     <Button size="sm" onClick={handleEditToggle}>
+                         <Save className="mr-2 h-4 w-4"/> Salvar Alterações
+                     </Button>
+                 </>
+              ) : (
+                 <>
+                     {/* Activate/Inactivate Button */}
+                     <AlertDialog>
+                         <AlertDialogTrigger asChild>
+                           <Button
+                              variant="outline"
+                              size="sm"
+                              className={patient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50' : 'text-green-600 border-green-300 hover:bg-green-50'}
+                           >
+                             {patient.status === 'Ativo' ? <UserX className="mr-2 h-4 w-4" /> : <UserCheck className="mr-2 h-4 w-4" />}
+                             {patient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
+                           </Button>
+                         </AlertDialogTrigger>
+                         <AlertDialogContent>
+                             <AlertDialogHeader>
+                                <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                   Tem certeza que deseja {patient.status === 'Ativo' ? 'inativar' : 'ativar'} o paciente <strong>{patient.name}</strong>?
+                                </AlertDialogDescription>
+                             </AlertDialogHeader>
+                             <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className={patient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
+                                  onClick={handleToggleStatus}
+                                 >
+                                  {patient.status === 'Ativo' ? 'Inativar' : 'Ativar'}
+                                </AlertDialogAction>
+                             </AlertDialogFooter>
+                         </AlertDialogContent>
+                     </AlertDialog>
+
+                     {/* Edit Button */}
+                     <Button variant="outline" size="sm" onClick={handleEditToggle}>
+                         <Edit className="mr-2 h-4 w-4" /> Editar Cadastro
+                     </Button>
+
+                     {/* Delete Button */}
+                     <AlertDialog>
+                         <AlertDialogTrigger asChild>
                            <Button variant="destructive" size="sm">
                                <Trash2 className="mr-2 h-4 w-4" /> Excluir Paciente
                            </Button>
-                       </AlertDialogTrigger>
-                       <AlertDialogContent>
-                           <AlertDialogHeader>
+                         </AlertDialogTrigger>
+                         <AlertDialogContent>
+                             <AlertDialogHeader>
                                <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
                                <AlertDialogDescription>
-                                   Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita.
+                                   Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita e removerá todo o histórico associado.
                                </AlertDialogDescription>
-                           </AlertDialogHeader>
-                           <AlertDialogFooter>
-                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                               <AlertDialogAction
+                             </AlertDialogHeader>
+                             <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
                                    className="bg-destructive hover:bg-destructive/90"
-                                   onClick={handleDeletePatient} // Use the same handler
-                                >
+                                   onClick={handleDeletePatient}
+                                 >
                                    Excluir
-                                </AlertDialogAction>
-                           </AlertDialogFooter>
-                       </AlertDialogContent>
-                   </AlertDialog>
+                                 </AlertDialogAction>
+                             </AlertDialogFooter>
+                         </AlertDialogContent>
+                     </AlertDialog>
+                 </>
                 )}
             </div>
        </div>
@@ -286,14 +390,18 @@ export default function PacienteDetalhePage() {
                </Avatar>
                <div>
                   <CardTitle className="text-2xl">{displayPatient?.name}</CardTitle>
-                  <CardDescription>
-                     {calculateAge(displayPatient?.dob || '')} anos - {displayPatient?.status}
-                  </CardDescription>
+                   <div className="flex items-center gap-2 mt-1">
+                      <CardDescription>
+                         {calculateAge(displayPatient?.dob || '')} anos
+                      </CardDescription>
+                       <Badge variant={displayPatient?.status === 'Ativo' ? 'default' : 'secondary'} className={`px-2 py-0.5 text-xs ${displayPatient?.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                           {displayPatient?.status}
+                       </Badge>
+                   </div>
                   <p className="text-sm text-muted-foreground mt-1">{displayPatient?.email}</p>
                   <p className="text-sm text-muted-foreground">{displayPatient?.phone}</p>
                </div>
            </div>
-           {/* Edit/Delete moved to top */}
         </CardHeader>
 
         <CardContent className="p-0">
@@ -341,10 +449,9 @@ export default function PacienteDetalhePage() {
                   </CardFooter>
                 </Card>
 
-
                 <h3 className="text-lg font-semibold pt-6 border-t">Histórico de Atendimentos</h3>
-                {patient?.history.length > 0 ? (
-                   [...patient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => ( // Sort by date desc
+                {displayPatient?.history && displayPatient.history.length > 0 ? (
+                   [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
                     <Card key={index} className="bg-muted/50">
                         <CardHeader className="pb-3 flex flex-row justify-between items-center">
                            <CardTitle className="text-base">
@@ -385,11 +492,10 @@ export default function PacienteDetalhePage() {
                      </CardContent>
                  </Card>
 
-
                  <h3 className="text-lg font-semibold pt-6 border-t">Documentos Anexados</h3>
-                 {patient?.documents.length > 0 ? (
+                 {displayPatient?.documents && displayPatient.documents.length > 0 ? (
                      <ul className="space-y-3">
-                       {[...patient.documents].sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()).map((doc, index) => ( // Sort by date desc
+                       {[...displayPatient.documents].sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()).map((doc, index) => (
                           <li key={index} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
                                <div className="flex items-center gap-3">
                                    <FileText className="h-5 w-5 text-primary flex-shrink-0"/>
@@ -451,6 +557,7 @@ export default function PacienteDetalhePage() {
                               <Label htmlFor="edit-address">Endereço</Label>
                               <Input id="edit-address" name="address" value={editedPatient?.address || ''} onChange={handleInputChange} />
                            </div>
+                             {/* Status field is editable */}
                              <div className="space-y-1">
                               <Label htmlFor="edit-status">Status</Label>
                                <select
@@ -472,12 +579,14 @@ export default function PacienteDetalhePage() {
                          <div><strong>Email:</strong> {patient?.email}</div>
                          <div><strong>Telefone:</strong> {patient?.phone || '-'}</div>
                          <div className="md:col-span-2"><strong>Endereço:</strong> {patient?.address || '-'}</div>
-                         <div><strong>Status:</strong> {patient?.status}</div>
+                         <div><strong>Status:</strong>
+                           <Badge variant={patient?.status === 'Ativo' ? 'default' : 'secondary'} className={`ml-2 px-2 py-0.5 text-xs ${patient?.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                             {patient?.status}
+                           </Badge>
+                         </div>
                      </div>
                   )}
-                  <div className="pt-6 border-t">
-                     {/* Edit/Save buttons are now at the top */}
-                  </div>
+                  {/* Removed Save/Cancel button container from here, moved to top */}
              </TabsContent>
            </Tabs>
         </CardContent>

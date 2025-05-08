@@ -5,7 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Search, UserPlus, Trash2 } from "lucide-react"; // Added Trash2
+import { PlusCircle, Search, UserPlus, Trash2, Eye, UserCheck, UserX } from "lucide-react"; // Added Eye, UserCheck, UserX
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -29,16 +29,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog" // Added AlertDialog
-import { useToast } from '@/hooks/use-toast'; // Added useToast
+} from "@/components/ui/alert-dialog"
+import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge'; // Import Badge
 
 // Placeholder data
+// Added an 'internalId' to ensure stable keys even if 'id' changes or is reused by chance
 const initialPatients = [
-  { id: 'p001', name: 'Ana Silva', lastVisit: '2024-07-15', nextVisit: '2024-08-15', status: 'Ativo', email: 'ana.silva@email.com', phone: '(11) 98765-4321', dob: '1985-03-15', address: 'Rua Exemplo, 123, São Paulo - SP' },
-  { id: 'p002', name: 'Carlos Souza', lastVisit: '2024-07-10', nextVisit: '-', status: 'Ativo', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ' },
-  { id: 'p003', name: 'Beatriz Lima', lastVisit: '2024-06-20', nextVisit: '2024-07-25', status: 'Ativo', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG' },
-  { id: 'p004', name: 'Daniel Costa', lastVisit: '2024-07-18', nextVisit: '-', status: 'Inativo', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR' },
-  { id: 'p005', name: 'Fernanda Oliveira', lastVisit: '2024-07-01', nextVisit: '2024-08-01', status: 'Ativo', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS' },
+  { internalId: 'int-p001', id: 'p001', name: 'Ana Silva', lastVisit: '2024-07-15', nextVisit: '2024-08-15', status: 'Ativo', email: 'ana.silva@email.com', phone: '(11) 98765-4321', dob: '1985-03-15', address: 'Rua Exemplo, 123, São Paulo - SP' },
+  { internalId: 'int-p002', id: 'p002', name: 'Carlos Souza', lastVisit: '2024-07-10', nextVisit: '-', status: 'Ativo', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ' },
+  { internalId: 'int-p003', id: 'p003', name: 'Beatriz Lima', lastVisit: '2024-06-20', nextVisit: '2024-07-25', status: 'Ativo', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG' },
+  { internalId: 'int-p004', id: 'p004', name: 'Daniel Costa', lastVisit: '2024-07-18', nextVisit: '-', status: 'Inativo', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR' },
+  { internalId: 'int-p005', id: 'p005', name: 'Fernanda Oliveira', lastVisit: '2024-07-01', nextVisit: '2024-08-01', status: 'Ativo', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS' },
 ];
 
 type Patient = typeof initialPatients[0];
@@ -47,10 +49,10 @@ export default function PacientesPage() {
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [searchTerm, setSearchTerm] = useState('');
   const [isNewPatientDialogOpen, setIsNewPatientDialogOpen] = useState(false);
-  const { toast } = useToast(); // Initialize toast hook
+  const { toast } = useToast();
 
   // Form state for new patient
-  const [newPatient, setNewPatient] = useState<Partial<Patient>>({
+  const [newPatient, setNewPatient] = useState<Partial<Omit<Patient, 'internalId'>>>({ // Exclude internalId from form
     name: '',
     email: '',
     phone: '',
@@ -66,47 +68,60 @@ export default function PacientesPage() {
 
   const handleAddPatient = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // Basic validation example (in a real app, use a library like zod)
     if (!newPatient.name || !newPatient.email) {
        toast({ title: "Erro", description: "Nome e Email são obrigatórios.", variant: "destructive" });
       return;
     }
-    const newId = `p${(Math.random() * 1000).toFixed(0).padStart(3, '0')}`; // Simple ID generation
+    const newInternalId = `int-p${Date.now()}`; // More robust unique ID
+    const newPublicId = `p${(Math.random() * 1000).toFixed(0).padStart(3, '0')}`; // Keep simpler public ID for display/URL?
     const patientToAdd: Patient = {
-      id: newId,
+      internalId: newInternalId,
+      id: newPublicId,
       name: newPatient.name!,
       email: newPatient.email!,
       phone: newPatient.phone || '',
       dob: newPatient.dob || '',
       address: newPatient.address || '',
-      lastVisit: new Date().toISOString().split('T')[0], // Set current date as last visit
+      lastVisit: new Date().toISOString().split('T')[0],
       nextVisit: '-',
       status: newPatient.status || 'Ativo',
     };
     setPatients(prev => [patientToAdd, ...prev]);
-    setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo' }); // Reset form
-    setIsNewPatientDialogOpen(false); // Close dialog
-     toast({ title: "Sucesso!", description: `Paciente ${patientToAdd.name} adicionado.`, variant: "success" });
+    setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo' });
+    setIsNewPatientDialogOpen(false);
+    toast({ title: "Sucesso!", description: `Paciente ${patientToAdd.name} adicionado.`, variant: "success" });
     console.log("Novo paciente adicionado:", patientToAdd);
   };
 
-  const handleDeletePatient = (patientId: string, patientName: string) => {
-      setPatients(prev => prev.filter(p => p.id !== patientId));
+   const handleUpdatePatientStatus = (patientInternalId: string, newStatus: 'Ativo' | 'Inativo') => {
+      setPatients(prev => prev.map(p =>
+          p.internalId === patientInternalId ? { ...p, status: newStatus } : p
+      ));
+      const patientName = patients.find(p => p.internalId === patientInternalId)?.name || 'Paciente';
+      toast({
+          title: "Status Atualizado",
+          description: `Status de ${patientName} alterado para ${newStatus}.`,
+          variant: "success"
+      });
+      console.log(`Paciente ${patientInternalId} status alterado para ${newStatus}`);
+      // Note: In a real app, make an API call here.
+  };
+
+  const handleDeletePatient = (patientInternalId: string, patientName: string) => {
+      setPatients(prev => prev.filter(p => p.internalId !== patientInternalId));
       toast({
           title: "Paciente Excluído",
           description: `Paciente ${patientName} foi removido com sucesso.`,
-          variant: "destructive" // Changed variant to destructive
+          variant: "destructive"
       });
-      console.log("Paciente excluído:", patientId);
-      // Note: In a real application, this would involve an API call to delete the patient from the backend.
+      console.log("Paciente excluído:", patientInternalId);
+      // Note: In a real application, this would involve an API call.
   };
-
 
   const filteredPatients = patients.filter(patient =>
     patient.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Function to generate slug from name (matching the detail page logic)
   const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
 
   return (
@@ -129,7 +144,8 @@ export default function PacientesPage() {
             </DialogHeader>
             <form onSubmit={handleAddPatient}>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
+                {/* Form fields remain the same */}
+                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="name" className="text-right">
                     Nome*
                   </Label>
@@ -209,7 +225,7 @@ export default function PacientesPage() {
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle>Lista de Pacientes</CardTitle>
-          <CardDescription>Gerencie as informações dos seus pacientes.</CardDescription>
+          <CardDescription>Gerencie as informações e o status dos seus pacientes.</CardDescription> {/* Updated description */}
           <div className="pt-4">
             <div className="relative">
               <Search className="absolute left-2.5 top-3 h-4 w-4 text-muted-foreground" />
@@ -229,25 +245,65 @@ export default function PacientesPage() {
               <TableRow>
                 <TableHead>Nome</TableHead>
                 <TableHead className="hidden sm:table-cell">Última Consulta</TableHead>
-                <TableHead className="hidden md:table-cell">Próxima Consulta</TableHead>
+                {/* <TableHead className="hidden md:table-cell">Próxima Consulta</TableHead> */}
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredPatients.map((patient) => (
-                <TableRow key={patient.id}>
+                <TableRow key={patient.internalId}> {/* Use internalId for key */}
                   <TableCell className="font-medium">{patient.name}</TableCell>
                   <TableCell className="hidden sm:table-cell">{patient.lastVisit}</TableCell>
-                  <TableCell className="hidden md:table-cell">{patient.nextVisit}</TableCell>
-                  <TableCell>{patient.status}</TableCell>
-                  <TableCell className="text-right space-x-2"> {/* Added space-x-2 */}
-                    {/* Link the button to the patient detail page */}
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/pacientes/${generateSlug(patient.name)}`}>
-                         Ver Detalhes
-                      </Link>
+                  {/* <TableCell className="hidden md:table-cell">{patient.nextVisit}</TableCell> */}
+                   <TableCell>
+                     <Badge variant={patient.status === 'Ativo' ? 'default' : 'secondary'} className={patient.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}> {/* Conditional Badge styling */}
+                       {patient.status}
+                     </Badge>
+                   </TableCell>
+                   <TableCell className="text-right space-x-1"> {/* Adjusted spacing */}
+                    {/* View Details Button */}
+                    <Button asChild variant="ghost" size="icon" className="text-blue-600 hover:bg-blue-100 h-8 w-8" title="Ver Detalhes">
+                        <Link href={`/pacientes/${generateSlug(patient.name)}`}>
+                            <Eye className="h-4 w-4" />
+                        </Link>
                     </Button>
+
+                    {/* Activate/Inactivate Button with Confirmation */}
+                    <AlertDialog>
+                       <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`${
+                              patient.status === 'Ativo' ? 'text-orange-600 hover:bg-orange-100' : 'text-green-600 hover:bg-green-100'
+                            } h-8 w-8`}
+                            title={patient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
+                          >
+                            {patient.status === 'Ativo' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                               <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
+                               <AlertDialogDescription>
+                                  Tem certeza que deseja {patient.status === 'Ativo' ? 'inativar' : 'ativar'} o paciente <strong>{patient.name}</strong>?
+                                  {patient.status === 'Ativo' && ' Pacientes inativos não podem ser selecionados para novos agendamentos.'}
+                               </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                               <AlertDialogAction
+                                 className={patient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
+                                 onClick={() => handleUpdatePatientStatus(patient.internalId, patient.status === 'Ativo' ? 'Inativo' : 'Ativo')}
+                                >
+                                 {patient.status === 'Ativo' ? 'Inativar' : 'Ativar'}
+                               </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+
+
                     {/* Delete Button with Confirmation */}
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -259,14 +315,14 @@ export default function PacientesPage() {
                             <AlertDialogHeader>
                                 <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita.
+                                    Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita e removerá todo o histórico associado.
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                                 <AlertDialogAction
                                     className="bg-destructive hover:bg-destructive/90"
-                                    onClick={() => handleDeletePatient(patient.id, patient.name)}
+                                    onClick={() => handleDeletePatient(patient.internalId, patient.name)}
                                 >
                                     Excluir
                                 </AlertDialogAction>

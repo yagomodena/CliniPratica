@@ -1,10 +1,13 @@
 
-'use client'; // Add this directive
+'use client';
 
+import { useState } from 'react'; // Import useState
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { BarChart2, Users, CalendarClock, TrendingUp } from "lucide-react";
+import { BarChart2, Users, CalendarClock, TrendingUp, UsersRound, ClipboardList, Share2, Ban, LineChart as LineChartIcon } from "lucide-react"; // Added new icons
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Line, LineChart, ResponsiveContainer } from "recharts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select component
+import { Label } from '@/components/ui/label'; // Import Label
 
 // Placeholder data
 const monthlyAppointmentsData = [
@@ -26,8 +29,51 @@ const chartConfigReturn = {
     rate: { label: "Taxa Retorno (%)", color: "hsl(var(--chart-2))" },
 };
 
+// Define report types
+type ReportType = 'cancelados' | 'ativosInativos' | 'procedimentos' | 'origem';
 
 export default function RelatoriosPage() {
+  const [selectedReport, setSelectedReport] = useState<ReportType>('cancelados'); // Default to one of the new reports
+
+  const renderSelectedReportContent = () => {
+    switch (selectedReport) {
+      case 'cancelados':
+        return (
+          <div className="text-center py-16 text-muted-foreground">
+            <Ban className="mx-auto h-12 w-12 mb-4 opacity-50" />
+            <p>Relatório de Agendamentos Cancelados por Mês (em breve).</p>
+            <p className="text-sm">Visualize a quantidade de cancelamentos ao longo do tempo.</p>
+          </div>
+        );
+      case 'ativosInativos':
+        return (
+          <div className="text-center py-16 text-muted-foreground">
+            <UsersRound className="mx-auto h-12 w-12 mb-4 opacity-50" />
+            <p>Relatório de Pacientes Ativos vs. Inativos (em breve).</p>
+            <p className="text-sm">Acompanhe a proporção de pacientes ativos e inativos.</p>
+          </div>
+        );
+      case 'procedimentos':
+        return (
+          <div className="text-center py-16 text-muted-foreground">
+            <ClipboardList className="mx-auto h-12 w-12 mb-4 opacity-50" />
+            <p>Relatório de Procedimentos Mais Realizados (em breve).</p>
+            <p className="text-sm">Identifique os procedimentos mais comuns em seu consultório.</p>
+          </div>
+        );
+      case 'origem':
+        return (
+          <div className="text-center py-16 text-muted-foreground">
+            <Share2 className="mx-auto h-12 w-12 mb-4 opacity-50" />
+            <p>Relatório de Origem dos Pacientes (em breve).</p>
+            <p className="text-sm">Entenda como os pacientes chegam até você (indicação, redes sociais, etc.).</p>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-foreground">Relatórios</h1>
@@ -82,22 +128,38 @@ export default function RelatoriosPage() {
                 <CardDescription>Quantidade de novos pacientes cadastrados.</CardDescription>
             </CardHeader>
             <CardContent className="text-center py-16 text-muted-foreground">
-                <BarChart2 className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                <LineChartIcon className="mx-auto h-12 w-12 mb-4 opacity-50" /> {/* Changed icon */}
                 <p>Gráfico de novos pacientes (em breve).</p>
             </CardContent>
          </Card>
 
-         {/* Outro Relatório (Placeholder) */}
-         <Card className="shadow-md">
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2"><BarChart2 className="h-5 w-5"/> Outro Relatório</CardTitle>
-                <CardDescription>Placeholder para futuro relatório.</CardDescription>
-            </CardHeader>
-            <CardContent className="text-center py-16 text-muted-foreground">
-                 <BarChart2 className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                <p>Mais relatórios serão adicionados aqui.</p>
-            </CardContent>
-         </Card>
+        {/* Dynamic Report Section */}
+        <Card className="shadow-md md:col-span-1"> {/* Adjusted span */}
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><BarChart2 className="h-5 w-5"/> Relatórios Adicionais</CardTitle>
+            <CardDescription>Selecione um relatório para visualizar mais detalhes.</CardDescription>
+             <div className="pt-4 space-y-2">
+                 <Label htmlFor="report-select">Selecionar Relatório</Label>
+                <Select value={selectedReport} onValueChange={(value) => setSelectedReport(value as ReportType)}>
+                  <SelectTrigger id="report-select" className="w-full">
+                    <SelectValue placeholder="Selecione um relatório" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cancelados">Agendamentos Cancelados por Mês</SelectItem>
+                    <SelectItem value="ativosInativos">Pacientes Ativos vs. Inativos</SelectItem>
+                    <SelectItem value="procedimentos">Procedimentos Mais Realizados</SelectItem>
+                    <SelectItem value="origem">Origem dos Pacientes</SelectItem>
+                  </SelectContent>
+                </Select>
+             </div>
+          </CardHeader>
+          <CardContent className="min-h-[200px] flex items-center justify-center">
+             {/* Render the selected report's placeholder content */}
+             {renderSelectedReportContent()}
+          </CardContent>
+        </Card>
+
+        {/* Removed the original "Outro Relatório" placeholder card */}
 
       </div>
     </div>
