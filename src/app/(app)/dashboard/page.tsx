@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
+import { PlansModal } from '@/components/sections/plans-modal'; // Import the PlansModal component
 
 // --- Placeholder Data (Shared between Agenda and Pacientes) ---
 // Reusing patient data for alert selection
@@ -84,8 +85,11 @@ const todaysAppointments = [
     { time: "16:00", name: "Daniel Costa", slug: "daniel-costa" },
 ];
 
+// Define plan names (adjust if needed based on your plan data)
+type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
+
 // Mock plan status (replace with actual logic)
-const isFreePlan = true;
+const isFreePlan = true; // This logic determines if the warning card shows
 const monthlyBilling = isFreePlan ? null : 450.80; // Example value for paid plan
 
 export default function DashboardPage() {
@@ -95,6 +99,10 @@ export default function DashboardPage() {
   const [editingAlert, setEditingAlert] = useState<Alert | null>(null);
   const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo'));
   const { toast } = useToast();
+  const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
+
+  // Assume the current plan is Gratuito based on existing logic for the warning card
+  const [currentUserPlan, setCurrentUserPlan] = useState<PlanName>('Gratuito');
 
   const [alertForm, setAlertForm] = useState<AlertForm>({
     patientId: '',
@@ -202,6 +210,17 @@ export default function DashboardPage() {
    // Function to generate slug from name (matching the detail page logic)
    const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
 
+   // Handle plan selection from modal
+   const handleSelectPlan = (planName: PlanName) => {
+    // Simulate updating the user's plan
+    console.log("Updating plan to:", planName);
+    setCurrentUserPlan(planName); // Update the local state (important for modal re-renders)
+    // In a real app, trigger API call to update subscription
+    // Note: This doesn't change the 'isFreePlan' logic directly here,
+    // which controls the warning card. The dashboard might need a refresh
+    // or more complex state management to reflect plan changes immediately.
+  };
+
   const activeAlerts = alerts.filter(alert => alert.status === 'active');
 
 
@@ -225,8 +244,9 @@ export default function DashboardPage() {
             <p className="text-accent-foreground">
               Você está no plano gratuito - limite de 10 pacientes ativos.
             </p>
-            <Button size="sm" asChild>
-               <Link href="/#planos">Ver Planos</Link>
+            {/* Button now opens the modal */}
+            <Button size="sm" onClick={() => setIsPlansModalOpen(true)}>
+               Ver Planos
             </Button>
           </CardContent>
         </Card>
@@ -488,6 +508,14 @@ export default function DashboardPage() {
             </form>
             </DialogContent>
         </Dialog>
+
+        {/* Plans Modal */}
+         <PlansModal
+          isOpen={isPlansModalOpen}
+          onOpenChange={setIsPlansModalOpen}
+          currentPlanName={currentUserPlan}
+          onSelectPlan={handleSelectPlan}
+        />
 
     </div>
   );
