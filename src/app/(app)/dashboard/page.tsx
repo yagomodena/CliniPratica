@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Added useEffect
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil, X as XIcon } from "lucide-react"; // Added XIcon
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil, X as XIcon, Gift } from "lucide-react"; // Added XIcon, Gift
 import {
   ChartContainer,
   ChartTooltip,
@@ -27,14 +27,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
-import { PlansModal } from '@/components/sections/plans-modal'; // Import the PlansModal component
+import { PlansModal } from '@/components/sections/plans-modal';
+import { parseISO, getMonth, getDate } from 'date-fns'; // Added date-fns imports
 
 // --- Placeholder Data (Shared between Agenda and Pacientes) ---
 // Reusing patient data for alert selection
 const initialPatients = [
   { id: 'p001', name: 'Ana Silva', email: 'ana.silva@email.com', phone: '(11) 98765-4321', dob: '1985-03-15', address: 'Rua Exemplo, 123, São Paulo - SP', status: 'Ativo' },
   { id: 'p002', name: 'Carlos Souza', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ', status: 'Ativo' },
-  { id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo' },
+  { id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: new Date().toISOString().slice(0,10), address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo' }, // Beatriz's birthday is today for testing
   { id: 'p004', name: 'Daniel Costa', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR', status: 'Inativo' },
   { id: 'p005', name: 'Fernanda Oliveira', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS', status: 'Ativo' },
 ];
@@ -91,6 +92,7 @@ type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 // Mock plan status (replace with actual logic)
 const isFreePlan = true; // This logic determines if the warning card shows
 const monthlyBilling = isFreePlan ? null : 450.80; // Example value for paid plan
+type PatientForBirthday = typeof initialPatients[0];
 
 export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>(initialAlerts);
@@ -101,6 +103,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
   const [isPlanWarningVisible, setIsPlanWarningVisible] = useState(true); // State for plan warning visibility
+  const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
 
 
   // Assume the current plan is Gratuito based on existing logic for the warning card
@@ -110,6 +113,24 @@ export default function DashboardPage() {
     patientId: '',
     reason: '',
   });
+
+  useEffect(() => {
+    const todayDate = new Date();
+    const currentMonth = getMonth(todayDate); // 0-indexed
+    const currentDay = getDate(todayDate);
+
+    const todaysBirthdays = initialPatients.filter(patient => {
+      if (!patient.dob) return false;
+      try {
+        const dobDate = parseISO(patient.dob); // 'yyyy-MM-dd'
+        return getMonth(dobDate) === currentMonth && getDate(dobDate) === currentDay;
+      } catch (e) {
+        console.error("Error parsing DOB for birthday check:", patient.dob, e);
+        return false;
+      }
+    });
+    setBirthdayPatients(todaysBirthdays);
+  }, []); // Run once on mount
 
   const handleAlertFormInputChange = (field: keyof AlertForm, value: string) => {
     setAlertForm(prev => ({ ...prev, [field]: value }));
@@ -152,14 +173,14 @@ export default function DashboardPage() {
      toast({
          title: "Sucesso!",
          description: `Alerta adicionado para ${selectedPatient.name}.`,
-         variant: "success", // Use success variant
+         variant: "success",
      });
      console.log("New alert added:", newAlertEntry);
   };
 
   const handleOpenEditAlert = (alertToEdit: Alert) => {
       setEditingAlert(alertToEdit);
-      setAlertForm({ // Pre-fill form for editing
+      setAlertForm({ 
           patientId: alertToEdit.patientId,
           reason: alertToEdit.reason,
       });
@@ -190,12 +211,12 @@ export default function DashboardPage() {
      ));
 
      setEditingAlert(null);
-     setAlertForm({ patientId: '', reason: '' }); // Reset form
+     setAlertForm({ patientId: '', reason: '' }); 
      setIsEditAlertDialogOpen(false);
      toast({
          title: "Sucesso!",
          description: "Alerta atualizado com sucesso.",
-         variant: "success", // Use success variant
+         variant: "success", 
      });
      console.log("Alert updated:", editingAlert.id);
   };
@@ -209,18 +230,11 @@ export default function DashboardPage() {
      });
   };
 
-   // Function to generate slug from name (matching the detail page logic)
    const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
 
-   // Handle plan selection from modal
    const handleSelectPlan = (planName: PlanName) => {
-    // Simulate updating the user's plan
     console.log("Updating plan to:", planName);
-    setCurrentUserPlan(planName); // Update the local state (important for modal re-renders)
-    // In a real app, trigger API call to update subscription
-    // Note: This doesn't change the 'isFreePlan' logic directly here,
-    // which controls the warning card. The dashboard might need a refresh
-    // or more complex state management to reflect plan changes immediately.
+    setCurrentUserPlan(planName); 
   };
 
   const activeAlerts = alerts.filter(alert => alert.status === 'active');
@@ -230,14 +244,13 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-          {/* Add New Alert Dialog Trigger moved to card header */}
       </div>
 
 
       {isFreePlan && isPlanWarningVisible && (
         <Card className="bg-accent/20 border-accent shadow-md relative">
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <div className="flex items-center"> {/* Container for title and icon */}
+            <div className="flex items-center"> 
               <AlertCircle className="h-4 w-4 text-accent mr-2" />
               <CardTitle className="text-sm font-bold text-black">
                 Aviso de Plano
@@ -253,11 +266,10 @@ export default function DashboardPage() {
                 <XIcon className="h-4 w-4" />
             </Button>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-4 pt-2"> {/* Added pt-2 to CardContent */}
-            <p className="text-black text-sm"> {/* Adjusted text size */}
+          <CardContent className="flex items-center justify-between gap-4 pt-2"> 
+            <p className="text-black text-sm"> 
               Você está no plano gratuito - limite de 10 pacientes ativos.
             </p>
-            {/* Button now opens the modal */}
             <Button size="sm" onClick={() => setIsPlansModalOpen(true)}>
                Ver Planos
             </Button>
@@ -313,8 +325,33 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Aniversariantes do Dia Card */}
         <Card className="shadow-md">
-           {/* Card Header with Title and New Alert Button */}
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-1">
+               <Gift className="h-4 w-4 text-muted-foreground" />
+               Aniversariantes do Dia 🎂
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
+            {birthdayPatients.length > 0 ? (
+              birthdayPatients.map((patient) => (
+                <div key={patient.id} className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{patient.name}</span>
+                  <Link href={`/pacientes/${generateSlug(patient.name)}`} passHref>
+                    <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">Nenhum aniversariante hoje.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
              <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-muted-foreground" />
@@ -382,7 +419,6 @@ export default function DashboardPage() {
                 </DialogContent>
             </Dialog>
           </CardHeader>
-          {/* Card Content */}
           <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
              {activeAlerts.length > 0 ? (
               activeAlerts.map((alert) => (
@@ -394,7 +430,6 @@ export default function DashboardPage() {
                           <span className="text-muted-foreground">{alert.reason}</span>
                       </div>
                    </div>
-                   {/* Action Buttons: Edit and Resolve */}
                    <div className="flex items-center space-x-1 flex-shrink-0">
                         <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditAlert(alert)} title="Editar Alerta">
                             <Pencil className="h-4 w-4"/>
@@ -464,7 +499,6 @@ export default function DashboardPage() {
          </Card>
        </div>
 
-        {/* Edit Alert Dialog */}
         <Dialog open={isEditAlertDialogOpen} onOpenChange={setIsEditAlertDialogOpen}>
             <DialogContent className="sm:max-w-[480px]">
             <DialogHeader>
@@ -480,7 +514,7 @@ export default function DashboardPage() {
                     Paciente*
                     </Label>
                     <Select
-                        value={alertForm.patientId} // Use alertForm state here too
+                        value={alertForm.patientId} 
                         onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
                         required
                     >
@@ -503,7 +537,7 @@ export default function DashboardPage() {
                     </Label>
                     <Textarea
                     id="editAlertReason"
-                    value={alertForm.reason} // Use alertForm state here too
+                    value={alertForm.reason} 
                     onChange={(e) => handleAlertFormInputChange('reason', e.target.value)}
                     className="col-span-3"
                     rows={3}
@@ -522,7 +556,6 @@ export default function DashboardPage() {
             </DialogContent>
         </Dialog>
 
-        {/* Plans Modal */}
          <PlansModal
           isOpen={isPlansModalOpen}
           onOpenChange={setIsPlansModalOpen}
@@ -533,7 +566,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-
-
-
