@@ -235,15 +235,15 @@ export default function DashboardPage() {
       {isFreePlan && (
         <Card className="bg-accent/20 border-accent shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-accent-foreground">
-              Aviso de Plano
-            </CardTitle>
+          <CardTitle className="text-sm font-bold text-black">
+            Aviso de Plano
+          </CardTitle>
              <AlertCircle className="h-4 w-4 text-accent" />
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-4">
-            <p className="text-accent-foreground">
-              Você está no plano gratuito - limite de 10 pacientes ativos.
-            </p>
+          <p className="text-black">
+            Você está no plano gratuito - limite de 10 pacientes ativos.
+          </p>
             {/* Button now opens the modal */}
             <Button size="sm" onClick={() => setIsPlansModalOpen(true)}>
                Ver Planos
