@@ -18,7 +18,7 @@ export const plans: Plan[] = [
   {
     name: 'Gratuito',
     price: 'R$0',
-    priceDetail: 'para sempre',
+    priceDetail: ' para sempre',
     level: 0, // Base level
     features: [
       { text: 'Até 10 pacientes', included: true },
