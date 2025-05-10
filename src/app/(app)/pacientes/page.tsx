@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge'; // Import Badge
+import { format, isFuture, parseISO, startOfDay } from 'date-fns'; // Added isFuture, parseISO, startOfDay
 
 // Placeholder data
 // Added an 'internalId' to ensure stable keys even if 'id' changes or is reused by chance
@@ -50,6 +51,7 @@ export default function PacientesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isNewPatientDialogOpen, setIsNewPatientDialogOpen] = useState(false);
   const { toast } = useToast();
+  const today = startOfDay(new Date());
 
   // Form state for new patient
   const [newPatient, setNewPatient] = useState<Partial<Omit<Patient, 'internalId'>>>({ // Exclude internalId from form
@@ -69,9 +71,33 @@ export default function PacientesPage() {
   const handleAddPatient = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!newPatient.name || !newPatient.email) {
-       toast({ title: "Erro", description: "Nome e Email são obrigatórios.", variant: "destructive" });
+       toast({ title: "Erro de Validação", description: "Nome e Email são obrigatórios.", variant: "destructive" });
       return;
     }
+
+    // Validate Date of Birth
+    if (newPatient.dob) {
+      try {
+        const dobDate = parseISO(newPatient.dob);
+        if (isFuture(dobDate) || dobDate > today) { // Check if dob is in the future or later than today
+          toast({
+            title: "Data de Nascimento Inválida",
+            description: "A data de nascimento não pode ser uma data futura.",
+            variant: "destructive",
+          });
+          return;
+        }
+      } catch (error) {
+        toast({
+          title: "Formato de Data Inválido",
+          description: "Por favor, insira uma data de nascimento válida.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+
     const newInternalId = `int-p${Date.now()}`; // More robust unique ID
     const newPublicId = `p${(Math.random() * 1000).toFixed(0).padStart(3, '0')}`; // Keep simpler public ID for display/URL?
     const patientToAdd: Patient = {
@@ -102,7 +128,6 @@ export default function PacientesPage() {
       toast({
           title: "Status Atualizado",
           description: `Status de ${patientName} alterado para ${newStatus}.`,
-          //variant: "success"
           variant: isInactive ? "warning" : "success"
       });
       console.log(`Paciente ${patientInternalId} status alterado para ${newStatus}`);
@@ -198,6 +223,7 @@ export default function PacientesPage() {
                     value={newPatient.dob}
                     onChange={handleInputChange}
                     className="col-span-3"
+                    max={format(today, 'yyyy-MM-dd')} // Prevent future dates in native date picker
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
@@ -346,3 +372,4 @@ export default function PacientesPage() {
     </div>
   );
 }
+
