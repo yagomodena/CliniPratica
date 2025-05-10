@@ -243,10 +243,10 @@ export default function DashboardPage() {
                 Aviso de Plano
               </CardTitle>
             </div>
-             <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6 absolute top-2 right-2 text-accent hover:text-accent/80"
+             <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 absolute top-2 right-2 text-accent hover:bg-accent hover:text-accent-foreground"
                 onClick={() => setIsPlanWarningVisible(false)}
                 aria-label="Fechar aviso de plano"
               >
@@ -533,6 +533,7 @@ export default function DashboardPage() {
     </div>
   );
 }
+
 
 
 
