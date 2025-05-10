@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil, X as XIcon } from "lucide-react"; // Added XIcon
 import {
   ChartContainer,
   ChartTooltip,
@@ -100,6 +100,8 @@ export default function DashboardPage() {
   const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo'));
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
+  const [isPlanWarningVisible, setIsPlanWarningVisible] = useState(true); // State for plan warning visibility
+
 
   // Assume the current plan is Gratuito based on existing logic for the warning card
   const [currentUserPlan, setCurrentUserPlan] = useState<PlanName>('Gratuito');
@@ -232,18 +234,29 @@ export default function DashboardPage() {
       </div>
 
 
-      {isFreePlan && (
-        <Card className="bg-accent/20 border-accent shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-bold text-black">
-            Aviso de Plano
-          </CardTitle>
-             <AlertCircle className="h-4 w-4 text-accent" />
+      {isFreePlan && isPlanWarningVisible && (
+        <Card className="bg-accent/20 border-accent shadow-md relative">
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+            <div className="flex items-center"> {/* Container for title and icon */}
+              <AlertCircle className="h-4 w-4 text-accent mr-2" />
+              <CardTitle className="text-sm font-bold text-black">
+                Aviso de Plano
+              </CardTitle>
+            </div>
+             <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 absolute top-2 right-2 text-accent hover:text-accent/80"
+                onClick={() => setIsPlanWarningVisible(false)}
+                aria-label="Fechar aviso de plano"
+              >
+                <XIcon className="h-4 w-4" />
+            </Button>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-4">
-          <p className="text-black">
-            Você está no plano gratuito - limite de 10 pacientes ativos.
-          </p>
+          <CardContent className="flex items-center justify-between gap-4 pt-2"> {/* Added pt-2 to CardContent */}
+            <p className="text-black text-sm"> {/* Adjusted text size */}
+              Você está no plano gratuito - limite de 10 pacientes ativos.
+            </p>
             {/* Button now opens the modal */}
             <Button size="sm" onClick={() => setIsPlansModalOpen(true)}>
                Ver Planos
@@ -520,5 +533,6 @@ export default function DashboardPage() {
     </div>
   );
 }
+
 
 
