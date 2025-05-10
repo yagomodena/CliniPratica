@@ -51,7 +51,7 @@ export default function LoginPage() {
           </div>
            <div className="text-center text-sm">
             <Link href="/" className="font-medium text-primary hover:underline">
-              &larr; Voltar para a Landing Page
+              &larr; Voltar para a página inicial
             </Link>
           </div>
         </CardContent>
