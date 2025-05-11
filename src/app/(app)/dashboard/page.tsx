@@ -323,33 +323,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground text-center py-8">Nenhum agendamento para hoje.</p>
             )}
           </CardContent>
-        </Card>
-
-        {/* Aniversariantes do Dia Card */}
-        <Card className="shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-1">
-               <Gift className="h-4 w-4 text-muted-foreground" />
-               Aniversariantes do Dia 🎂
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
-            {birthdayPatients.length > 0 ? (
-              birthdayPatients.map((patient) => (
-                <div key={patient.id} className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{patient.name}</span>
-                  <Link href={`/pacientes/${generateSlug(patient.name)}`} passHref>
-                    <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-8">Nenhum aniversariante hoje.</p>
-            )}
-          </CardContent>
-        </Card>
+        </Card>        
 
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -442,6 +416,32 @@ export default function DashboardPage() {
               ))
             ) : (
                 <p className="text-sm text-muted-foreground text-center py-8">Nenhum alerta ativo.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Aniversariantes do Dia Card */}
+        <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-1">
+               <Gift className="h-4 w-4 text-muted-foreground" />
+               Aniversariantes do Dia 🎂
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
+            {birthdayPatients.length > 0 ? (
+              birthdayPatients.map((patient) => (
+                <div key={patient.id} className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{patient.name}</span>
+                  <Link href={`/pacientes/${generateSlug(patient.name)}`} passHref>
+                    <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">Nenhum aniversariante hoje.</p>
             )}
           </CardContent>
         </Card>
