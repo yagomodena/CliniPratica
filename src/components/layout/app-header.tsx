@@ -14,7 +14,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/icons/logo';
-import { Menu, LayoutDashboard, Users, Calendar, MessageSquare, BarChart, Settings, User, CreditCard, LogOut } from 'lucide-react';
+import { Menu, LayoutDashboard, Users, Calendar, MessageSquare, BarChart, Settings, User, CreditCard, LogOut, Landmark } from 'lucide-react'; // Added Landmark
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -24,6 +24,7 @@ const navLinks = [
   { href: '/pacientes', label: 'Pacientes', icon: Users },
   { href: '/agenda', label: 'Agenda', icon: Calendar },
   { href: '/mensagens', label: 'Mensagens', icon: MessageSquare },
+  { href: '/financeiro', label: 'Financeiro', icon: Landmark }, // Added Financeiro link
   { href: '/relatorios', label: 'Relatórios', icon: BarChart },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
