@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, FormEvent, useEffect } from 'react';
@@ -443,11 +444,9 @@ export default function AgendaPage() {
                       >
                         <Edit className="h-4 w-4" />
                     </Button>
-                    <AlertDialogTrigger asChild>
-                       <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" onClick={() => handleOpenDeleteDialog(appt, formattedDateKey)} title="Excluir Agendamento">
-                         <Trash2 className="h-4 w-4" />
-                       </Button>
-                    </AlertDialogTrigger>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" onClick={() => handleOpenDeleteDialog(appt, formattedDateKey)} title="Excluir Agendamento">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                     <Button asChild variant="ghost" size="sm" className="h-8">
                       <Link href={`/pacientes/${generateSlug(appt.patientName)}`}>Ver Paciente</Link>
                     </Button>
@@ -542,3 +541,5 @@ export default function AgendaPage() {
     </div>
   );
 }
+
+    
