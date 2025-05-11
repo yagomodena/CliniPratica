@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar"; // ShadCN Calendar
-import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual } from 'date-fns';
+import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Dialog,
@@ -63,7 +63,7 @@ type AppointmentsData = {
 
 // Initial appointment data
 const initialAppointments: AppointmentsData = {
-  [format(addDays(new Date(), 1), 'yyyy-MM-dd')]: [ // Use a future date for initial data
+  [format(addDays(new Date(), 1), 'yyyy-MM-dd')]: [ 
     { id: 'appt-1', time: '09:00', patientId: 'p001', patientName: 'Ana Silva', type: 'Consulta', notes: 'Consulta inicial' },
     { id: 'appt-2', time: '10:30', patientId: 'p002', patientName: 'Carlos Souza', type: 'Retorno' },
   ],
@@ -81,18 +81,20 @@ type AppointmentFormValues = {
 }
 
 export default function AgendaPage() {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [clientToday, setClientToday] = useState<Date | undefined>(undefined);
+  const [clientNow, setClientNow] = useState<Date | undefined>(undefined);
+
   const [appointments, setAppointments] = useState<AppointmentsData>(initialAppointments);
   const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo'));
   const { toast } = useToast();
-  const today = startOfDay(new Date());
 
   // State for New Appointment Dialog
   const [isNewAppointmentDialogOpen, setIsNewAppointmentDialogOpen] = useState(false);
   const [newAppointmentForm, setNewAppointmentForm] = useState<AppointmentFormValues>({
     patientId: '',
     type: 'Consulta',
-    date: selectedDate ? format(selectedDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+    date: '', // Initialize empty, will be set in useEffect
     time: '',
     notes: '',
   });
@@ -108,13 +110,22 @@ export default function AgendaPage() {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [appointmentToDeleteInfo, setAppointmentToDeleteInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
 
+  useEffect(() => {
+    const now = new Date();
+    const todayForClient = startOfDay(now);
+
+    setSelectedDate(now);
+    setClientToday(todayForClient);
+    setClientNow(now);
+    
+    setNewAppointmentForm(prev => ({ ...prev, date: format(now, 'yyyy-MM-dd') }));
+  }, []);
+
 
   useEffect(() => {
     if (selectedDate) {
       const formattedDate = format(selectedDate, 'yyyy-MM-dd');
       setNewAppointmentForm(prev => ({ ...prev, date: formattedDate }));
-      // If editing, and selectedDate changes, update edit form's date only if it's a new selection, not from opening dialog
-      // This might be complex, for now, edit dialog will handle its own date state primarily
     }
   }, [selectedDate]);
 
@@ -146,9 +157,9 @@ export default function AgendaPage() {
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    const now = new Date();
-    now.setSeconds(0, 0); // Ignore seconds/ms for comparison
-    return isBefore(startOfDay(dateTime), today) || (isToday(dateTime) && isBefore(dateTime, now));
+    if (!clientToday || !clientNow) return true; // Default to past if client dates not ready
+    return isBefore(startOfDay(dateTime), clientToday) || 
+           (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow));
   };
 
   const isTimeSlotOccupied = (dateKey: string, time: string, excludingAppointmentId?: string): boolean => {
@@ -198,11 +209,12 @@ export default function AgendaPage() {
       return { ...prev, [date]: updatedDayAppointments };
     });
 
-    setNewAppointmentForm({
+    setNewAppointmentForm(prev => ({
+      ...prev,
       patientId: '', type: 'Consulta',
-      date: selectedDate ? format(selectedDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
       time: '', notes: '',
-    });
+      // Keep date as is, it's updated by selectedDate effect
+    }));
     setIsNewAppointmentDialogOpen(false);
     toast({ title: "Sucesso!", description: "Agendamento adicionado.", variant: "success" });
   };
@@ -234,7 +246,6 @@ export default function AgendaPage() {
     const appointmentDateTime = validateAppointmentDateTime(newDateKey, time);
     if (!appointmentDateTime) return;
     
-    // Allow saving if it's the original date/time OR it's not in the past
     const isOriginalDateTime = originalDateKey === newDateKey && originalAppointment.time === time;
     if (!isOriginalDateTime && isDateTimeInPast(appointmentDateTime)) {
       toast({ title: "Data/Hora Inválida", description: "Não é possível mover agendamento para datas ou horários passados.", variant: "destructive" });
@@ -263,7 +274,6 @@ export default function AgendaPage() {
 
     setAppointments(prev => {
       const newAppointmentsData = { ...prev };
-      // Remove from original date list
       const oldDayAppointments = (newAppointmentsData[originalDateKey] || []).filter(appt => appt.id !== originalAppointment.id);
       if (oldDayAppointments.length > 0) {
         newAppointmentsData[originalDateKey] = oldDayAppointments;
@@ -271,7 +281,6 @@ export default function AgendaPage() {
         delete newAppointmentsData[originalDateKey];
       }
       
-      // Add to new date list (or updated in original if date didn't change)
       const newDayAppointments = [...(newAppointmentsData[newDateKey] || []), updatedAppointment].sort((a,b) => a.time.localeCompare(b.time));
       newAppointmentsData[newDateKey] = newDayAppointments;
       return newAppointmentsData;
@@ -305,13 +314,28 @@ export default function AgendaPage() {
     toast({ title: "Agendamento Excluído", description: "O agendamento foi removido.", variant: "success" });
   };
 
-  const goToPreviousDay = () => setSelectedDate(prev => prev ? subDays(prev, 1) : subDays(today, 1));
-  const goToNextDay = () => setSelectedDate(prev => prev ? addDays(prev, 1) : addDays(today, 1));
+  const goToPreviousDay = () => setSelectedDate(prev => prev ? subDays(prev, 1) : (clientToday ? subDays(clientToday, 1) : undefined));
+  const goToNextDay = () => setSelectedDate(prev => prev ? addDays(prev, 1) : (clientToday ? addDays(clientToday, 1) : undefined));
+
+  if (!clientToday || !selectedDate || !clientNow) {
+    return (
+      <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
+        <p className="text-xl text-muted-foreground">Carregando agenda...</p>
+      </div>
+    );
+  }
 
   const formattedDateKey = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
   const todaysAppointments: Appointment[] = appointments[formattedDateKey] || [];
   const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
-  const isSelectedDatePast = selectedDate ? isBefore(startOfDay(selectedDate), today) : false;
+  const isSelectedDatePast = selectedDate && clientToday ? isBefore(startOfDay(selectedDate), clientToday) : false;
+  
+  const apptDateTimeForEditButton = (apptTime: string) => formattedDateKey ? parse(`${formattedDateKey} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date()) : null;
+  const disableEditButton = (apptTime: string) => {
+    const apptDT = apptDateTimeForEditButton(apptTime);
+    return !clientNow || !apptDT || isBefore(apptDT, clientNow);
+  };
+
 
   return (
     <div className="space-y-6">
@@ -353,7 +377,7 @@ export default function AgendaPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newDate" className="text-right">Data*</Label>
-                <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="col-span-3" min={format(today, 'yyyy-MM-dd')} required />
+                <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newTime" className="text-right">Hora*</Label>
@@ -409,8 +433,15 @@ export default function AgendaPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditDialog(appt, formattedDateKey)} title="Editar Agendamento" disabled={isBefore(parse(`${formattedDateKey} ${appt.time}`, 'yyyy-MM-dd HH:mm', new Date()), new Date()) && !isToday(parse(formattedDateKey, 'yyyy-MM-dd', new Date()))}>
-                      <Edit className="h-4 w-4" />
+                     <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-blue-500 hover:bg-blue-100" 
+                        onClick={() => handleOpenEditDialog(appt, formattedDateKey)} 
+                        title="Editar Agendamento" 
+                        disabled={disableEditButton(appt.time)}
+                      >
+                        <Edit className="h-4 w-4" />
                     </Button>
                     <AlertDialogTrigger asChild>
                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" onClick={() => handleOpenDeleteDialog(appt, formattedDateKey)} title="Excluir Agendamento">
@@ -467,7 +498,15 @@ export default function AgendaPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="editDate" className="text-right">Data*</Label>
-                <Input id="editDate" type="date" value={editAppointmentForm.date} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)} className="col-span-3" min={editingAppointmentInfo && isToday(parse(editingAppointmentInfo.dateKey, 'yyyy-MM-dd', new Date())) ? format(today, 'yyyy-MM-dd') : undefined} required />
+                <Input 
+                    id="editDate" 
+                    type="date" 
+                    value={editAppointmentForm.date} 
+                    onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)} 
+                    className="col-span-3" 
+                    min={clientToday && editingAppointmentInfo && isSameDay(parse(editingAppointmentInfo.dateKey, 'yyyy-MM-dd', new Date()), clientToday) ? format(clientToday, 'yyyy-MM-dd') : undefined} 
+                    required 
+                />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="editTime" className="text-right">Hora*</Label>
@@ -487,7 +526,6 @@ export default function AgendaPage() {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
-        {/* AlertDialogTrigger is handled by direct call to setIsDeleteConfirmOpen */}
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
@@ -504,5 +542,3 @@ export default function AgendaPage() {
     </div>
   );
 }
-
-    
