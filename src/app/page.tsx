@@ -1,6 +1,8 @@
+
 import { Header } from '@/components/layout/header';
 import { HeroSection } from '@/components/sections/hero-section';
 import { BenefitsSection } from '@/components/sections/benefits-section';
+import { NichesSection } from '@/components/sections/niches-section'; // Import NichesSection
 import { PlansSection } from '@/components/sections/plans-section';
 import { FaqSection } from '@/components/sections/faq-section';
 import { ContactSection } from '@/components/sections/contact-section';
@@ -13,6 +15,7 @@ export default function Home() {
       <main className="flex-grow">
         <HeroSection />
         <BenefitsSection />
+        <NichesSection /> {/* Add NichesSection here */}
         <PlansSection />
         <FaqSection />
         <ContactSection />

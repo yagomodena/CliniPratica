@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -8,6 +9,7 @@ import { Menu, X } from 'lucide-react';
 
 const navItems = [
   { label: 'Benefícios', href: '#beneficios' },
+  { label: 'Nichos', href: '#nichos' }, // Added Nichos link
   { label: 'Planos', href: '#planos' },
   { label: 'FAQ', href: '#faq' },
   { label: 'Contato', href: '#contato' },
