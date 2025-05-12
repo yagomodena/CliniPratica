@@ -14,6 +14,7 @@ const niches: Niche[] = [
   { emoji: '🦷', name: 'Odontologia' },
   { emoji: '🗣️', name: 'Fonoaudiologia' },
   { emoji: '💆', name: 'Estética e Terapias' },
+  { emoji: '🧠', name: 'Terapia Ocupacional' },
   { emoji: '➕', name: 'E muitos outros!' },
 ];
 
@@ -48,3 +49,4 @@ export function NichesSection() {
     </section>
   );
 }
+
