@@ -1,11 +1,11 @@
 
 'use client';
 
-import React, { useState, FormEvent, useEffect } from 'react';
+import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil } from "lucide-react"; // Added Plus, Search, Pencil
-import { Calendar } from "@/components/ui/calendar"; // ShadCN Calendar
+import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { Switch } from '@/components/ui/switch';
 
 
 // --- Placeholder Data (Shared between Agenda and Pacientes) ---
@@ -53,7 +54,7 @@ type Appointment = {
   time: string;
   patientId: string;
   patientName: string;
-  type: string;
+  type: string; // This will store the name of the appointment type
   notes?: string;
 };
 
@@ -74,13 +75,24 @@ const initialAppointments: AppointmentsData = {
 
 type AppointmentFormValues = {
   patientId: string;
-  type: string;
+  type: string; // Stores the name of the appointment type
   date: string;
   time: string;
   notes: string;
 }
 
-const initialAppointmentTypes = ['Consulta', 'Retorno', 'Avaliação', 'Outro'];
+// Structure for appointment types
+type AppointmentTypeObject = {
+  name: string;
+  status: 'active' | 'inactive';
+};
+
+const initialAppointmentTypesData: AppointmentTypeObject[] = [
+  { name: 'Consulta', status: 'active' },
+  { name: 'Retorno', status: 'active' },
+  { name: 'Avaliação', status: 'active' },
+  { name: 'Outro', status: 'active' },
+];
 
 export default function AgendaPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -92,22 +104,26 @@ export default function AgendaPage() {
   const { toast } = useToast();
 
   // State for Appointment Types
-  const [appointmentTypes, setAppointmentTypes] = useState<string[]>(initialAppointmentTypes);
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>(initialAppointmentTypesData);
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
 
   // State for Manage Appointment Types Dialog
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
   const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
-  const [typeToDeleteConfirm, setTypeToDeleteConfirm] = useState<string | null>(null);
+  const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
 
+
+  const getFirstActiveTypeName = useCallback(() => {
+    return appointmentTypes.find(t => t.status === 'active')?.name || '';
+  }, [appointmentTypes]);
 
   // State for New Appointment Dialog
   const [isNewAppointmentDialogOpen, setIsNewAppointmentDialogOpen] = useState(false);
   const [newAppointmentForm, setNewAppointmentForm] = useState<AppointmentFormValues>({
     patientId: '',
-    type: 'Consulta',
-    date: '', 
+    type: getFirstActiveTypeName(),
+    date: '',
     time: '',
     notes: '',
   });
@@ -116,12 +132,13 @@ export default function AgendaPage() {
   const [isEditAppointmentDialogOpen, setIsEditAppointmentDialogOpen] = useState(false);
   const [editingAppointmentInfo, setEditingAppointmentInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
   const [editAppointmentForm, setEditAppointmentForm] = useState<AppointmentFormValues>({
-    patientId: '', type: 'Consulta', date: '', time: '', notes: '',
+    patientId: '', type: getFirstActiveTypeName(), date: '', time: '', notes: '',
   });
 
   // State for Delete Confirmation Dialog (for appointments)
   const [isDeleteApptConfirmOpen, setIsDeleteApptConfirmOpen] = useState(false);
   const [appointmentToDeleteInfo, setAppointmentToDeleteInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
+
 
   useEffect(() => {
     const now = new Date();
@@ -131,8 +148,13 @@ export default function AgendaPage() {
     setClientToday(todayForClient);
     setClientNow(now);
 
-    setNewAppointmentForm(prev => ({ ...prev, date: format(now, 'yyyy-MM-dd') }));
-  }, []);
+    setNewAppointmentForm(prev => ({
+        ...prev,
+        date: format(now, 'yyyy-MM-dd'),
+        type: getFirstActiveTypeName() // Ensure type is set on mount
+    }));
+     setEditAppointmentForm(prev => ({ ...prev, type: getFirstActiveTypeName() }));
+  }, [getFirstActiveTypeName]);
 
 
   useEffect(() => {
@@ -170,7 +192,7 @@ export default function AgendaPage() {
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    if (!clientToday || !clientNow) return true; 
+    if (!clientToday || !clientNow) return true;
     return isBefore(startOfDay(dateTime), clientToday) ||
            (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow));
   };
@@ -188,6 +210,12 @@ export default function AgendaPage() {
       toast({ title: "Erro de Validação", description: "Paciente, Data, Hora e Tipo são obrigatórios.", variant: "destructive" });
       return;
     }
+     const activeAppointmentType = appointmentTypes.find(t => t.name === type && t.status === 'active');
+    if (!activeAppointmentType) {
+        toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo.", variant: "destructive" });
+        return;
+    }
+
 
     const appointmentDateTime = validateAppointmentDateTime(date, time);
     if (!appointmentDateTime) return;
@@ -224,7 +252,7 @@ export default function AgendaPage() {
 
     setNewAppointmentForm(prev => ({
       ...prev,
-      patientId: '', type: appointmentTypes.includes('Consulta') ? 'Consulta' : (appointmentTypes[0] || ''), 
+      patientId: '', type: getFirstActiveTypeName(),
       time: '', notes: '',
     }));
     setIsNewAppointmentDialogOpen(false);
@@ -253,6 +281,11 @@ export default function AgendaPage() {
     if (!patientId || !newDateKey || !time || !type) {
       toast({ title: "Erro de Validação", description: "Paciente, Data, Hora e Tipo são obrigatórios.", variant: "destructive" });
       return;
+    }
+     const activeAppointmentType = appointmentTypes.find(t => t.name === type && t.status === 'active');
+    if (!activeAppointmentType) {
+        toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo.", variant: "destructive" });
+        return;
     }
 
     const appointmentDateTime = validateAppointmentDateTime(newDateKey, time);
@@ -335,27 +368,27 @@ export default function AgendaPage() {
         toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
         return;
     }
-    if (appointmentTypes.some(type => type.toLowerCase() === trimmedType.toLowerCase())) {
+    if (appointmentTypes.some(type => type.name.toLowerCase() === trimmedType.toLowerCase())) {
         toast({ title: "Tipo Duplicado", description: `O tipo "${trimmedType}" já existe.`, variant: "destructive" });
         return;
     }
-    const newTypes = [...appointmentTypes, trimmedType].sort();
+    const newTypeObject: AppointmentTypeObject = { name: trimmedType, status: 'active' };
+    const newTypes = [...appointmentTypes, newTypeObject].sort((a, b) => a.name.localeCompare(b.name));
     setAppointmentTypes(newTypes);
     setNewCustomTypeName('');
     setIsAddTypeDialogOpen(false);
-    
-    // Update form type if it was the default or only option
-    if (newAppointmentForm.type === '' || appointmentTypes.length === 0) {
+
+    if (newAppointmentForm.type === '' || !appointmentTypes.find(t=>t.name === newAppointmentForm.type && t.status === 'active')) {
         setNewAppointmentForm(prev => ({ ...prev, type: trimmedType }));
     }
-     if (editAppointmentForm.type === '' || appointmentTypes.length === 0) {
+     if (editAppointmentForm.type === '' || !appointmentTypes.find(t=>t.name === editAppointmentForm.type && t.status === 'active')) {
         setEditAppointmentForm(prev => ({ ...prev, type: trimmedType }));
     }
-    
+
     toast({ title: "Sucesso", description: `Tipo "${trimmedType}" adicionado.`, variant: "success" });
   };
 
-  const handleSaveEditedType = () => {
+  const handleSaveEditedTypeName = () => {
     if (!editingTypeInfo) return;
     const { originalName, currentName } = editingTypeInfo;
     const newNameTrimmed = currentName.trim();
@@ -364,26 +397,24 @@ export default function AgendaPage() {
       toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
       return;
     }
-    if (newNameTrimmed.toLowerCase() !== originalName.toLowerCase() && appointmentTypes.some(type => type.toLowerCase() === newNameTrimmed.toLowerCase())) {
+    if (newNameTrimmed.toLowerCase() !== originalName.toLowerCase() && appointmentTypes.some(type => type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
 
-    setAppointmentTypes(prevTypes => prevTypes.map(t => t === originalName ? newNameTrimmed : t).sort());
-    
-    // Update type in active forms if it was the one being edited
+    setAppointmentTypes(prevTypes => prevTypes.map(t => t.name === originalName ? { ...t, name: newNameTrimmed } : t).sort((a,b) => a.name.localeCompare(b.name)));
+
     if (newAppointmentForm.type === originalName) {
       setNewAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
     }
     if (editAppointmentForm.type === originalName) {
       setEditAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
     }
-    
-    // Update type in existing appointments
+
     setAppointments(prevAppointments => {
         const updated = { ...prevAppointments };
         for (const dateKey in updated) {
-            updated[dateKey] = updated[dateKey].map(appt => 
+            updated[dateKey] = updated[dateKey].map(appt =>
                 appt.type === originalName ? { ...appt, type: newNameTrimmed } : appt
             );
         }
@@ -391,31 +422,49 @@ export default function AgendaPage() {
     });
 
     setEditingTypeInfo(null);
-    toast({ title: "Sucesso", description: `Tipo "${originalName}" atualizado para "${newNameTrimmed}".`, variant: "success" });
+    toast({ title: "Sucesso", description: `Nome do tipo "${originalName}" atualizado para "${newNameTrimmed}".`, variant: "success" });
   };
 
-  const handleDeleteType = () => {
-    if (!typeToDeleteConfirm) return;
-    const typeName = typeToDeleteConfirm;
+  const handleToggleTypeStatus = (typeName: string) => {
+    const typeToToggle = appointmentTypes.find(t => t.name === typeName);
+    if (!typeToToggle) return;
 
-    const newTypes = appointmentTypes.filter(t => t !== typeName);
-    setAppointmentTypes(newTypes);
+    const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
 
-    // If the deleted type was selected in a form, reset it
-    const defaultType = newTypes.length > 0 ? newTypes[0] : (initialAppointmentTypes.includes('Consulta') ? 'Consulta' : (initialAppointmentTypes[0] || ''));
-    if (newAppointmentForm.type === typeName) {
-      setNewAppointmentForm(prev => ({ ...prev, type: defaultType }));
+    // Prevent deactivating the last active type
+    if (newStatus === 'inactive') {
+      const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
+      if (activeTypesCount <= 1) {
+        toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
+        return;
+      }
     }
-    if (editAppointmentForm.type === typeName) {
-      setEditAppointmentForm(prev => ({ ...prev, type: defaultType }));
+
+    setAppointmentTypes(prevTypes =>
+      prevTypes.map(t =>
+        t.name === typeName ? { ...t, status: newStatus } : t
+      ).sort((a, b) => a.name.localeCompare(b.name))
+    );
+
+    if (newStatus === 'inactive') {
+      const firstActiveTypeName = getFirstActiveTypeName();
+      if (newAppointmentForm.type === typeName) {
+        setNewAppointmentForm(prev => ({ ...prev, type: firstActiveTypeName }));
+      }
+      if (editAppointmentForm.type === typeName) {
+        setEditAppointmentForm(prev => ({ ...prev, type: firstActiveTypeName }));
+      }
     }
 
-    // Optionally, handle appointments that used this type (e.g., reassign or leave as is)
-    // For now, existing appointments will retain the deleted type string.
-
-    setTypeToDeleteConfirm(null);
-    toast({ title: "Tipo Excluído", description: `O tipo "${typeName}" foi removido.`, variant: "success" });
+    toast({
+      title: "Status Alterado",
+      description: `O tipo "${typeName}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`,
+      variant: "success"
+    });
+    setTypeToToggleStatusConfirm(null); // Close if a confirmation dialog was open for this
   };
+
+  const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
 
 
   if (!clientToday || !selectedDate || !clientNow) {
@@ -442,7 +491,12 @@ export default function AgendaPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-foreground">Agenda</h1>
-        <Dialog open={isNewAppointmentDialogOpen} onOpenChange={setIsNewAppointmentDialogOpen}>
+        <Dialog open={isNewAppointmentDialogOpen} onOpenChange={(isOpen) => {
+            setIsNewAppointmentDialogOpen(isOpen);
+            if(isOpen && newAppointmentForm.type === '' && activeAppointmentTypes.length > 0) {
+                 setNewAppointmentForm(prev => ({ ...prev, type: activeAppointmentTypes[0].name }));
+            }
+        }}>
           <DialogTrigger asChild>
             <Button disabled={isSelectedDatePast} title={isSelectedDatePast ? "Não é possível agendar em datas passadas" : "Novo Agendamento"}>
               <PlusCircle className="mr-2 h-4 w-4" /> Novo Agendamento
@@ -470,8 +524,8 @@ export default function AgendaPage() {
                     <Select value={newAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'type', value)} required>
                     <SelectTrigger id="newType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                     <SelectContent>
-                        {appointmentTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
-                         {appointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo cadastrado</SelectItem>}
+                        {activeAppointmentTypes.map((type) => <SelectItem key={type.name} value={type.name}>{type.name}</SelectItem>)}
+                         {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
                     </SelectContent>
                     </Select>
                     <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo">
@@ -595,8 +649,8 @@ export default function AgendaPage() {
                     <Select value={editAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'type', value)} required>
                     <SelectTrigger id="editType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                     <SelectContent>
-                        {appointmentTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
-                        {appointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo cadastrado</SelectItem>}
+                        {activeAppointmentTypes.map((type) => <SelectItem key={type.name} value={type.name}>{type.name}</SelectItem>)}
+                        {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
                     </SelectContent>
                     </Select>
                     <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo">
@@ -663,34 +717,44 @@ export default function AgendaPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle>
-            <DialogDescription>Edite ou remova os tipos de atendimento existentes.</DialogDescription>
+            <DialogDescription>Edite ou altere o status dos tipos de atendimento.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
-              <div key={type} className="flex items-center justify-between p-2 border rounded-md">
-                {editingTypeInfo?.originalName === type ? (
-                  <div className="flex-grow flex items-center gap-2">
+              <div key={type.name} className="flex items-center justify-between p-2 border rounded-md">
+                {editingTypeInfo?.originalName === type.name ? (
+                  <div className="flex-grow flex items-center gap-2 mr-2">
                     <Input
                       value={editingTypeInfo.currentName}
                       onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)}
                       className="h-8"
                     />
-                    <Button size="icon" className="h-8 w-8" onClick={handleSaveEditedType}><Save className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo(null)}><X className="h-4 w-4" /></Button>
+                    <Button size="icon" className="h-8 w-8" onClick={handleSaveEditedTypeName} title="Salvar Nome"><Save className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo(null)} title="Cancelar Edição"><X className="h-4 w-4" /></Button>
                   </div>
                 ) : (
-                  <>
-                    <span className="flex-grow">{type}</span>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo({ originalName: type, currentName: type })} title="Editar Tipo">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/80" onClick={() => setTypeToDeleteConfirm(type)} title="Excluir Tipo" disabled={appointmentTypes.length <= 1}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </>
+                  <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                 )}
+                <div className="flex gap-1 items-center ml-auto">
+                  {editingTypeInfo?.originalName !== type.name && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo({ originalName: type.name, currentName: type.name })} title="Editar Nome">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Switch
+                    checked={type.status === 'active'}
+                    onCheckedChange={() => {
+                        const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
+                        if (type.status === 'active' && activeTypesCount <= 1) {
+                          toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
+                          return;
+                        }
+                        setTypeToToggleStatusConfirm(type);
+                    }}
+                    aria-label={`Status do tipo ${type.name}`}
+                    className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" /* Example custom colors */
+                  />
+                </div>
               </div>
             ))}
             {appointmentTypes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum tipo cadastrado.</p>}
@@ -701,19 +765,25 @@ export default function AgendaPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Appointment Type Confirmation Dialog */}
-      <AlertDialog open={!!typeToDeleteConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToDeleteConfirm(null)}>
+      {/* Confirm Toggle Appointment Type Status Dialog */}
+      <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Exclusão de Tipo</AlertDialogTitle>
+            <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir o tipo "{typeToDeleteConfirm}"? Esta ação não pode ser desfeita.
-              Agendamentos existentes com este tipo não serão alterados, mas o tipo não estará mais disponível para seleção.
+              Tem certeza que deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} o tipo "{typeToToggleStatusConfirm?.name}"?
+              {typeToToggleStatusConfirm?.status === 'active' && " Se desativado, não estará mais disponível para novos agendamentos, mas os existentes não serão alterados."}
+              {typeToToggleStatusConfirm?.status === 'inactive' && " Se ativado, estará disponível para novos agendamentos."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setTypeToDeleteConfirm(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteType} className="bg-destructive hover:bg-destructive/90">Excluir Tipo</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm.name)}
+              className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}
+            >
+              {typeToToggleStatusConfirm?.status === 'active' ? 'Desativar Tipo' : 'Ativar Tipo'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
