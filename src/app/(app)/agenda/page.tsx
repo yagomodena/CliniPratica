@@ -4,7 +4,7 @@
 import React, { useState, FormEvent, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus } from "lucide-react"; // Added Plus
+import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil } from "lucide-react"; // Added Plus, Search, Pencil
 import { Calendar } from "@/components/ui/calendar"; // ShadCN Calendar
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -96,13 +96,18 @@ export default function AgendaPage() {
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
 
+  // State for Manage Appointment Types Dialog
+  const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
+  const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
+  const [typeToDeleteConfirm, setTypeToDeleteConfirm] = useState<string | null>(null);
+
 
   // State for New Appointment Dialog
   const [isNewAppointmentDialogOpen, setIsNewAppointmentDialogOpen] = useState(false);
   const [newAppointmentForm, setNewAppointmentForm] = useState<AppointmentFormValues>({
     patientId: '',
     type: 'Consulta',
-    date: '', // Initialize empty, will be set in useEffect
+    date: '', 
     time: '',
     notes: '',
   });
@@ -114,8 +119,8 @@ export default function AgendaPage() {
     patientId: '', type: 'Consulta', date: '', time: '', notes: '',
   });
 
-  // State for Delete Confirmation Dialog
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  // State for Delete Confirmation Dialog (for appointments)
+  const [isDeleteApptConfirmOpen, setIsDeleteApptConfirmOpen] = useState(false);
   const [appointmentToDeleteInfo, setAppointmentToDeleteInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
 
   useEffect(() => {
@@ -165,7 +170,7 @@ export default function AgendaPage() {
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    if (!clientToday || !clientNow) return true; // Default to past if client dates not ready
+    if (!clientToday || !clientNow) return true; 
     return isBefore(startOfDay(dateTime), clientToday) ||
            (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow));
   };
@@ -219,9 +224,8 @@ export default function AgendaPage() {
 
     setNewAppointmentForm(prev => ({
       ...prev,
-      patientId: '', type: 'Consulta', // Reset type to default after adding
+      patientId: '', type: appointmentTypes.includes('Consulta') ? 'Consulta' : (appointmentTypes[0] || ''), 
       time: '', notes: '',
-      // Keep date as is, it's updated by selectedDate effect
     }));
     setIsNewAppointmentDialogOpen(false);
     toast({ title: "Sucesso!", description: "Agendamento adicionado.", variant: "success" });
@@ -299,12 +303,12 @@ export default function AgendaPage() {
     toast({ title: "Sucesso!", description: "Agendamento atualizado.", variant: "success" });
   };
 
-  const handleOpenDeleteDialog = (appointment: Appointment, dateKey: string) => {
+  const handleOpenDeleteApptDialog = (appointment: Appointment, dateKey: string) => {
     setAppointmentToDeleteInfo({ appointment, dateKey });
-    setIsDeleteConfirmOpen(true);
+    setIsDeleteApptConfirmOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDeleteAppt = () => {
     if (!appointmentToDeleteInfo) return;
     const { appointment, dateKey } = appointmentToDeleteInfo;
 
@@ -317,7 +321,7 @@ export default function AgendaPage() {
       return updatedAppointments;
     });
 
-    setIsDeleteConfirmOpen(false);
+    setIsDeleteApptConfirmOpen(false);
     setAppointmentToDeleteInfo(null);
     toast({ title: "Agendamento Excluído", description: "O agendamento foi removido.", variant: "success" });
   };
@@ -335,10 +339,82 @@ export default function AgendaPage() {
         toast({ title: "Tipo Duplicado", description: `O tipo "${trimmedType}" já existe.`, variant: "destructive" });
         return;
     }
-    setAppointmentTypes(prev => [...prev, trimmedType].sort());
+    const newTypes = [...appointmentTypes, trimmedType].sort();
+    setAppointmentTypes(newTypes);
     setNewCustomTypeName('');
     setIsAddTypeDialogOpen(false);
+    
+    // Update form type if it was the default or only option
+    if (newAppointmentForm.type === '' || appointmentTypes.length === 0) {
+        setNewAppointmentForm(prev => ({ ...prev, type: trimmedType }));
+    }
+     if (editAppointmentForm.type === '' || appointmentTypes.length === 0) {
+        setEditAppointmentForm(prev => ({ ...prev, type: trimmedType }));
+    }
+    
     toast({ title: "Sucesso", description: `Tipo "${trimmedType}" adicionado.`, variant: "success" });
+  };
+
+  const handleSaveEditedType = () => {
+    if (!editingTypeInfo) return;
+    const { originalName, currentName } = editingTypeInfo;
+    const newNameTrimmed = currentName.trim();
+
+    if (!newNameTrimmed) {
+      toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
+      return;
+    }
+    if (newNameTrimmed.toLowerCase() !== originalName.toLowerCase() && appointmentTypes.some(type => type.toLowerCase() === newNameTrimmed.toLowerCase())) {
+      toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
+      return;
+    }
+
+    setAppointmentTypes(prevTypes => prevTypes.map(t => t === originalName ? newNameTrimmed : t).sort());
+    
+    // Update type in active forms if it was the one being edited
+    if (newAppointmentForm.type === originalName) {
+      setNewAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
+    }
+    if (editAppointmentForm.type === originalName) {
+      setEditAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
+    }
+    
+    // Update type in existing appointments
+    setAppointments(prevAppointments => {
+        const updated = { ...prevAppointments };
+        for (const dateKey in updated) {
+            updated[dateKey] = updated[dateKey].map(appt => 
+                appt.type === originalName ? { ...appt, type: newNameTrimmed } : appt
+            );
+        }
+        return updated;
+    });
+
+    setEditingTypeInfo(null);
+    toast({ title: "Sucesso", description: `Tipo "${originalName}" atualizado para "${newNameTrimmed}".`, variant: "success" });
+  };
+
+  const handleDeleteType = () => {
+    if (!typeToDeleteConfirm) return;
+    const typeName = typeToDeleteConfirm;
+
+    const newTypes = appointmentTypes.filter(t => t !== typeName);
+    setAppointmentTypes(newTypes);
+
+    // If the deleted type was selected in a form, reset it
+    const defaultType = newTypes.length > 0 ? newTypes[0] : (initialAppointmentTypes.includes('Consulta') ? 'Consulta' : (initialAppointmentTypes[0] || ''));
+    if (newAppointmentForm.type === typeName) {
+      setNewAppointmentForm(prev => ({ ...prev, type: defaultType }));
+    }
+    if (editAppointmentForm.type === typeName) {
+      setEditAppointmentForm(prev => ({ ...prev, type: defaultType }));
+    }
+
+    // Optionally, handle appointments that used this type (e.g., reassign or leave as is)
+    // For now, existing appointments will retain the deleted type string.
+
+    setTypeToDeleteConfirm(null);
+    toast({ title: "Tipo Excluído", description: `O tipo "${typeName}" foi removido.`, variant: "success" });
   };
 
 
@@ -390,18 +466,20 @@ export default function AgendaPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newType" className="text-right col-span-1">Tipo*</Label>
-                <div className="col-span-3 flex items-center gap-2">
+                <div className="col-span-3 flex items-center gap-1">
                     <Select value={newAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'type', value)} required>
                     <SelectTrigger id="newType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                     <SelectContent>
                         {appointmentTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                         {appointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo cadastrado</SelectItem>}
                     </SelectContent>
                     </Select>
-                    <DialogTrigger asChild>
-                        <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo">
-                            <Plus className="h-4 w-4" />
-                        </Button>
-                    </DialogTrigger>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo">
+                        <Plus className="h-4 w-4" />
+                    </Button>
+                     <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar tipos">
+                        <Search className="h-4 w-4" />
+                    </Button>
                 </div>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
@@ -472,25 +550,9 @@ export default function AgendaPage() {
                       >
                         <Edit className="h-4 w-4" />
                     </Button>
-                    <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                           <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" title="Excluir Agendamento">
-                             <Trash2 className="h-4 w-4" />
-                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Tem certeza que deseja excluir este agendamento para {appt.patientName} às {appt.time}? Esta ação não pode ser desfeita.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel onClick={() => setAppointmentToDeleteInfo(null)}>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleConfirmDelete()} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" onClick={() => handleOpenDeleteApptDialog(appt, formattedDateKey)} title="Excluir Agendamento">
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
                     <Button asChild variant="ghost" size="sm" className="h-8">
                       <Link href={`/pacientes/${generateSlug(appt.patientName)}`}>Ver Paciente</Link>
                     </Button>
@@ -529,18 +591,20 @@ export default function AgendaPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                  <Label htmlFor="editType" className="text-right col-span-1">Tipo*</Label>
-                 <div className="col-span-3 flex items-center gap-2">
+                 <div className="col-span-3 flex items-center gap-1">
                     <Select value={editAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'type', value)} required>
                     <SelectTrigger id="editType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                     <SelectContent>
                         {appointmentTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                        {appointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo cadastrado</SelectItem>}
                     </SelectContent>
                     </Select>
-                    <DialogTrigger asChild>
-                        <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo">
-                            <Plus className="h-4 w-4" />
-                        </Button>
-                    </DialogTrigger>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo">
+                        <Plus className="h-4 w-4" />
+                    </Button>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar tipos">
+                        <Search className="h-4 w-4" />
+                    </Button>
                 </div>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
@@ -594,20 +658,78 @@ export default function AgendaPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Manage Appointment Types Dialog */}
+      <Dialog open={isManageTypesDialogOpen} onOpenChange={setIsManageTypesDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle>
+            <DialogDescription>Edite ou remova os tipos de atendimento existentes.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
+            {appointmentTypes.map((type) => (
+              <div key={type} className="flex items-center justify-between p-2 border rounded-md">
+                {editingTypeInfo?.originalName === type ? (
+                  <div className="flex-grow flex items-center gap-2">
+                    <Input
+                      value={editingTypeInfo.currentName}
+                      onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)}
+                      className="h-8"
+                    />
+                    <Button size="icon" className="h-8 w-8" onClick={handleSaveEditedType}><Save className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo(null)}><X className="h-4 w-4" /></Button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="flex-grow">{type}</span>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo({ originalName: type, currentName: type })} title="Editar Tipo">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive/80" onClick={() => setTypeToDeleteConfirm(type)} title="Excluir Tipo" disabled={appointmentTypes.length <= 1}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            {appointmentTypes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum tipo cadastrado.</p>}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {/* Delete Confirmation Dialog is part of the main map, no separate global one needed unless design changes */}
-      {/* This is a local AlertDialog, correctly scoped when mapped */}
-       <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+      {/* Delete Appointment Type Confirmation Dialog */}
+      <AlertDialog open={!!typeToDeleteConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+            <AlertDialogTitle>Confirmar Exclusão de Tipo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o tipo "{typeToDeleteConfirm}"? Esta ação não pode ser desfeita.
+              Agendamentos existentes com este tipo não serão alterados, mas o tipo não estará mais disponível para seleção.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setTypeToDeleteConfirm(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteType} className="bg-destructive hover:bg-destructive/90">Excluir Tipo</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Appointment Confirmation Dialog */}
+       <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={setIsDeleteApptConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão de Agendamento</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja excluir este agendamento para {appointmentToDeleteInfo?.appointment.patientName} às {appointmentToDeleteInfo?.appointment.time}? Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {setIsDeleteConfirmOpen(false); setAppointmentToDeleteInfo(null);}}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction>
+            <AlertDialogCancel onClick={() => {setIsDeleteApptConfirmOpen(false); setAppointmentToDeleteInfo(null);}}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteAppt} className="bg-destructive hover:bg-destructive/90">Excluir Agendamento</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
