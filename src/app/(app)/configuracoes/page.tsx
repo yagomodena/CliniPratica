@@ -369,11 +369,6 @@ export default function ConfiguracoesPage() {
                  </div>
                  <Button type="submit">Alterar Senha</Button>
                </form>
-               <div className="border-t pt-6">
-                   <h4 className="font-semibold mb-2">Autenticação de Dois Fatores (2FA)</h4>
-                   <p className="text-sm text-muted-foreground mb-3">Adicione uma camada extra de segurança à sua conta.</p>
-                   <Button variant="outline" disabled>Configurar 2FA (em breve)</Button>
-               </div>
             </CardContent>
           </Card>
         </TabsContent>
