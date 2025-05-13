@@ -383,12 +383,12 @@ export default function ConfiguracoesPage() {
           <TabsContent value="usuarios">
             <Card className="shadow-md">
               <CardHeader>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                   <div>
                     <CardTitle>Gerenciamento de Usuários</CardTitle>
                     <CardDescription>Adicione, edite ou remova usuários da sua clínica.</CardDescription>
                   </div>
-                  <Button onClick={() => handleOpenUserForm()}>
+                  <Button onClick={() => handleOpenUserForm()} className="w-full sm:w-auto">
                     <UserPlus className="mr-2 h-4 w-4" /> Adicionar Usuário
                   </Button>
                 </div>
