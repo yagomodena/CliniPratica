@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState } from 'react';
@@ -34,6 +35,7 @@ import {
 import { UserForm, type UserFormData, type User, menuItemsConfig } from '@/components/forms/user-form';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 // Define the structure for profile data
 type ProfileData = {
@@ -201,7 +203,10 @@ export default function ConfiguracoesPage() {
       <h1 className="text-3xl font-bold text-foreground">Configurações</h1>
 
       <Tabs defaultValue="perfil" className="w-full">
-        <TabsList className={`grid w-full h-auto sm:h-10 grid-cols-1 sm:grid-cols-${isClinicaPlan ? '5' : '4'}`}>
+        <TabsList className={cn(
+            "grid w-full h-auto sm:h-10 grid-cols-1",
+            isClinicaPlan ? "sm:grid-cols-5" : "sm:grid-cols-4"
+          )}>
           <TabsTrigger value="perfil"><User className="mr-2 h-4 w-4 sm:inline hidden"/>Perfil</TabsTrigger>
           <TabsTrigger value="plano"><CreditCard className="mr-2 h-4 w-4 sm:inline hidden"/>Plano e Assinatura</TabsTrigger>
           <TabsTrigger value="notificacoes"><Bell className="mr-2 h-4 w-4 sm:inline hidden"/>Notificações</TabsTrigger>
@@ -334,7 +339,7 @@ export default function ConfiguracoesPage() {
               <CardTitle>Preferências de Notificação</CardTitle>
               <CardDescription>Escolha como você deseja ser notificado.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4 text-center py-16 text-muted-foreground">
+            <CardContent className="text-center py-16 text-muted-foreground">
                 <Bell className="mx-auto h-12 w-12 mb-4 opacity-50" />
                 <p>Configurações de notificação (em breve).</p>
                 <p className="text-sm">Você poderá escolher receber notificações por email ou dentro do app.</p>
