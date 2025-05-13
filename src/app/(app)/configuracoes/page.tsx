@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState } from 'react';
@@ -202,7 +201,7 @@ export default function ConfiguracoesPage() {
       <h1 className="text-3xl font-bold text-foreground">Configurações</h1>
 
       <Tabs defaultValue="perfil" className="w-full">
-        <TabsList className={`grid w-full grid-cols-${isClinicaPlan ? '5' : '4'}`}>
+        <TabsList className={`grid w-full h-auto sm:h-10 grid-cols-1 sm:grid-cols-${isClinicaPlan ? '5' : '4'}`}>
           <TabsTrigger value="perfil"><User className="mr-2 h-4 w-4 sm:inline hidden"/>Perfil</TabsTrigger>
           <TabsTrigger value="plano"><CreditCard className="mr-2 h-4 w-4 sm:inline hidden"/>Plano e Assinatura</TabsTrigger>
           <TabsTrigger value="notificacoes"><Bell className="mr-2 h-4 w-4 sm:inline hidden"/>Notificações</TabsTrigger>
@@ -489,3 +488,4 @@ export default function ConfiguracoesPage() {
     </div>
   );
 }
+
