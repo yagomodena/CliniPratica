@@ -17,6 +17,7 @@ const TabsList = React.forwardRef<
     className={cn(
       "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
       // Removed grid class from here to allow external control
+      // Example: className="grid w-full grid-cols-4" can be passed via props now
       className
     )}
     {...props}

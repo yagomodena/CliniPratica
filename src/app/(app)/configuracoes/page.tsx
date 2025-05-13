@@ -1,16 +1,16 @@
 
-'use client'; // Add 'use client' for state and interactivity
+'use client';
 
-import React, { useState } from 'react'; // Import useState
+import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CreditCard, User, Bell, KeyRound, Save, AlertTriangle } from "lucide-react"; // Added Save, AlertTriangle icons
-import { useToast } from '@/hooks/use-toast'; // Import useToast
-import { PlansModal } from '@/components/sections/plans-modal'; // Import the PlansModal component
+import { Check, CreditCard, User, Bell, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye } from "lucide-react";
+import { useToast } from '@/hooks/use-toast';
+import { PlansModal } from '@/components/sections/plans-modal';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,8 +21,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+  DialogClose
+} from "@/components/ui/dialog";
+import { UserForm, type UserFormData, type User, menuItemsConfig } from '@/components/forms/user-form';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 
 // Define the structure for profile data
 type ProfileData = {
@@ -32,56 +44,93 @@ type ProfileData = {
   specialty: string;
 };
 
-type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica'; // Define possible plan names
+type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
+
+// Initial User Data for User Management (placeholder)
+const initialUsers: User[] = [
+  {
+    id: 'usr_001',
+    email: 'medico.chefe@clinipratica.com.br',
+    role: 'Administrador',
+    permissions: {
+      dashboard: true,
+      pacientes: true,
+      agenda: true,
+      mensagens: true,
+      financeiro: true,
+      relatorios: true,
+      configuracoes: true,
+      usuarios: true,
+    },
+  },
+  {
+    id: 'usr_002',
+    email: 'secretaria@clinipratica.com.br',
+    role: 'Secretária',
+    permissions: {
+      dashboard: true,
+      pacientes: true,
+      agenda: true,
+      mensagens: true,
+      financeiro: false,
+      relatorios: false,
+      configuracoes: false,
+      usuarios: false,
+    },
+  },
+];
+
 
 export default function ConfiguracoesPage() {
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
-  const [currentUserPlan, setCurrentUserPlan] = useState<PlanName>('Gratuito'); // Default to 'Gratuito'
+  const [currentUserPlan, setCurrentUserPlan] = useState<PlanName>('Clínica'); // Default to 'Clínica' to show user management
 
   // State for profile data
   const [profile, setProfile] = useState<ProfileData>({
     name: 'Usuário Exemplo',
-    email: 'usuario@clinipratica.com.br', // Keep email disabled for now
+    email: 'usuario@clinipratica.com.br',
     phone: '',
     specialty: '',
   });
 
-  // Handle input changes
+  // State for User Management
+  const [users, setUsers] = useState<User[]>(initialUsers);
+  const [isUserFormOpen, setIsUserFormOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isDeleteUserConfirmOpen, setIsDeleteUserConfirmOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+
+  // TODO: Add a check here to only show the 'Usuários' tab if on the 'Clínica' plan.
+  const isClinicaPlan = currentUserPlan === 'Clínica';
+
+
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setProfile(prev => ({ ...prev, [name]: value }));
   };
 
-  // Handle saving changes
   const handleSaveChanges = () => {
-    // Simulate saving data (e.g., API call)
     console.log("Saving profile changes:", profile);
-
-    // Show success toast
     toast({
       title: "Sucesso!",
       description: "Seu perfil foi atualizado com sucesso.",
-      variant: "success", // Use success variant
+      variant: "success",
     });
   };
 
-  // Placeholder for changing photo
   const handleChangePhoto = () => {
-    // In a real app, this would open a file picker and handle upload
     toast({
       title: "Funcionalidade Indisponível",
       description: "A alteração de foto ainda não está implementada.",
-      variant: "default", // Use default or a custom variant if needed
+      variant: "default",
     });
     console.log("Attempted to change photo");
   };
 
-  // Placeholder for changing password
   const handleChangePassword = (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-       // In a real app, validate fields and call API
       toast({
         title: "Funcionalidade Indisponível",
         description: "A alteração de senha ainda não está implementada.",
@@ -90,20 +139,15 @@ export default function ConfiguracoesPage() {
       console.log("Attempted to change password");
   }
 
-  // Handle plan selection from modal
   const handleSelectPlan = (planName: PlanName) => {
-    // Simulate updating the user's plan
     console.log("Updating plan to:", planName);
-    setCurrentUserPlan(planName); // Update the local state
-    // In a real app, trigger API call to update subscription
+    setCurrentUserPlan(planName);
   };
 
-  // Handle subscription cancellation
   const handleCancelSubscription = () => {
     console.log("Cancelling subscription for plan:", currentUserPlan);
-    // Simulate API call for cancellation
-    setCurrentUserPlan('Gratuito'); // Downgrade to free plan locally
-    setIsCancelConfirmOpen(false); // Close confirmation dialog
+    setCurrentUserPlan('Gratuito');
+    setIsCancelConfirmOpen(false);
     toast({
       title: "Assinatura Cancelada",
       description: "Sua assinatura foi cancelada e você foi movido para o plano Gratuito.",
@@ -111,16 +155,59 @@ export default function ConfiguracoesPage() {
     });
   };
 
+  // User Management Handlers
+  const handleOpenUserForm = (user: User | null = null) => {
+    setEditingUser(user);
+    setIsUserFormOpen(true);
+  };
+
+  const handleUserFormSubmit = (data: UserFormData) => {
+    if (editingUser) {
+      // Edit existing user
+      setUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...data, id: editingUser.id } : u)); // Ensure ID is not overwritten with undefined
+      toast({ title: "Usuário Atualizado", description: `Dados de ${data.email} atualizados.`, variant: "success" });
+    } else {
+      // Add new user
+      const newUser: User = {
+        id: `usr_${Date.now()}`, // Simple unique ID
+        email: data.email,
+        role: data.role,
+        permissions: data.permissions,
+        // Password is not stored in frontend state directly
+      };
+      setUsers([...users, newUser]);
+      toast({ title: "Usuário Adicionado", description: `${data.email} adicionado à equipe.`, variant: "success" });
+    }
+    setIsUserFormOpen(false);
+    setEditingUser(null);
+  };
+
+  const handleOpenDeleteUserDialog = (user: User) => {
+    setUserToDelete(user);
+    setIsDeleteUserConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteUser = () => {
+    if (userToDelete) {
+      setUsers(users.filter(u => u.id !== userToDelete.id));
+      toast({ title: "Usuário Excluído", description: `${userToDelete.email} foi removido da equipe.`, variant: "destructive" });
+      setUserToDelete(null);
+    }
+    setIsDeleteUserConfirmOpen(false);
+  };
+
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-foreground">Configurações</h1>
 
       <Tabs defaultValue="perfil" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className={`grid w-full grid-cols-${isClinicaPlan ? '5' : '4'}`}>
           <TabsTrigger value="perfil"><User className="mr-2 h-4 w-4 sm:inline hidden"/>Perfil</TabsTrigger>
           <TabsTrigger value="plano"><CreditCard className="mr-2 h-4 w-4 sm:inline hidden"/>Plano e Assinatura</TabsTrigger>
           <TabsTrigger value="notificacoes"><Bell className="mr-2 h-4 w-4 sm:inline hidden"/>Notificações</TabsTrigger>
           <TabsTrigger value="seguranca"><KeyRound className="mr-2 h-4 w-4 sm:inline hidden"/>Segurança</TabsTrigger>
+          {isClinicaPlan && <TabsTrigger value="usuarios"><UsersRound className="mr-2 h-4 w-4 sm:inline hidden"/>Usuários</TabsTrigger>}
         </TabsList>
 
         {/* Perfil Tab */}
@@ -133,7 +220,6 @@ export default function ConfiguracoesPage() {
             <CardContent className="space-y-6">
                <div className="flex items-center space-x-4">
                  <Avatar className="h-16 w-16">
-                    {/* Use a placeholder or dynamic avatar */}
                     <AvatarImage src={profile.email === 'usuario@clinipratica.com.br' ? "https://picsum.photos/100/100" : undefined} alt="User Avatar" data-ai-hint="user avatar"/>
                     <AvatarFallback>{profile.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'CP'}</AvatarFallback>
                  </Avatar>
@@ -142,43 +228,19 @@ export default function ConfiguracoesPage() {
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <div className="space-y-2">
                     <Label htmlFor="name">Nome Completo</Label>
-                    <Input
-                      id="name"
-                      name="name" // Add name attribute
-                      value={profile.name} // Bind value to state
-                      onChange={handleProfileChange} // Handle changes
-                    />
+                    <Input id="name" name="name" value={profile.name} onChange={handleProfileChange} />
                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      name="email" // Add name attribute
-                      type="email"
-                      value={profile.email} // Bind value to state
-                      disabled // Keep disabled as email change might need verification
-                    />
+                    <Input id="email" name="email" type="email" value={profile.email} disabled />
                  </div>
                  <div className="space-y-2">
                     <Label htmlFor="phone">Telefone (Opcional)</Label>
-                    <Input
-                      id="phone"
-                      name="phone" // Add name attribute
-                      type="tel"
-                      placeholder="(XX) XXXXX-XXXX"
-                      value={profile.phone} // Bind value to state
-                      onChange={handleProfileChange} // Handle changes
-                    />
+                    <Input id="phone" name="phone" type="tel" placeholder="(XX) XXXXX-XXXX" value={profile.phone} onChange={handleProfileChange} />
                  </div>
                    <div className="space-y-2">
                     <Label htmlFor="specialty">Especialidade (Opcional)</Label>
-                    <Input
-                      id="specialty"
-                      name="specialty" // Add name attribute
-                      placeholder="Ex: Nutricionista"
-                      value={profile.specialty} // Bind value to state
-                      onChange={handleProfileChange} // Handle changes
-                    />
+                    <Input id="specialty" name="specialty" placeholder="Ex: Nutricionista" value={profile.specialty} onChange={handleProfileChange} />
                  </div>
                </div>
                <Button onClick={handleSaveChanges}>
@@ -201,7 +263,6 @@ export default function ConfiguracoesPage() {
                     <CardTitle className="text-lg">Plano Atual: {currentUserPlan}</CardTitle>
                  </CardHeader>
                  <CardContent className="space-y-2">
-                     {/* Dynamic features based on current plan - simplified for now */}
                     {currentUserPlan === 'Gratuito' && (
                         <>
                          <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500"/> Até 10 pacientes ativos</div>
@@ -236,12 +297,9 @@ export default function ConfiguracoesPage() {
                  </CardContent>
               </Card>
               <div className="flex flex-wrap gap-4 items-center">
-                 {/* Button to open the Plans Modal */}
                  <Button onClick={() => setIsPlansModalOpen(true)}>
                    Ver Planos e Fazer Upgrade
                  </Button>
-
-                  {/* Conditional Cancel Button */}
                   {currentUserPlan !== 'Gratuito' && (
                       <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
                           <AlertDialogTrigger asChild>
@@ -266,13 +324,6 @@ export default function ConfiguracoesPage() {
                       </AlertDialog>
                   )}
               </div>
-
-              {/* Placeholder for payment details if plan is paid */}
-              {/* <div>
-                 <h3 className="font-semibold mb-2">Detalhes de Pagamento</h3>
-                 <p className="text-sm text-muted-foreground">Cartão final XXXX</p>
-                 <Button variant="outline" size="sm" className="mt-2">Atualizar Pagamento</Button>
-              </div> */}
             </CardContent>
           </Card>
         </TabsContent>
@@ -300,7 +351,6 @@ export default function ConfiguracoesPage() {
               <CardDescription>Gerencie sua senha e configurações de segurança.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-               {/* Simple form for password change simulation */}
                <form onSubmit={handleChangePassword} className="space-y-4">
                  <div className="space-y-2">
                   <Label htmlFor="current-password">Senha Atual</Label>
@@ -324,6 +374,67 @@ export default function ConfiguracoesPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Usuários Tab (only if isClinicaPlan is true) */}
+        {isClinicaPlan && (
+          <TabsContent value="usuarios">
+            <Card className="shadow-md">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>Gerenciamento de Usuários</CardTitle>
+                    <CardDescription>Adicione, edite ou remova usuários da sua clínica.</CardDescription>
+                  </div>
+                  <Button onClick={() => handleOpenUserForm()}>
+                    <UserPlus className="mr-2 h-4 w-4" /> Adicionar Usuário
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {users.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Cargo</TableHead>
+                        <TableHead>Permissões</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow key={user.id}>
+                          <TableCell className="font-medium">{user.email}</TableCell>
+                          <TableCell>{user.role}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {menuItemsConfig.filter(item => user.permissions[item.id]).map(item => (
+                                <Badge key={item.id} variant="secondary" className="text-xs">{item.label}</Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right space-x-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenUserForm(user)} title="Editar Usuário">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteUserDialog(user)} title="Excluir Usuário">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-10 text-muted-foreground">
+                    <UsersRound className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                    <p>Nenhum usuário adicional cadastrado.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
        {/* Plans Modal */}
@@ -333,6 +444,48 @@ export default function ConfiguracoesPage() {
         currentPlanName={currentUserPlan}
         onSelectPlan={handleSelectPlan}
       />
+
+      {/* Add/Edit User Dialog */}
+      <Dialog open={isUserFormOpen} onOpenChange={(isOpen) => {
+        setIsUserFormOpen(isOpen);
+        if (!isOpen) setEditingUser(null);
+      }}>
+        <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+                <DialogTitle>{editingUser ? 'Editar Usuário' : 'Adicionar Novo Usuário'}</DialogTitle>
+                <DialogDescription>
+                    Preencha os dados do usuário e defina suas permissões de acesso.
+                </DialogDescription>
+            </DialogHeader>
+            <UserForm
+                onSubmit={handleUserFormSubmit}
+                initialData={editingUser || undefined}
+                onCancel={() => {
+                    setIsUserFormOpen(false);
+                    setEditingUser(null);
+                }}
+            />
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <AlertDialog open={isDeleteUserConfirmOpen} onOpenChange={setIsDeleteUserConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão de Usuário</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o usuário <strong>{userToDelete?.email}</strong>? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setUserToDelete(null); setIsDeleteUserConfirmOpen(false); }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteUser} className="bg-destructive hover:bg-destructive/90">
+              Excluir Usuário
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
