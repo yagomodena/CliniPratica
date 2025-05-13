@@ -103,7 +103,6 @@ export default function ConfiguracoesPage() {
   const [isDeleteUserConfirmOpen, setIsDeleteUserConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
-  // TODO: Add a check here to only show the 'Usuários' tab if on the 'Clínica' plan.
   const isClinicaPlan = currentUserPlan === 'Clínica';
 
 
@@ -396,39 +395,52 @@ export default function ConfiguracoesPage() {
               </CardHeader>
               <CardContent>
                 {users.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Cargo</TableHead>
-                        <TableHead>Permissões</TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell className="font-medium">{user.email}</TableCell>
-                          <TableCell>{user.role}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {menuItemsConfig.filter(item => user.permissions[item.id]).map(item => (
-                                <Badge key={item.id} variant="secondary" className="text-xs">{item.label}</Badge>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right space-x-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenUserForm(user)} title="Editar Usuário">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteUserDialog(user)} title="Excluir Usuário">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-full">
+                      <TableHeader className="hidden sm:table-header-group">
+                        <TableRow>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Cargo</TableHead>
+                          <TableHead>Permissões</TableHead>
+                          <TableHead className="text-right">Ações</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {users.map((user) => (
+                          <TableRow key={user.id} className="block sm:table-row mb-4 sm:mb-0 border sm:border-0 rounded-lg sm:rounded-none shadow-md sm:shadow-none p-4 sm:p-0">
+                            <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4 font-medium">
+                              <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Email: </span>
+                              {user.email}
+                            </TableCell>
+                            <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
+                               <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Cargo: </span>
+                              {user.role}
+                            </TableCell>
+                            <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
+                              <span className="font-semibold sm:hidden mr-2 text-muted-foreground block mb-1">Permissões: </span>
+                              <div className="flex flex-wrap gap-1">
+                                {menuItemsConfig.filter(item => user.permissions[item.id]).map(item => (
+                                  <Badge key={item.id} variant="secondary" className="text-xs">{item.label}</Badge>
+                                ))}
+                                {menuItemsConfig.filter(item => user.permissions[item.id]).length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma permissão específica</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4 text-left sm:text-right">
+                              <span className="font-semibold sm:hidden mr-2 text-muted-foreground block mb-1">Ações:</span>
+                              <div className="flex gap-2 sm:justify-end sm:space-x-1 sm:gap-0">
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenUserForm(user)} title="Editar Usuário">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteUserDialog(user)} title="Excluir Usuário">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 ) : (
                   <div className="text-center py-10 text-muted-foreground">
                     <UsersRound className="mx-auto h-12 w-12 mb-4 opacity-50" />
