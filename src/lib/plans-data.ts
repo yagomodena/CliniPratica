@@ -19,7 +19,7 @@ export const plans: Plan[] = [
     name: 'Gratuito',
     price: 'R$0',
     priceDetail: ' para sempre',
-    level: 0,
+    level: 0, // Base level
     features: [
       { text: 'Até 10 pacientes', included: true },
       { text: 'Agenda básica', included: true },
@@ -27,12 +27,12 @@ export const plans: Plan[] = [
       { text: 'Relatórios e financeiro (não disponível)', included: false },
       { text: 'Upload de exames (limitado)', included: false },
     ],
-    cta: 'Começar Gratuitamente',
+    cta: 'Plano Atual', // Updated CTA for modal context
   },
   {
     name: 'Essencial',
-    price: 'R$29,90',
-    priceDetail: '/mês (faturado R$358,80 anualmente)',
+    price: 'R$39,90',
+    priceDetail: '/mês',
     level: 1,
     features: [
       { text: 'Até 50 pacientes', included: true },
@@ -47,8 +47,8 @@ export const plans: Plan[] = [
   },
   {
     name: 'Profissional',
-    price: 'R$49,90',
-    priceDetail: '/mês (faturado R$598,80 anualmente)',
+    price: 'R$69,90',
+    priceDetail: '/mês',
     level: 2,
     features: [
       { text: 'Pacientes ilimitados', included: true },
@@ -61,8 +61,8 @@ export const plans: Plan[] = [
   },
   {
     name: 'Clínica',
-    price: 'R$79,90',
-    priceDetail: '/mês (faturado R$958,80 anualmente)',
+    price: 'R$99,90',
+    priceDetail: '/mês',
     level: 3,
     features: [
       { text: 'Múltiplos profissionais', included: true },
