@@ -45,7 +45,7 @@ export default function LoginPage() {
           </form>
           <div className="text-center text-sm text-muted-foreground">
             Não tem uma conta?{' '}
-            <Link href="/#contato" className="font-medium text-primary hover:underline">
+            <Link href="/#planos" className="font-medium text-primary hover:underline">
               Crie uma agora
             </Link>
           </div>
@@ -59,3 +59,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

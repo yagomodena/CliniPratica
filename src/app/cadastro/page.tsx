@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormState, useFormStatus } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff } from 'lucide-react'; // Import Eye and EyeOff icons
+import { Eye, EyeOff } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,15 @@ import { useToast } from '@/hooks/use-toast';
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
 import { submitRegistrationForm, type FormState as RegistrationFormState } from '@/actions/register';
 import { Logo } from '@/components/icons/logo';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const initialState: RegistrationFormState = {
   message: '',
@@ -44,6 +53,7 @@ function CadastroForm() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showPlanAlert, setShowPlanAlert] = useState(false);
 
   const form = useForm<RegistrationFormValues>({
     resolver: zodResolver(registrationFormSchema),
@@ -59,7 +69,9 @@ function CadastroForm() {
   });
 
    useEffect(() => {
-    if (planFromQuery && form.getValues('plan') !== planFromQuery) {
+    if (!planFromQuery) {
+      setShowPlanAlert(true);
+    } else if (form.getValues('plan') !== planFromQuery) {
       form.reset({ ...form.getValues(), plan: planFromQuery });
     }
   }, [planFromQuery, form]);
@@ -99,6 +111,32 @@ function CadastroForm() {
     }
   }, [state, toast, form, router, planFromQuery]);
 
+  if (showPlanAlert) {
+    return (
+      <AlertDialog open={showPlanAlert} onOpenChange={(isOpen) => {
+        if (!isOpen) { // If user closes the dialog without confirming
+           router.push('/#planos'); // Still redirect
+        }
+        setShowPlanAlert(isOpen);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Seleção de Plano Necessária</AlertDialogTitle>
+            <AlertDialogDescription>
+              Para criar sua conta, é necessário selecionar um plano primeiro.
+              Você será redirecionado para a seção de planos para escolher o que melhor se adapta a você.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => router.push('/#planos')}>
+              Ir para Planos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
+
 
   return (
     <Card className="w-full max-w-lg shadow-xl">
@@ -108,7 +146,7 @@ function CadastroForm() {
         </div>
         <CardTitle className="text-3xl font-bold text-primary">Crie sua Conta no CliniPrática</CardTitle>
         <CardDescription>
-          {planFromQuery ? `Você está se cadastrando para o plano ${planFromQuery}. ` : ''}
+          {planFromQuery ? `Você está se cadastrando para o plano: ${planFromQuery}. ` : 'Por favor, selecione um plano primeiro. '}
           Preencha seus dados para começar.
         </CardDescription>
       </CardHeader>
@@ -214,3 +252,4 @@ export default function CadastroPage() {
     </div>
   );
 }
+
