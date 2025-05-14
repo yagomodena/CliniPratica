@@ -35,7 +35,8 @@ export function PlansSection() {
           Planos flexíveis para cada necessidade
         </h2>
         <p className="text-lg text-muted-foreground text-center mb-12 md:mb-16 max-w-2xl mx-auto">
-          Escolha o plano ideal para você e comece a transformar a gestão do seu consultório hoje mesmo.
+          Escolha o plano ideal para você e comece a transformar a gestão do seu consultório hoje mesmo.<br/>
+          <strong>Todos os planos pagos incluem 1 mês grátis para testar sem compromisso.</strong>
         </p>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 items-stretch">
           {landingPagePlans.map((plan) => ( // Use landingPagePlans

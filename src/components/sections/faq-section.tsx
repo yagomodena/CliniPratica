@@ -9,22 +9,22 @@ const faqs = [
   {
     question: 'Posso cancelar quando quiser?',
     answer:
-      'Sim, você pode cancelar sua assinatura a qualquer momento, sem taxas adicionais. Seu acesso continuará ativo até o final do período já pago.',
+      'Sim! Você pode cancelar sua assinatura a qualquer momento, sem taxas extras. O acesso permanece ativo até o fim do período já pago.',
   },
   {
     question: 'Como funciona o plano gratuito?',
     answer:
-      'O plano gratuito oferece funcionalidades básicas para você começar, como cadastro de até 10 pacientes e agenda. É uma ótima forma de conhecer o CliniPrática sem custos.',
+      'O plano gratuito oferece funcionalidades essenciais, como cadastro de até 10 pacientes e agenda básica. É ideal para conhecer o CliniPrática sem custos.',
   },
   {
     question: 'Meus dados estão seguros?',
     answer:
-      'A segurança dos seus dados é nossa prioridade. Utilizamos criptografia de ponta e seguimos as melhores práticas de segurança para proteger todas as informações no sistema.',
+      'Sim. A segurança dos seus dados é prioridade para nós. Utilizamos criptografia avançada e seguimos as melhores práticas do mercado para garantir a proteção das informações.',
   },
   {
     question: 'Há período de teste para os planos pagos?',
     answer:
-      'Sim, oferecemos um período de teste de 7 dias para todos os nossos planos pagos. Você pode experimentar todas as funcionalidades antes de decidir.',
+      'Sim! Todos os planos pagos contam com 1 mês de teste gratuito, para você explorar as funcionalidades com tranquilidade antes de decidir.',
   },
 ];
 
