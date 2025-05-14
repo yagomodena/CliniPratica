@@ -449,7 +449,7 @@ export default function PacienteDetalhePage() {
                   </CardFooter>
                 </Card>
 
-                <h3 className="text-lg font-semibold pt-6 border-t">Histórico de Atendimentos</h3>
+                <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
                 {displayPatient?.history && displayPatient.history.length > 0 ? (
                    [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
                     <Card key={index} className="bg-muted/50">
