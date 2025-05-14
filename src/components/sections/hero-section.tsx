@@ -3,20 +3,13 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { ArrowRight } from 'lucide-react';
 import nutriImage from '@/images/nutri.jpg';
+import { useRouter } from 'next/navigation'; // Import useRouter
 
 export function HeroSection() {
-  const handleCTAClick = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
-    e.preventDefault();
-    const contactSection = document.getElementById('contato');
-    if (contactSection) {
-      const headerOffset = 80; 
-      const elementPosition = contactSection.getBoundingClientRect().top;
-      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: 'smooth',
-      });
-    }
+  const router = useRouter(); // Initialize router
+
+  const handleCTAClick = () => {
+    router.push('/cadastro'); // Navigate to the new registration page
   };
 
   return (
@@ -37,7 +30,7 @@ export function HeroSection() {
             <Button
               size="lg"
               className="bg-white text-primary hover:bg-gray-100 shadow-lg group text-lg px-8 py-7"
-              onClick={handleCTAClick}
+              onClick={handleCTAClick} // Updated onClick handler
               aria-label="Quero testar gratuitamente"
             >
               Quero testar gratuitamente

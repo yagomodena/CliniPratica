@@ -9,10 +9,10 @@ import { Menu, X } from 'lucide-react';
 
 const navItems = [
   { label: 'Benefícios', href: '#beneficios' },
-  { label: 'Nichos', href: '#nichos' }, // Added Nichos link
+  { label: 'Nichos', href: '#nichos' },
   { label: 'Planos', href: '#planos' },
   { label: 'FAQ', href: '#faq' },
-  { label: 'Contato', href: '#contato' },
+  // { label: 'Contato', href: '#contato' }, // Removed Contato link
 ];
 
 export function Header() {
@@ -32,7 +32,7 @@ export function Header() {
     const targetId = href.substring(1);
     const targetElement = document.getElementById(targetId);
     if (targetElement) {
-      const headerOffset = 80; // Adjusted for fixed header height
+      const headerOffset = 80; 
       const elementPosition = targetElement.getBoundingClientRect().top;
       const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
 

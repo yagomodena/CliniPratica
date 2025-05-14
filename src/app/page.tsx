@@ -2,10 +2,10 @@
 import { Header } from '@/components/layout/header';
 import { HeroSection } from '@/components/sections/hero-section';
 import { BenefitsSection } from '@/components/sections/benefits-section';
-import { NichesSection } from '@/components/sections/niches-section'; // Import NichesSection
+import { NichesSection } from '@/components/sections/niches-section';
 import { PlansSection } from '@/components/sections/plans-section';
 import { FaqSection } from '@/components/sections/faq-section';
-import { ContactSection } from '@/components/sections/contact-section';
+// import { ContactSection } from '@/components/sections/contact-section'; // Removed ContactSection
 import { Footer } from '@/components/layout/footer';
 
 export default function Home() {
@@ -15,10 +15,10 @@ export default function Home() {
       <main className="flex-grow">
         <HeroSection />
         <BenefitsSection />
-        <NichesSection /> {/* Add NichesSection here */}
+        <NichesSection />
         <PlansSection />
         <FaqSection />
-        <ContactSection />
+        {/* <ContactSection /> */} {/* ContactSection removed from here */}
       </main>
       <Footer />
     </div>
