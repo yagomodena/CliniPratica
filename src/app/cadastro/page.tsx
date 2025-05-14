@@ -132,45 +132,53 @@ function CadastroForm() {
             {form.formState.errors.phone && <p className="text-sm text-destructive mt-1">{form.formState.errors.phone.message}</p>}
           </div>
           
-          <div className="relative">
+          <div>
             <Label htmlFor="password">Senha*</Label>
-            <Input 
-              id="password" 
-              type={showPassword ? 'text' : 'password'} 
-              placeholder="Mínimo 6 caracteres" 
-              {...form.register('password')} 
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-6 h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-            >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
+            <div className="relative">
+              <Input 
+                id="password" 
+                type={showPassword ? 'text' : 'password'} 
+                placeholder="Mínimo 6 caracteres" 
+                {...form.register('password')}
+                className="pr-10" 
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute inset-y-0 right-0 flex items-center justify-center h-full w-10 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
             {form.formState.errors.password && <p className="text-sm text-destructive mt-1">{form.formState.errors.password.message}</p>}
           </div>
 
-          <div className="relative">
+          <div>
             <Label htmlFor="confirmPassword">Confirmar Senha*</Label>
-            <Input 
-              id="confirmPassword" 
-              type={showConfirmPassword ? 'text' : 'password'} 
-              placeholder="Repita a senha" 
-              {...form.register('confirmPassword')} 
-            />
-             <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-6 h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
-            >
-              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
+            <div className="relative">
+              <Input 
+                id="confirmPassword" 
+                type={showConfirmPassword ? 'text' : 'password'} 
+                placeholder="Repita a senha" 
+                {...form.register('confirmPassword')} 
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute inset-y-0 right-0 flex items-center justify-center h-full w-10 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
+                tabIndex={-1}
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
             {form.formState.errors.confirmPassword && <p className="text-sm text-destructive mt-1">{form.formState.errors.confirmPassword.message}</p>}
           </div>
 
