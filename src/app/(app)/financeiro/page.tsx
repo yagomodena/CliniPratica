@@ -55,11 +55,14 @@ import {
   Calendar as CalendarIcon,
   CheckCircle,
   XCircle,
-  CircleHelp, // Using CircleHelp as a generic icon for Pending
+  Clock, // Changed from CircleHelp for Pending
+  AlertTriangle, // For Overdue status
   Landmark,
   Smartphone,
   CreditCardIcon,
-  Coins, // For Dinheiro
+  Coins, 
+  Wallet, // Generic for 'Outro' payment method
+  ReceiptText, // Icon for the new table
 } from 'lucide-react';
 import {
   ChartContainer,
@@ -79,6 +82,8 @@ import {
   subMonths,
   isWithinInterval,
   parseISO,
+  differenceInDays, // Added for overdue calculation
+  isBefore, // Added for overdue calculation
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { DateRange } from 'react-day-picker';
@@ -114,6 +119,19 @@ const periodOptions: { value: PeriodOption; label: string }[] = [
 
 type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date'> & { date: string };
 
+// Type for the new "Contas a Receber" table data
+type ReceivableEntry = {
+  id: string;
+  patientName?: string;
+  description: string;
+  dueDate: Date;
+  paymentDate?: Date;
+  paymentStatusDisplay: 'Pago' | 'Pendente' | 'Atrasado';
+  daysOverdue?: number;
+  amount: number;
+  paymentMethod?: PaymentMethod;
+};
+
 
 export default function FinanceiroPage() {
   const { toast } = useToast();
@@ -139,7 +157,7 @@ export default function FinanceiroPage() {
 
 
   const getDateRangeForPeriod = useCallback((period: PeriodOption, range?: DateRange): { start: Date; end: Date } => {
-    const now = clientNow || new Date(); // Use clientNow if available
+    const now = clientNow || new Date(); 
     let start: Date, end: Date;
 
     switch (period) {
@@ -174,7 +192,6 @@ export default function FinanceiroPage() {
           end = endOfDay(range.from);
         }
          else {
-          // Default to this month if custom range is not fully set
           start = startOfMonth(now);
           end = endOfMonth(now);
         }
@@ -195,11 +212,10 @@ export default function FinanceiroPage() {
   const summaryData = useMemo(() => {
     const receivedTransactions = filteredTransactions.filter(t => t.status === 'Recebido');
     const totalRevenue = receivedTransactions.reduce((sum, t) => sum + t.amount, 0);
-    const paidAppointments = receivedTransactions.filter(t => t.type === 'atendimento').length;
-    const averagePerAppointment = paidAppointments > 0 ? totalRevenue / paidAppointments : 0; // Simplified, should be revenue from appointments only
-
-    // Placeholder for comparison
-    const comparisonPercentage = Math.random() > 0.5 ? 15 : -5; // Mock comparison
+    const paidAppointments = receivedTransactions.filter(t => t.type === 'atendimento' && t.status === 'Recebido').length;
+    const revenueFromAppointments = receivedTransactions.filter(t => t.type === 'atendimento').reduce((sum, t) => sum + t.amount, 0);
+    const averagePerAppointment = paidAppointments > 0 ? revenueFromAppointments / paidAppointments : 0; 
+    const comparisonPercentage = Math.random() > 0.5 ? 15 : -5; 
 
     return {
       totalRevenue,
@@ -210,8 +226,6 @@ export default function FinanceiroPage() {
   }, [filteredTransactions]);
 
   const chartData = useMemo(() => {
-    // Group by month for 'thisMonth' and 'lastMonth', by day for others
-    // Simplified: always group by day within the period for now
     const dataMap = new Map<string, number>();
     filteredTransactions.filter(t => t.status === 'Recebido').forEach(t => {
       const dayKey = format(t.date, 'dd/MM');
@@ -219,6 +233,45 @@ export default function FinanceiroPage() {
     });
     return Array.from(dataMap.entries()).map(([name, value]) => ({ name, faturamento: value })).sort((a,b) => parseISO(a.name.split('/').reverse().join('-')).getTime() - parseISO(b.name.split('/').reverse().join('-')).getTime());
   }, [filteredTransactions]);
+
+  const receivablesData = useMemo(() => {
+    if (!clientNow) return [];
+    const todayForComparison = startOfDay(clientNow);
+
+    return filteredTransactions
+      .filter(t => t.type === 'atendimento' && t.status !== 'Cancelado') // Focus on patient receivables
+      .map((t): ReceivableEntry => {
+        let paymentStatusDisplay: ReceivableEntry['paymentStatusDisplay'] = 'Pendente';
+        let daysOverdue: number | undefined = undefined;
+        let paymentDate: Date | undefined = undefined;
+
+        if (t.status === 'Recebido') {
+          paymentStatusDisplay = 'Pago';
+          paymentDate = t.date; // Assuming payment date is the transaction date for received items
+        } else if (t.status === 'Pendente') {
+          const dueDate = startOfDay(t.date);
+          if (isBefore(dueDate, todayForComparison)) {
+            paymentStatusDisplay = 'Atrasado';
+            daysOverdue = differenceInDays(todayForComparison, dueDate);
+          } else {
+            paymentStatusDisplay = 'Pendente';
+          }
+        }
+
+        return {
+          id: t.id,
+          patientName: t.patientName || 'N/A',
+          description: t.description,
+          dueDate: t.date,
+          paymentDate,
+          paymentStatusDisplay,
+          daysOverdue,
+          amount: t.amount,
+          paymentMethod: t.paymentMethod,
+        };
+      })
+      .sort((a, b) => b.dueDate.getTime() - a.dueDate.getTime()); // Sort by due date descending
+  }, [filteredTransactions, clientNow]);
 
 
   const handleFormInputChange = (
@@ -270,7 +323,7 @@ export default function FinanceiroPage() {
       setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? newTransaction : t));
       toast({ title: 'Sucesso!', description: 'Lançamento atualizado.', variant: 'success'});
     } else {
-      setTransactions(prev => [newTransaction, ...prev]);
+      setTransactions(prev => [newTransaction, ...prev].sort((a,b) => b.date.getTime() - a.date.getTime()));
       toast({ title: 'Sucesso!', description: 'Novo lançamento adicionado.', variant: 'success'});
     }
     
@@ -284,13 +337,12 @@ export default function FinanceiroPage() {
     setTransactionForm({
       ...transaction,
       date: format(transaction.date, 'yyyy-MM-dd'),
-      amount: transaction.amount, // Ensure amount is number
+      amount: transaction.amount, 
     });
     setIsAddTransactionDialogOpen(true);
   };
 
   const handleDeleteTransaction = (transactionId: string) => {
-    // Add confirmation dialog here if desired
     setTransactions(prev => prev.filter(t => t.id !== transactionId));
     toast({ title: 'Lançamento Excluído', description: 'O lançamento foi removido.', variant: 'destructive' });
   };
@@ -303,7 +355,16 @@ export default function FinanceiroPage() {
     });
   };
 
-  const getStatusBadgeVariant = (status: TransactionStatus) => {
+  const getPaymentStatusBadgeVariant = (status: ReceivableEntry['paymentStatusDisplay']) => {
+    switch (status) {
+      case 'Pago': return 'success';
+      case 'Pendente': return 'default'; // Using default for pending, can customize
+      case 'Atrasado': return 'destructive';
+      default: return 'secondary';
+    }
+  };
+
+  const getTransactionStatusBadgeVariant = (status: TransactionStatus) => {
     switch (status) {
       case 'Recebido': return 'success';
       case 'Pendente': return 'warning';
@@ -312,15 +373,16 @@ export default function FinanceiroPage() {
     }
   };
 
-   const getPaymentMethodIcon = (method: PaymentMethod) => {
+   const getPaymentMethodIcon = (method?: PaymentMethod) => {
+    if (!method) return <DollarSign className="h-4 w-4 text-muted-foreground" />;
     switch (method) {
-      case 'Dinheiro': return <Coins className="h-4 w-4" />;
+      case 'Dinheiro': return <Coins className="h-4 w-4 text-green-600" />;
       case 'Cartão de Crédito':
-      case 'Cartão de Débito': return <CreditCardIcon className="h-4 w-4" />;
-      case 'Pix': return <Smartphone className="h-4 w-4" />;
+      case 'Cartão de Débito': return <CreditCardIcon className="h-4 w-4 text-blue-500" />;
+      case 'Pix': return <Smartphone className="h-4 w-4 text-sky-500" />;
       case 'Boleto':
-      case 'Transferência': return <Landmark className="h-4 w-4" />;
-      default: return <DollarSign className="h-4 w-4" />;
+      case 'Transferência': return <Landmark className="h-4 w-4 text-purple-500" />;
+      default: return <Wallet className="h-4 w-4 text-gray-500" />;
     }
   };
 
@@ -335,7 +397,7 @@ export default function FinanceiroPage() {
 
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-foreground">Controle Financeiro</h1>
         <Dialog open={isAddTransactionDialogOpen} onOpenChange={(isOpen) => {
@@ -497,7 +559,7 @@ export default function FinanceiroPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Faturamento Bruto</CardTitle>
+            <CardTitle className="text-sm font-medium">Faturamento Bruto (Recebido)</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -519,7 +581,7 @@ export default function FinanceiroPage() {
         </Card>
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Média por Atendimento</CardTitle>
+            <CardTitle className="text-sm font-medium">Média por Atendimento Pago</CardTitle>
             <Percent className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -559,11 +621,76 @@ export default function FinanceiroPage() {
         </CardContent>
       </Card>
 
+      {/* Nova Tabela: Contas a Receber por Paciente */}
+      <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" />Contas a Receber por Paciente</CardTitle>
+          <CardDescription>Status de pagamento dos atendimentos no período selecionado.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Paciente</TableHead>
+                <TableHead>Descrição</TableHead>
+                <TableHead>Vencimento</TableHead>
+                <TableHead>Data Pgto.</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-center">Dias Atraso</TableHead>
+                <TableHead className="text-right">Valor (R$)</TableHead>
+                <TableHead className="text-center">Forma Pgto.</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {receivablesData.length > 0 ? (
+                receivablesData.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.patientName}</TableCell>
+                    <TableCell>{item.description}</TableCell>
+                    <TableCell>{format(item.dueDate, 'dd/MM/yyyy')}</TableCell>
+                    <TableCell>{item.paymentDate ? format(item.paymentDate, 'dd/MM/yyyy') : '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant={getPaymentStatusBadgeVariant(item.paymentStatusDisplay)} className="capitalize text-xs whitespace-nowrap">
+                        {item.paymentStatusDisplay === 'Pago' && <CheckCircle className="mr-1 h-3 w-3" />}
+                        {item.paymentStatusDisplay === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
+                        {item.paymentStatusDisplay === 'Atrasado' && <AlertTriangle className="mr-1 h-3 w-3" />}
+                        {item.paymentStatusDisplay}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {item.paymentStatusDisplay === 'Atrasado' && item.daysOverdue !== undefined && item.daysOverdue > 0
+                        ? <span className="text-destructive font-medium">{item.daysOverdue}</span>
+                        : '-'}
+                    </TableCell>
+                    <TableCell className={`text-right font-medium ${item.paymentStatusDisplay === 'Atrasado' ? 'text-destructive' : item.paymentStatusDisplay === 'Pago' ? 'text-green-600' : ''}`}>
+                      {item.amount.toFixed(2)}
+                    </TableCell>
+                     <TableCell className="text-center">
+                       <div className="flex items-center justify-center gap-1">
+                         {getPaymentMethodIcon(item.paymentMethod)}
+                         <span className="text-xs text-muted-foreground">{item.paymentMethod || '-'}</span>
+                       </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center h-24">
+                    Nenhum atendimento com pendência ou pago encontrado para o período selecionado.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+
       <Card className="shadow-md">
         <CardHeader className="flex flex-row items-center justify-between">
             <div>
-                <CardTitle>Lançamentos Financeiros</CardTitle>
-                <CardDescription>Lista de todas as transações no período selecionado.</CardDescription>
+                <CardTitle>Todos os Lançamentos Financeiros</CardTitle>
+                <CardDescription>Lista de todas as transações (incluindo manuais) no período selecionado.</CardDescription>
             </div>
             <Button variant="outline" onClick={handleExportExcel}>
                 <FileDown className="mr-2 h-4 w-4" /> Exportar Excel (Em breve)
@@ -590,17 +717,19 @@ export default function FinanceiroPage() {
                       {t.description}
                       {t.notes && <p className="text-xs text-muted-foreground italic mt-1">"{t.notes}"</p>}
                     </TableCell>
-                    <TableCell className={t.status === 'Cancelado' ? 'text-muted-foreground line-through' : (t.status === 'Pendente' ? 'text-orange-600' : 'text-green-600')}>
+                    <TableCell className={`font-medium ${t.status === 'Cancelado' ? 'text-muted-foreground line-through' : (t.status === 'Pendente' ? 'text-orange-600' : 'text-green-600')}`}>
                       {t.amount.toFixed(2)}
                     </TableCell>
-                    <TableCell className="flex items-center gap-2">
-                        {getPaymentMethodIcon(t.paymentMethod)}
-                        {t.paymentMethod}
+                    <TableCell>
+                        <div className="flex items-center gap-1">
+                           {getPaymentMethodIcon(t.paymentMethod)}
+                           <span className="text-xs">{t.paymentMethod}</span>
+                        </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={getStatusBadgeVariant(t.status)} className="capitalize text-xs">
+                      <Badge variant={getTransactionStatusBadgeVariant(t.status)} className="capitalize text-xs whitespace-nowrap">
                           {t.status === 'Recebido' && <CheckCircle className="mr-1 h-3 w-3" />}
-                          {t.status === 'Pendente' && <CircleHelp className="mr-1 h-3 w-3" />}
+                          {t.status === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
                           {t.status === 'Cancelado' && <XCircle className="mr-1 h-3 w-3" />}
                           {t.status}
                       </Badge>
@@ -629,3 +758,4 @@ export default function FinanceiroPage() {
     </div>
   );
 }
+

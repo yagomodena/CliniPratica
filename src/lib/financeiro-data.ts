@@ -7,11 +7,11 @@ export type TransactionType = 'atendimento' | 'manual';
 
 export interface FinancialTransaction {
   id: string;
-  date: Date;
-  description: string; // Nome do Paciente or manual description
+  date: Date; // For 'atendimento' type, this is typically the appointment/due date. For 'manual', it's the transaction date.
+  description: string; // Name of the Patient or manual description
   patientId?: string;
   patientName?: string;
-  appointmentId?: string;
+  appointmentId?: string; // Could be used to link directly to an appointment
   amount: number;
   paymentMethod: PaymentMethod;
   status: TransactionStatus;
@@ -48,13 +48,13 @@ export const initialTransactions: FinancialTransaction[] = [
   },
   {
     id: 'ft003',
-    date: subDays(today, 1),
+    date: subDays(today, 1), // Due yesterday, explicitly set as Pendente to test overdue logic
     description: 'Consulta Beatriz Lima',
     patientId: 'p003',
     patientName: 'Beatriz Lima',
     amount: 150,
     paymentMethod: 'Dinheiro',
-    status: 'Pendente',
+    status: 'Pendente', // Will become 'Atrasado' based on date
     type: 'atendimento',
   },
   {
@@ -75,24 +75,24 @@ export const initialTransactions: FinancialTransaction[] = [
     amount: 49.90,
     paymentMethod: 'Cartão de Crédito',
     status: 'Recebido',
-    type: 'manual',
+    type: 'manual', // Manual, no patient directly linked for this new table
     notes: 'Receita extra',
   },
   {
     id: 'ft006',
-    date: today,
+    date: today, // Due today
     description: 'Consulta Daniel Costa',
     patientId: 'p004',
     patientName: 'Daniel Costa',
     amount: 120,
     paymentMethod: 'Boleto',
-    status: 'Pendente',
+    status: 'Pendente', // Will remain 'Pendente' if today
     type: 'atendimento',
   },
    {
     id: 'ft007',
     date: startOfDay(yesterday),
-    description: 'Sessão Extra Ana Silva',
+    description: 'Sessão Extra Ana Silva (Paga)',
     patientId: 'p001',
     patientName: 'Ana Silva',
     amount: 100,
@@ -115,11 +115,45 @@ export const initialTransactions: FinancialTransaction[] = [
     description: 'Consulta Cancelada - Carlos Souza',
     patientId: 'p002',
     patientName: 'Carlos Souza',
-    amount: 0, // Or the cancellation fee if applicable
+    amount: 0,
     paymentMethod: 'Outro',
-    status: 'Cancelado',
+    status: 'Cancelado', // Will be filtered out from receivables table
     type: 'atendimento',
     notes: 'Paciente cancelou com antecedência.'
+  },
+  {
+    id: 'ft010',
+    date: subDays(today, 10), // Clearly overdue
+    description: 'Consulta Pendente Antiga - Ana Silva',
+    patientId: 'p001',
+    patientName: 'Ana Silva',
+    amount: 130,
+    paymentMethod: 'Pix', 
+    status: 'Pendente', // Will become 'Atrasado'
+    type: 'atendimento',
+    notes: 'Aguardando pagamento.'
+  },
+  {
+    id: 'ft011',
+    date: addDays(today, 5), // Future due date
+    description: 'Consulta Agendada Futura - Carlos Souza',
+    patientId: 'p002',
+    patientName: 'Carlos Souza',
+    amount: 160,
+    paymentMethod: 'Cartão de Débito',
+    status: 'Pendente', // Will remain 'Pendente'
+    type: 'atendimento',
+  },
+  {
+    id: 'ft012',
+    date: today, // Due today, still pending
+    description: 'Consulta Hoje Pendente - Beatriz Lima',
+    patientId: 'p003',
+    patientName: 'Beatriz Lima',
+    amount: 150,
+    paymentMethod: 'Dinheiro',
+    status: 'Pendente', // Will remain 'Pendente' if today
+    type: 'atendimento',
   }
 ];
 
