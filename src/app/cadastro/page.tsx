@@ -1,11 +1,13 @@
+
 'use client';
 
-import { useEffect, Suspense } from 'react';
+import { useEffect, Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormState, useFormStatus } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Eye, EyeOff } from 'lucide-react'; // Import Eye and EyeOff icons
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +42,9 @@ function CadastroForm() {
 
   const [state, formAction] = useFormState(submitRegistrationForm, initialState);
 
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const form = useForm<RegistrationFormValues>({
     resolver: zodResolver(registrationFormSchema),
     defaultValues: {
@@ -47,14 +52,13 @@ function CadastroForm() {
       email: '',
       phone: '',
       password: '',
+      confirmPassword: '',
       area: '',
       plan: planFromQuery,
     },
   });
 
    useEffect(() => {
-    // This ensures the form's plan value is updated if the query param is available on initial load
-    // or if it somehow changes (though less likely for a static query param on page load).
     if (planFromQuery && form.getValues('plan') !== planFromQuery) {
       form.reset({ ...form.getValues(), plan: planFromQuery });
     }
@@ -68,7 +72,7 @@ function CadastroForm() {
         description: state.message,
         variant: 'success',
       });
-      form.reset({ fullName: '', email: '', phone: '', password: '', area: '', plan: planFromQuery }); // Reset form but keep plan
+      form.reset({ fullName: '', email: '', phone: '', password: '', confirmPassword: '', area: '', plan: planFromQuery });
       setTimeout(() => {
         router.push('/login');
       }, 2500);
@@ -78,34 +82,22 @@ function CadastroForm() {
         description: state.message || 'Por favor, verifique os campos.',
         variant: 'destructive',
       });
-      // Populate field errors from Zod issues if available
-      if (state.issues) {
-         parsed.error.issues.forEach(issue => { // Assuming parsed is available if schema failed.
-          const fieldName = issue.path[0] as keyof RegistrationFormValues;
-          if (fieldName) {
-            form.setError(fieldName, { type: 'server', message: issue.message });
-          }
+      
+      const fieldErrors = registrationFormSchema.safeParse(state.fields || {}).error?.flatten().fieldErrors;
+      if (fieldErrors) {
+        (Object.keys(fieldErrors) as Array<keyof RegistrationFormValues>).forEach((key) => {
+            const messages = fieldErrors[key];
+            if (messages && messages.length > 0) {
+              form.setError(key, { type: 'server', message: messages[0] });
+            }
         });
-      } else if (state.fields) { // Fallback for more general errors
-         // Attempt to repopulate form, though RHF should handle this with register
+      }
+       // Specific handling for password confirmation mismatch not directly tied to Zod path from server state issues
+      if (state.issues?.some(issue => issue.toLowerCase().includes('senhas não coincidem'))) {
+        form.setError('confirmPassword', {type: 'server', message: 'As senhas não coincidem.'})
       }
     }
   }, [state, toast, form, router, planFromQuery]);
-
-  // Temporary workaround if `parsed` is not in scope for error handling:
-   useEffect(() => {
-    if (state.status === 'error' && state.issues) {
-        const fieldErrors = registrationFormSchema.safeParse(state.fields || {}).error?.flatten().fieldErrors;
-        if (fieldErrors) {
-            (Object.keys(fieldErrors) as Array<keyof RegistrationFormValues>).forEach((key) => {
-                 const messages = fieldErrors[key];
-                 if (messages && messages.length > 0) {
-                    form.setError(key, { type: 'server', message: messages[0] });
-                 }
-            });
-        }
-    }
-   }, [state, form]);
 
 
   return (
@@ -122,7 +114,6 @@ function CadastroForm() {
       </CardHeader>
       <CardContent>
         <form action={formAction} className="space-y-4">
-          {/* Hidden input to pass the plan to the server action */}
           <input type="hidden" {...form.register('plan')} value={planFromQuery} />
 
           <div>
@@ -140,11 +131,49 @@ function CadastroForm() {
             <Input id="phone" type="tel" placeholder="(XX) XXXXX-XXXX" {...form.register('phone')} />
             {form.formState.errors.phone && <p className="text-sm text-destructive mt-1">{form.formState.errors.phone.message}</p>}
           </div>
-          <div>
+          
+          <div className="relative">
             <Label htmlFor="password">Senha*</Label>
-            <Input id="password" type="password" placeholder="Mínimo 6 caracteres" {...form.register('password')} />
+            <Input 
+              id="password" 
+              type={showPassword ? 'text' : 'password'} 
+              placeholder="Mínimo 6 caracteres" 
+              {...form.register('password')} 
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-6 h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
             {form.formState.errors.password && <p className="text-sm text-destructive mt-1">{form.formState.errors.password.message}</p>}
           </div>
+
+          <div className="relative">
+            <Label htmlFor="confirmPassword">Confirmar Senha*</Label>
+            <Input 
+              id="confirmPassword" 
+              type={showConfirmPassword ? 'text' : 'password'} 
+              placeholder="Repita a senha" 
+              {...form.register('confirmPassword')} 
+            />
+             <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-6 h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
+            >
+              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+            {form.formState.errors.confirmPassword && <p className="text-sm text-destructive mt-1">{form.formState.errors.confirmPassword.message}</p>}
+          </div>
+
           <div>
             <Label htmlFor="area">Área de Atuação (Opcional)</Label>
             <Input id="area" placeholder="Ex: Psicologia, Nutrição, Fisioterapia" {...form.register('area')} />

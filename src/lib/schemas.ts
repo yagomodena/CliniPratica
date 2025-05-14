@@ -13,8 +13,12 @@ export const registrationFormSchema = z.object({
   email: z.string().email({ message: "Por favor, insira um email válido." }),
   phone: z.string().min(10, { message: "O telefone deve ter pelo menos 10 dígitos (com DDD)." }).max(15, { message: "O telefone deve ter no máximo 15 dígitos." }),
   password: z.string().min(6, { message: "A senha deve ter pelo menos 6 caracteres." }),
+  confirmPassword: z.string().min(6, { message: "A confirmação da senha deve ter pelo menos 6 caracteres." }),
   area: z.string().max(100, { message: "A área de atuação deve ter no máximo 100 caracteres."}).optional().or(z.literal('')),
   plan: z.string().optional(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "As senhas não coincidem.",
+  path: ["confirmPassword"], // Define o erro no campo confirmPassword
 });
 
 export type RegistrationFormValues = z.infer<typeof registrationFormSchema>;
