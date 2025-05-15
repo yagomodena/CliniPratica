@@ -299,14 +299,14 @@ export default function ConfiguracoesPage() {
                       )}
                  </CardContent>
               </Card>
-              <div className="flex flex-wrap gap-4 items-center">
-                 <Button onClick={() => setIsPlansModalOpen(true)}>
+              <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-center">
+                 <Button onClick={() => setIsPlansModalOpen(true)} className="w-full sm:w-auto">
                    Ver Planos e Fazer Upgrade
                  </Button>
                   {currentUserPlan !== 'Gratuito' && (
                       <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
                           <AlertDialogTrigger asChild>
-                             <Button variant="outline" className="text-destructive hover:bg-destructive/10 border-destructive/50 hover:border-destructive/80">
+                             <Button variant="outline" className="w-full sm:w-auto text-destructive hover:bg-destructive/10 border-destructive/50 hover:border-destructive/80">
                                 <AlertTriangle className="mr-2 h-4 w-4" /> Cancelar Assinatura
                              </Button>
                           </AlertDialogTrigger>
