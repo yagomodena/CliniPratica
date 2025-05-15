@@ -4,7 +4,7 @@
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil } from "lucide-react";
+import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye } from "lucide-react"; // Added Eye
 import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -27,6 +27,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -192,9 +193,16 @@ export default function AgendaPage() {
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    if (!clientToday || !clientNow) return true;
-    return isBefore(startOfDay(dateTime), clientToday) ||
-           (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow));
+    if (!clientToday || !clientNow) return true; // Should not happen if clientNow/clientToday are set
+    // Check if the date of the appointment is before today
+    if (isBefore(startOfDay(dateTime), clientToday)) {
+        return true;
+    }
+    // If the appointment is for today, check if the time is in the past
+    if (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow)) {
+        return true;
+    }
+    return false;
   };
 
   const isTimeSlotOccupied = (dateKey: string, time: string, excludingAppointmentId?: string): boolean => {
@@ -604,11 +612,33 @@ export default function AgendaPage() {
                       >
                         <Edit className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" onClick={() => handleOpenDeleteApptDialog(appt, formattedDateKey)} title="Excluir Agendamento">
-                        <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                           <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" title="Excluir Agendamento">
+                             <Trash2 className="h-4 w-4" />
+                           </Button>
+                         </AlertDialogTrigger>
+                         <AlertDialogContent>
+                           <AlertDialogHeader>
+                             <AlertDialogTitle>Confirmar Exclusão de Agendamento</AlertDialogTitle>
+                             <AlertDialogDescription>
+                                Tem certeza que deseja excluir este agendamento para {appt.patientName} às {appt.time}? Esta ação não pode ser desfeita.
+                             </AlertDialogDescription>
+                           </AlertDialogHeader>
+                           <AlertDialogFooter>
+                             <AlertDialogCancel onClick={() => {setAppointmentToDeleteInfo(null);}}>Cancelar</AlertDialogCancel> {/* Removed setIsDeleteApptConfirmOpen(false) here, it's handled by onOpenChange of AlertDialog */}
+                             <AlertDialogAction onClick={() => { 
+                               setAppointmentToDeleteInfo({ appointment: appt, dateKey: formattedDateKey }); // Set info then call confirm
+                               handleConfirmDeleteAppt();
+                             }} className="bg-destructive hover:bg-destructive/90">Excluir Agendamento</AlertDialogAction>
+                           </AlertDialogFooter>
+                         </AlertDialogContent>
+                    </AlertDialog>
                     <Button asChild variant="ghost" size="sm" className="h-8">
-                      <Link href={`/pacientes/${generateSlug(appt.patientName)}`}>Ver Paciente</Link>
+                      <Link href={`/pacientes/${generateSlug(appt.patientName)}`}>
+                        <span className="sm:hidden">Ver</span>
+                        <span className="hidden sm:inline">Ver Paciente</span>
+                      </Link>
                     </Button>
                   </div>
                 </div>
@@ -788,8 +818,13 @@ export default function AgendaPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Appointment Confirmation Dialog */}
-       <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={setIsDeleteApptConfirmOpen}>
+      {/* Delete Appointment Confirmation Dialog (reusing based on state) */}
+       <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={(isOpen) => {
+           if (!isOpen) {
+               setAppointmentToDeleteInfo(null); // Clear info when dialog closes
+           }
+           setIsDeleteApptConfirmOpen(isOpen);
+       }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar Exclusão de Agendamento</AlertDialogTitle>
@@ -798,7 +833,7 @@ export default function AgendaPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {setIsDeleteApptConfirmOpen(false); setAppointmentToDeleteInfo(null);}}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDeleteAppt} className="bg-destructive hover:bg-destructive/90">Excluir Agendamento</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
