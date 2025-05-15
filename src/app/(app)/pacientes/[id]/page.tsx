@@ -1,12 +1,12 @@
 
 'use client';
 
-import { useState, useEffect } from 'react'; // Added useEffect
+import { useState, useEffect, useCallback } from 'react'; // Added useEffect
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX } from "lucide-react"; // Added UserCheck, UserX
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil } from "lucide-react"; // Added UserCheck, UserX, Plus, Search, Pencil
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -31,12 +31,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
-import { Badge } from '@/components/ui/badge'; // Import Badge
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from '@/components/ui/switch';
+
 
 // --- In-memory Store Simulation ---
 // NOTE: This is a basic simulation. Changes here won't persist across page reloads
@@ -108,6 +110,21 @@ type Patient = {
   documents: DocumentItem[];
 };
 
+// Structure for appointment types (consistent with AgendaPage)
+type AppointmentTypeObject = {
+  name: string;
+  status: 'active' | 'inactive';
+};
+
+// Initial appointment types data (can be shared or fetched in a real app)
+const initialAppointmentTypesData: AppointmentTypeObject[] = [
+  { name: 'Consulta', status: 'active' },
+  { name: 'Retorno', status: 'active' },
+  { name: 'Avaliação', status: 'active' },
+  { name: 'Observação', status: 'active' }, // Added from original patient detail select
+  { name: 'Outro', status: 'active' },
+];
+
 
 export default function PacienteDetalhePage() {
   const params = useParams();
@@ -119,10 +136,32 @@ export default function PacienteDetalhePage() {
   const [patient, setPatient] = useState<Patient | undefined>(undefined);
   const [isEditing, setIsEditing] = useState(false);
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
+  
+  // State for New History Entry
   const [newHistoryNote, setNewHistoryNote] = useState('');
-  const [newHistoryType, setNewHistoryType] = useState('Consulta');
+  const [newHistoryType, setNewHistoryType] = useState(''); // Will be initialized by getFirstActiveTypeName
+
+  // State for Document Upload
   const [newDocument, setNewDocument] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true); // Loading state
+
+  // State for Appointment Types (consistent with AgendaPage)
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>(initialAppointmentTypesData);
+  const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
+  const [newCustomTypeName, setNewCustomTypeName] = useState('');
+  const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
+  const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
+  const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
+
+  const getFirstActiveTypeName = useCallback(() => {
+    return appointmentTypes.find(t => t.status === 'active')?.name || '';
+  }, [appointmentTypes]);
+  
+  useEffect(() => {
+    // Initialize newHistoryType with the first active type name
+    setNewHistoryType(getFirstActiveTypeName());
+  }, [appointmentTypes, getFirstActiveTypeName]);
+
 
    // Fetch patient data on mount (simulation)
    useEffect(() => {
@@ -130,24 +169,26 @@ export default function PacienteDetalhePage() {
      if (currentPatientData) {
         setPatient(currentPatientData);
         setEditedPatient({ ...currentPatientData }); // Initialize edited state as well
+        // Initialize newHistoryType if patient has history, otherwise use first active
+        if (currentPatientData.history.length > 0) {
+          // This line might be removed if we always want to default to first active
+          // setNewHistoryType(currentPatientData.history[0].type); 
+        } else {
+           setNewHistoryType(getFirstActiveTypeName());
+        }
      } else {
-        // Handle patient not found (maybe redirect or show error)
         console.error("Patient not found with slug:", patientSlug);
-        // Could redirect here: router.push('/pacientes');
      }
      setIsLoading(false);
-   }, [patientSlug]); // Depend on slug
+   }, [patientSlug, getFirstActiveTypeName]); // Depend on slug and getFirstActiveTypeName
 
   const handleEditToggle = () => {
      if (isEditing && editedPatient) {
-       // Save changes
-       setPatient({ ...editedPatient }); // Update local display state
-       updatePatientInStore(patientSlug, editedPatient); // Update simulated global store
-       console.log("Patient data saved:", editedPatient);
+       setPatient({ ...editedPatient });
+       updatePatientInStore(patientSlug, editedPatient);
        toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
-       setIsEditing(false); // Exit edit mode AFTER saving
+       setIsEditing(false);
      } else if (patient) {
-       // Enter edit mode, ensure editedPatient is synced with current patient data
        setEditedPatient({ ...patient });
        setIsEditing(true);
      }
@@ -155,7 +196,7 @@ export default function PacienteDetalhePage() {
 
   const handleCancelEdit = () => {
      if (patient) {
-        setEditedPatient({ ...patient }); // Reset changes to original patient data
+        setEditedPatient({ ...patient });
      }
      setIsEditing(false);
   };
@@ -171,21 +212,29 @@ export default function PacienteDetalhePage() {
       const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
       const updatedPatient = { ...patient, status: newStatus };
 
-      setPatient(updatedPatient); // Update local display state
-      setEditedPatient(updatedPatient); // Keep edited state in sync
-      updatePatientInStore(patientSlug, updatedPatient); // Update simulated global store
+      setPatient(updatedPatient);
+      setEditedPatient(updatedPatient);
+      updatePatientInStore(patientSlug, updatedPatient);
 
       toast({
          title: "Status Alterado",
          description: `Status de ${patient.name} alterado para ${newStatus}.`,
-         variant: newStatus === 'Inativo' ? 'warning' : 'success' // Use 'warning' for Inativo, 'success' for Ativo
+         variant: newStatus === 'Inativo' ? 'warning' : 'success'
       });
-      console.log(`Status toggled for ${patient.name} to ${newStatus}`);
    };
 
 
   const handleAddHistory = () => {
-    if (!newHistoryNote.trim() || !patient) return;
+    if (!newHistoryNote.trim() || !patient || !newHistoryType.trim()) {
+        toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são necessários.", variant: "destructive"});
+        return;
+    }
+    const activeType = appointmentTypes.find(t => t.name === newHistoryType && t.status === 'active');
+    if (!activeType) {
+        toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo ou não existe.", variant: "destructive"});
+        return;
+    }
+
     const newEntry: HistoryItem = {
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
@@ -193,12 +242,11 @@ export default function PacienteDetalhePage() {
     };
     const updatedPatient = { ...patient, history: [newEntry, ...patient.history] };
     setPatient(updatedPatient);
-    setEditedPatient(updatedPatient); // Keep edited state in sync
+    setEditedPatient(updatedPatient);
     updatePatientInStore(patientSlug, updatedPatient);
     setNewHistoryNote('');
-    setNewHistoryType('Consulta');
+    setNewHistoryType(getFirstActiveTypeName()); // Reset to first active type
     toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
-    console.log("New history added:", newEntry);
   };
 
    const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,7 +260,7 @@ export default function PacienteDetalhePage() {
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument), // In real app, upload to server and get URL
+      url: URL.createObjectURL(newDocument), 
     };
     const updatedPatient = { ...patient, documents: [newDocEntry, ...patient.documents] };
     setPatient(updatedPatient);
@@ -222,7 +270,6 @@ export default function PacienteDetalhePage() {
     const fileInput = document.getElementById('document-upload') as HTMLInputElement;
      if (fileInput) fileInput.value = '';
     toast({ title: "Documento Enviado", description: `Documento "${newDocEntry.name}" anexado.`, variant: "success" });
-    console.log("Document uploaded:", newDocEntry);
   };
 
   const handleDeleteDocument = (docName: string) => {
@@ -233,29 +280,111 @@ export default function PacienteDetalhePage() {
       setEditedPatient(updatedPatient);
       updatePatientInStore(patientSlug, updatedPatient);
       toast({ title: "Documento Excluído", description: `Documento "${docName}" removido.`, variant: "default" });
-      console.log("Document deleted:", docName);
   };
 
   const handleDeletePatient = () => {
       if (!patient) return;
       const patientName = patient.name;
-      deletePatientFromStore(patientSlug); // Remove from simulated store
-      console.log("Patient deleted:", patientName);
+      deletePatientFromStore(patientSlug);
       toast({ title: "Paciente Excluído", description: `Paciente ${patientName} foi removido com sucesso.`, variant: "destructive" });
       router.push('/pacientes');
   };
 
-   // Loading state display
+  // Appointment Type Management Functions (copied and adapted from AgendaPage)
+  const handleAddCustomType = () => {
+    const trimmedType = newCustomTypeName.trim();
+    if (!trimmedType) {
+        toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
+        return;
+    }
+    if (appointmentTypes.some(type => type.name.toLowerCase() === trimmedType.toLowerCase())) {
+        toast({ title: "Tipo Duplicado", description: `O tipo "${trimmedType}" já existe.`, variant: "destructive" });
+        return;
+    }
+    const newTypeObject: AppointmentTypeObject = { name: trimmedType, status: 'active' };
+    const newTypes = [...appointmentTypes, newTypeObject].sort((a, b) => a.name.localeCompare(b.name));
+    setAppointmentTypes(newTypes);
+    setNewCustomTypeName('');
+    setIsAddTypeDialogOpen(false);
+
+    // If newHistoryType was empty or not active, set it to the new type
+    if (newHistoryType === '' || !appointmentTypes.find(t=>t.name === newHistoryType && t.status === 'active')) {
+        setNewHistoryType(trimmedType);
+    }
+    toast({ title: "Sucesso", description: `Tipo "${trimmedType}" adicionado.`, variant: "success" });
+  };
+
+  const handleSaveEditedTypeName = () => {
+    if (!editingTypeInfo) return;
+    const { originalName, currentName } = editingTypeInfo;
+    const newNameTrimmed = currentName.trim();
+
+    if (!newNameTrimmed) {
+      toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
+      return;
+    }
+    if (newNameTrimmed.toLowerCase() !== originalName.toLowerCase() && appointmentTypes.some(type => type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
+      toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
+      return;
+    }
+
+    setAppointmentTypes(prevTypes => prevTypes.map(t => t.name === originalName ? { ...t, name: newNameTrimmed } : t).sort((a,b) => a.name.localeCompare(b.name)));
+    
+    // Update newHistoryType if it was the one being edited
+    if (newHistoryType === originalName) {
+      setNewHistoryType(newNameTrimmed);
+    }
+    
+    // Update existing history items (if desired, this is a more complex operation on patient.history)
+    // For now, only affects new entries and the select field.
+    
+    setEditingTypeInfo(null);
+    toast({ title: "Sucesso", description: `Nome do tipo "${originalName}" atualizado para "${newNameTrimmed}".`, variant: "success" });
+  };
+
+  const handleToggleTypeStatus = (typeName: string) => {
+    const typeToToggle = appointmentTypes.find(t => t.name === typeName);
+    if (!typeToToggle) return;
+
+    const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
+    if (newStatus === 'inactive') {
+      const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
+      if (activeTypesCount <= 1) {
+        toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
+        return;
+      }
+    }
+
+    setAppointmentTypes(prevTypes =>
+      prevTypes.map(t =>
+        t.name === typeName ? { ...t, status: newStatus } : t
+      ).sort((a, b) => a.name.localeCompare(b.name))
+    );
+    
+    // If the currently selected newHistoryType was deactivated, switch to the first available active type
+    if (newStatus === 'inactive' && newHistoryType === typeName) {
+      setNewHistoryType(getFirstActiveTypeName());
+    }
+
+    toast({
+      title: "Status Alterado",
+      description: `O tipo "${typeName}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`,
+      variant: "success"
+    });
+    setTypeToToggleStatusConfirm(null);
+  };
+  
+  const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
+
+
    if (isLoading) {
        return (
            <div className="text-center py-10">
                <p>Carregando dados do paciente...</p>
-               {/* Optional: Add a spinner */}
            </div>
        );
    }
 
-  // Patient not found after loading
   if (!patient) {
      return (
         <div className="text-center py-10">
@@ -293,16 +422,15 @@ export default function PacienteDetalhePage() {
     }
   };
 
-  // Determine which patient data to display (current or edited)
   const displayPatient = isEditing ? editedPatient : patient;
 
   return (
     <div className="space-y-6">
-       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap"> {/* Added flex-wrap */}
+       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
          <Button variant="outline" onClick={() => router.back()}>
            <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
          </Button>
-          <div className="flex gap-2 flex-wrap"> {/* Added flex-wrap */}
+          <div className="flex gap-2 flex-wrap">
               {isEditing ? (
                  <>
                      <Button variant="outline" size="sm" onClick={handleCancelEdit}>
@@ -314,7 +442,6 @@ export default function PacienteDetalhePage() {
                  </>
               ) : (
                  <>
-                     {/* Activate/Inactivate Button */}
                      <AlertDialog>
                          <AlertDialogTrigger asChild>
                            <Button
@@ -345,12 +472,10 @@ export default function PacienteDetalhePage() {
                          </AlertDialogContent>
                      </AlertDialog>
 
-                     {/* Edit Button */}
                      <Button variant="outline" size="sm" onClick={handleEditToggle}>
                          <Edit className="mr-2 h-4 w-4" /> Editar Cadastro
                      </Button>
 
-                     {/* Delete Button */}
                      <AlertDialog>
                          <AlertDialogTrigger asChild>
                            <Button variant="destructive" size="sm">
@@ -412,7 +537,6 @@ export default function PacienteDetalhePage() {
                <TabsTrigger value="dados" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Dados Cadastrais</TabsTrigger>
              </TabsList>
 
-             {/* Histórico Tab */}
              <TabsContent value="historico" className="p-6 space-y-6 mt-0">
                 <Card>
                   <CardHeader>
@@ -421,17 +545,26 @@ export default function PacienteDetalhePage() {
                   <CardContent className="space-y-3">
                        <div>
                            <Label htmlFor="atendimento-tipo">Tipo de Atendimento</Label>
-                           <select
-                               id="atendimento-tipo"
-                               value={newHistoryType}
-                               onChange={(e) => setNewHistoryType(e.target.value)}
-                               className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                           >
-                               <option>Consulta</option>
-                               <option>Retorno</option>
-                               <option>Avaliação</option>
-                               <option>Observação</option>
-                           </select>
+                           <div className="flex items-center gap-1 mt-1">
+                               <Select
+                                   value={newHistoryType}
+                                   onValueChange={(value) => setNewHistoryType(value)}
+                               >
+                                   <SelectTrigger id="atendimento-tipo" className="flex-grow">
+                                       <SelectValue placeholder="Selecione o tipo" />
+                                   </SelectTrigger>
+                                   <SelectContent>
+                                       {activeAppointmentTypes.map((type) => <SelectItem key={type.name} value={type.name}>{type.name}</SelectItem>)}
+                                       {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
+                                   </SelectContent>
+                               </Select>
+                               <Button type="button" variant="outline" size="icon" className="flex-shrink-0" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo">
+                                   <Plus className="h-4 w-4" />
+                               </Button>
+                               <Button type="button" variant="outline" size="icon" className="flex-shrink-0" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar tipos">
+                                   <Search className="h-4 w-4" />
+                               </Button>
+                           </div>
                        </div>
                        <div>
                            <Label htmlFor="atendimento-notas">Observações</Label>
@@ -469,7 +602,6 @@ export default function PacienteDetalhePage() {
                 )}
              </TabsContent>
 
-             {/* Documentos Tab */}
              <TabsContent value="documentos" className="p-6 space-y-6 mt-0">
                  <Card>
                      <CardHeader>
@@ -532,7 +664,6 @@ export default function PacienteDetalhePage() {
 
              </TabsContent>
 
-             {/* Dados Cadastrais Tab */}
              <TabsContent value="dados" className="p-6 space-y-4 mt-0">
                  <h3 className="text-lg font-semibold">Informações Pessoais</h3>
                   {isEditing ? (
@@ -557,7 +688,6 @@ export default function PacienteDetalhePage() {
                               <Label htmlFor="edit-address">Endereço</Label>
                               <Input id="edit-address" name="address" value={editedPatient?.address || ''} onChange={handleInputChange} />
                            </div>
-                             {/* Status field is editable */}
                              <div className="space-y-1">
                               <Label htmlFor="edit-status">Status</Label>
                                <select
@@ -586,11 +716,110 @@ export default function PacienteDetalhePage() {
                          </div>
                      </div>
                   )}
-                  {/* Removed Save/Cancel button container from here, moved to top */}
              </TabsContent>
            </Tabs>
         </CardContent>
       </Card>
+
+      {/* Add New Appointment Type Dialog */}
+      <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+                <DialogTitle>Adicionar Novo Tipo de Atendimento</DialogTitle>
+                <DialogDescription>Insira o nome do novo tipo.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+                <Label htmlFor="newCustomTypeName">Nome do Tipo</Label>
+                <Input
+                    id="newCustomTypeName"
+                    value={newCustomTypeName}
+                    onChange={(e) => setNewCustomTypeName(e.target.value)}
+                    placeholder="Ex: Sessão Extra"
+                />
+            </div>
+            <DialogFooter>
+                <DialogClose asChild><Button type="button" variant="outline" onClick={() => setNewCustomTypeName('')}>Cancelar</Button></DialogClose>
+                <Button type="button" onClick={handleAddCustomType}>Salvar Tipo</Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Appointment Types Dialog */}
+      <Dialog open={isManageTypesDialogOpen} onOpenChange={setIsManageTypesDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle>
+            <DialogDescription>Edite ou altere o status dos tipos de atendimento.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
+            {appointmentTypes.map((type) => (
+              <div key={type.name} className="flex items-center justify-between p-2 border rounded-md">
+                {editingTypeInfo?.originalName === type.name ? (
+                  <div className="flex-grow flex items-center gap-2 mr-2">
+                    <Input
+                      value={editingTypeInfo.currentName}
+                      onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)}
+                      className="h-8"
+                    />
+                    <Button size="icon" className="h-8 w-8" onClick={handleSaveEditedTypeName} title="Salvar Nome"><Save className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo(null)} title="Cancelar Edição"><X className="h-4 w-4" /></Button>
+                  </div>
+                ) : (
+                  <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
+                )}
+                <div className="flex gap-1 items-center ml-auto">
+                  {editingTypeInfo?.originalName !== type.name && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo({ originalName: type.name, currentName: type.name })} title="Editar Nome">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Switch
+                    checked={type.status === 'active'}
+                    onCheckedChange={() => {
+                        const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
+                        if (type.status === 'active' && activeTypesCount <= 1) {
+                          toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
+                          return;
+                        }
+                        setTypeToToggleStatusConfirm(type);
+                    }}
+                    aria-label={`Status do tipo ${type.name}`}
+                    className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400"
+                  />
+                </div>
+              </div>
+            ))}
+            {appointmentTypes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum tipo cadastrado.</p>}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Toggle Appointment Type Status Dialog */}
+      <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} o tipo "{typeToToggleStatusConfirm?.name}"?
+              {typeToToggleStatusConfirm?.status === 'active' && " Se desativado, não estará mais disponível para novos registros de histórico, mas os existentes não serão alterados."}
+              {typeToToggleStatusConfirm?.status === 'inactive' && " Se ativado, estará disponível para novos registros de histórico."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm.name)}
+              className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}
+            >
+              {typeToToggleStatusConfirm?.status === 'active' ? 'Desativar Tipo' : 'Ativar Tipo'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
