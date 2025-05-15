@@ -31,6 +31,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Added missing AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
