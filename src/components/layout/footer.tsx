@@ -30,6 +30,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/politica-de-cancelamento" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                  Política de Cancelamento
+                </Link>
+              </li>
+              <li>
                 <Link href="/contato-suporte" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                   Contato
                 </Link>
