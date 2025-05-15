@@ -59,8 +59,8 @@ type AlertForm = {
 
 // Initial alert data (replace static with state)
 const initialAlerts: Alert[] = [
-    { id: 'a001', patientId: 'p005', patientName: "Fernanda Oliveira", reason: "Retorno agendado para revisão", createdAt: new Date(2024, 7, 1), status: 'active' },
-    { id: 'a002', patientId: 'p002', patientName: "Carlos Souza", reason: "Verificar resultados de exame", createdAt: new Date(2024, 7, 3), status: 'active' }, // Assuming Carlos is in initialPatients
+    { id: 'a001', patientId: 'p005', patientName: "Fernanda Oliveira", reason: "Retorno agendado para revisão detalhada dos exames e acompanhamento do plano alimentar. Verificar se há necessidade de ajustes na suplementação.", createdAt: new Date(2024, 7, 1), status: 'active' },
+    { id: 'a002', patientId: 'p002', patientName: "Carlos Souza", reason: "Verificar resultados de exame e discutir próximos passos do tratamento.", createdAt: new Date(2024, 7, 3), status: 'active' }, // Assuming Carlos is in initialPatients
 ];
 
 // Placeholder data for charts and appointments
@@ -80,10 +80,10 @@ const chartConfig = {
 };
 
 const todaysAppointments = [
-    { time: "09:00", name: "Ana Silva", slug: "ana-silva" },
-    { time: "10:30", name: "Carlos Souza", slug: "carlos-souza" },
+    { time: "09:00", name: "Ana Silva Pereira de Andrade", slug: "ana-silva" },
+    { time: "10:30", name: "Carlos Alberto Souza Junior", slug: "carlos-souza" },
     { time: "14:00", name: "Beatriz Lima", slug: "beatriz-lima" },
-    { time: "16:00", name: "Daniel Costa", slug: "daniel-costa" },
+    { time: "16:00", name: "Daniel Costa e Silva", slug: "daniel-costa" },
 ];
 
 // Define plan names (adjust if needed based on your plan data)
@@ -266,18 +266,18 @@ export default function DashboardPage() {
                 <XIcon className="h-4 w-4" />
             </Button>
           </CardHeader>
-          <CardContent className="flex items-center justify-between gap-4 pt-2"> 
-            <p className="text-black text-sm"> 
+          <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2"> 
+            <p className="text-black text-sm text-center sm:text-left"> 
               Você está no plano gratuito - limite de 10 pacientes ativos.
             </p>
-            <Button size="sm" onClick={() => setIsPlansModalOpen(true)}>
+            <Button size="sm" onClick={() => setIsPlansModalOpen(true)} className="w-full sm:w-auto">
                Ver Planos
             </Button>
           </CardContent>
         </Card>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
          <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Atendimentos da Semana</CardTitle>
@@ -309,10 +309,10 @@ export default function DashboardPage() {
           <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
              {todaysAppointments.length > 0 ? (
               todaysAppointments.map((appt, index) => (
-                <div key={index} className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{appt.time}</span>
-                  <span className="text-muted-foreground">{appt.name}</span>
-                   <Link href={`/pacientes/${appt.slug}`} passHref>
+                <div key={index} className="flex items-center justify-between text-sm gap-2">
+                  <span className="font-medium shrink-0">{appt.time}</span>
+                  <span className="text-muted-foreground truncate flex-1 min-w-0 text-left sm:text-right" title={appt.name}>{appt.name}</span>
+                   <Link href={`/pacientes/${appt.slug}`} passHref className="shrink-0">
                       <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
                         <ArrowRight className="h-4 w-4" />
                       </Button>
@@ -397,11 +397,11 @@ export default function DashboardPage() {
              {activeAlerts.length > 0 ? (
               activeAlerts.map((alert) => (
                 <div key={alert.id} className="flex items-start justify-between text-sm space-x-2 bg-muted/30 p-2 rounded-md">
-                   <div className="flex items-start space-x-2 flex-1">
+                   <div className="flex items-start space-x-2 flex-1 min-w-0"> {/* Added min-w-0 here */}
                       <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0"/>
-                      <div>
+                      <div className="flex-1 min-w-0"> {/* Added min-w-0 here */}
                           <span className="font-medium">{alert.patientName}: </span>
-                          <span className="text-muted-foreground">{alert.reason}</span>
+                          <span className="text-muted-foreground break-words">{alert.reason}</span> {/* Added break-words */}
                       </div>
                    </div>
                    <div className="flex items-center space-x-1 flex-shrink-0">
@@ -431,9 +431,9 @@ export default function DashboardPage() {
           <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
             {birthdayPatients.length > 0 ? (
               birthdayPatients.map((patient) => (
-                <div key={patient.id} className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{patient.name}</span>
-                  <Link href={`/pacientes/${generateSlug(patient.name)}`} passHref>
+                <div key={patient.id} className="flex items-center justify-between text-sm gap-2">
+                  <span className="font-medium truncate flex-1 min-w-0" title={patient.name}>{patient.name}</span>
+                  <Link href={`/pacientes/${generateSlug(patient.name)}`} passHref className="shrink-0">
                     <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
                       <ArrowRight className="h-4 w-4" />
                     </Button>
@@ -470,13 +470,13 @@ export default function DashboardPage() {
                 <CardTitle>Acesso Rápido</CardTitle>
                 <CardDescription>Principais ações do sistema.</CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-                <Button variant="outline" asChild>
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Button variant="outline" asChild className="w-full">
                     <Link href="/pacientes?action=novo">
                         <Users className="mr-2 h-4 w-4"/> Novo Paciente
                     </Link>
                 </Button>
-                 <Button variant="outline" asChild>
+                 <Button variant="outline" asChild className="w-full">
                     <Link href="/agenda?action=novo">
                         <CalendarCheck className="mr-2 h-4 w-4"/> Novo Agendamento
                     </Link>
@@ -488,11 +488,11 @@ export default function DashboardPage() {
                 <CardTitle>Precisa de Ajuda?</CardTitle>
                 <CardDescription>Acesse nossa central de ajuda ou entre em contato.</CardDescription>
             </CardHeader>
-            <CardContent className="flex gap-4">
-                <Button variant="outline" asChild>
+            <CardContent className="flex flex-col sm:flex-row gap-4">
+                <Button variant="outline" asChild className="w-full sm:w-auto">
                    <Link href="/contato-suporte">Central de Ajuda</Link>
                 </Button>
-                 <Button asChild>
+                 <Button asChild className="w-full sm:w-auto">
                    <Link href="/contato-suporte">Falar com Suporte</Link>
                 </Button>
             </CardContent>
@@ -566,3 +566,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
