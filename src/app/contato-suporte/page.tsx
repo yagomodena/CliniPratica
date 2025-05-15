@@ -76,7 +76,7 @@ export default function ContatoSuportePage() {
           </Card>
            <div className="text-center md:text-left">
             <Button asChild variant="outline">
-              <Link href="/">Voltar à Página Inicial</Link>
+              <Link href="/dashboard">Voltar ao Dashboard</Link>
             </Button>
           </div>
         </div>

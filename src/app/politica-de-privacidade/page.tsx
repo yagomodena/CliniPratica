@@ -64,7 +64,7 @@ export default function PoliticaDePrivacidadePage() {
 
       <div className="text-center mt-12">
         <Button asChild>
-          <Link href="/">Voltar à Página Inicial</Link>
+          <Link href="/dashboard">Voltar ao Dashboard</Link>
         </Button>
       </div>
     </div>
