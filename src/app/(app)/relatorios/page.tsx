@@ -86,9 +86,9 @@ export default function RelatoriosPage() {
             <CardDescription>Visualização do número de atendimentos mensais.</CardDescription>
           </CardHeader>
           <CardContent>
-             <ChartContainer config={chartConfigAppointments} className="h-[250px] w-full">
+             <ChartContainer config={chartConfigAppointments} className="w-full">
                  <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={monthlyAppointmentsData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                   <BarChart data={monthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3"/>
                     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
                     <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
@@ -107,9 +107,9 @@ export default function RelatoriosPage() {
             <CardDescription>Percentual de pacientes que retornaram para novas consultas.</CardDescription>
           </CardHeader>
           <CardContent>
-             <ChartContainer config={chartConfigReturn} className="h-[250px] w-full">
+             <ChartContainer config={chartConfigReturn} className="w-full">
                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={patientReturnData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                    <LineChart data={patientReturnData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                         <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
@@ -165,3 +165,4 @@ export default function RelatoriosPage() {
     </div>
   );
 }
+
