@@ -52,7 +52,7 @@ let patientStore: { [key: string]: Patient } = {
     dob: '1985-03-15',
     address: 'Rua Exemplo, 123, São Paulo - SP',
     status: 'Ativo',
-    avatar: 'https://picsum.photos/seed/p001/100/100',
+    avatar: 'https://placehold.co/100x100.png',
     history: [
       { date: '2024-07-15', type: 'Consulta Inicial', notes: 'Paciente relata histórico de ansiedade. Iniciado plano alimentar focado em alimentos calmantes.' },
       { date: '2024-06-10', type: 'Retorno', notes: 'Acompanhamento do plano alimentar. Paciente refere melhora nos sintomas de ansiedade. Ajustes realizados.' },
@@ -63,16 +63,16 @@ let patientStore: { [key: string]: Patient } = {
     ]
   },
   'carlos-souza': {
-     internalId: 'int-p002', id: 'p002', name: 'Carlos Souza', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ', status: 'Ativo', avatar: 'https://picsum.photos/seed/p002/100/100', history: [], documents: []
+     internalId: 'int-p002', id: 'p002', name: 'Carlos Souza', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ', status: 'Ativo', avatar: 'https://placehold.co/100x100.png', history: [], documents: []
   },
    'beatriz-lima': {
-     internalId: 'int-p003', id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo', avatar: 'https://picsum.photos/seed/p003/100/100', history: [], documents: []
+     internalId: 'int-p003', id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo', avatar: 'https://placehold.co/100x100.png', history: [], documents: []
   },
    'daniel-costa': {
-      internalId: 'int-p004', id: 'p004', name: 'Daniel Costa', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR', status: 'Inativo', avatar: 'https://picsum.photos/seed/p004/100/100', history: [], documents: []
+      internalId: 'int-p004', id: 'p004', name: 'Daniel Costa', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR', status: 'Inativo', avatar: 'https://placehold.co/100x100.png', history: [], documents: []
    },
    'fernanda-oliveira': {
-        internalId: 'int-p005', id: 'p005', name: 'Fernanda Oliveira', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS', status: 'Ativo', avatar: 'https://picsum.photos/seed/p005/100/100', history: [], documents: []
+        internalId: 'int-p005', id: 'p005', name: 'Fernanda Oliveira', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS', status: 'Ativo', avatar: 'https://placehold.co/100x100.png', history: [], documents: []
    }
 };
 // Function to update the global store (simulated)
@@ -406,10 +406,10 @@ export default function PacienteDetalhePage() {
 
         <CardContent className="p-0">
            <Tabs defaultValue="historico" className="w-full">
-             <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-6 py-0">
-               <TabsTrigger value="historico" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-4 py-3 h-auto">Histórico</TabsTrigger>
-               <TabsTrigger value="documentos" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-4 py-3 h-auto">Documentos</TabsTrigger>
-               <TabsTrigger value="dados" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-4 py-3 h-auto">Dados Cadastrais</TabsTrigger>
+             <TabsList className="flex flex-wrap w-full items-center justify-start rounded-none border-b bg-transparent px-2 py-0 sm:px-4">
+               <TabsTrigger value="historico" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Histórico</TabsTrigger>
+               <TabsTrigger value="documentos" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Documentos</TabsTrigger>
+               <TabsTrigger value="dados" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Dados Cadastrais</TabsTrigger>
              </TabsList>
 
              {/* Histórico Tab */}
@@ -594,3 +594,4 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
+
