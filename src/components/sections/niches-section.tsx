@@ -20,12 +20,12 @@ const niches: Niche[] = [
 
 export function NichesSection() {
   return (
-    <section id="nichos" className="py-16 md:py-24 bg-secondary">
+    <section id="nichos" className="py-16 md:py-24 bg-primary text-primary-foreground">
       <div className="container mx-auto px-4">
-        <h2 className="text-3xl md:text-4xl font-bold text-center mb-4 text-foreground">
+        <h2 className="text-3xl md:text-4xl font-bold text-center mb-4 text-primary-foreground">
           Feito para profissionais de diversas áreas
         </h2>
-        <p className="text-lg text-muted-foreground text-center mb-12 md:mb-16 max-w-3xl mx-auto">
+        <p className="text-lg text-primary-foreground/90 text-center mb-12 md:mb-16 max-w-3xl mx-auto">
           Nosso sistema é ideal para quem atende com hora marcada e precisa organizar agenda, pacientes e finanças de forma prática e eficiente.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8">
