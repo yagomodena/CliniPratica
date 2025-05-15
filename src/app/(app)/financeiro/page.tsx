@@ -507,11 +507,11 @@ export default function FinanceiroPage() {
         <CardHeader>
           <CardTitle>Filtro por Período</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
-          <div className="flex-1 sm:max-w-xs">
+        <CardContent className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-end">
+          <div className="w-full sm:max-w-xs">
             <Label htmlFor="period-select">Selecionar Período</Label>
             <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodOption)}>
-              <SelectTrigger id="period-select">
+              <SelectTrigger id="period-select" className="w-full">
                 <SelectValue placeholder="Selecione o período" />
               </SelectTrigger>
               <SelectContent>
@@ -522,12 +522,12 @@ export default function FinanceiroPage() {
             </Select>
           </div>
           {selectedPeriod === 'custom' && (
-            <div className="flex flex-col sm:flex-row gap-2 items-end w-full sm:w-auto">
-              <div>
+            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end w-full mt-4 sm:mt-0">
+              <div className="flex-1">
                 <Label htmlFor="custom-start-date">Data Inicial</Label>
                  <Popover>
                     <PopoverTrigger asChild>
-                        <Button id="custom-start-date" variant="outline" className="w-full sm:w-auto justify-start text-left font-normal">
+                        <Button id="custom-start-date" variant="outline" className="w-full justify-start text-left font-normal">
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {customDateRange?.from ? format(customDateRange.from, 'PPP', { locale: ptBR }) : <span>Data inicial</span>}
                         </Button>
@@ -537,11 +537,11 @@ export default function FinanceiroPage() {
                     </PopoverContent>
                 </Popover>
               </div>
-              <div>
+              <div className="flex-1 mt-2 sm:mt-0">
                 <Label htmlFor="custom-end-date">Data Final</Label>
                 <Popover>
                     <PopoverTrigger asChild>
-                         <Button id="custom-end-date" variant="outline" className="w-full sm:w-auto justify-start text-left font-normal">
+                         <Button id="custom-end-date" variant="outline" className="w-full justify-start text-left font-normal">
                             <CalendarIcon className="mr-2 h-4 w-4" />
                             {customDateRange?.to ? format(customDateRange.to, 'PPP', { locale: ptBR }) : <span>Data final</span>}
                         </Button>
@@ -687,12 +687,12 @@ export default function FinanceiroPage() {
 
 
       <Card className="shadow-md">
-        <CardHeader className="flex flex-row items-center justify-between">
-            <div>
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div className="flex-1">
                 <CardTitle>Todos os Lançamentos Financeiros</CardTitle>
                 <CardDescription>Lista de todas as transações (incluindo manuais) no período selecionado.</CardDescription>
             </div>
-            <Button variant="outline" onClick={handleExportExcel}>
+            <Button variant="outline" onClick={handleExportExcel} className="w-full mt-2 sm:mt-0 sm:w-auto">
                 <FileDown className="mr-2 h-4 w-4" /> Exportar Excel (Em breve)
             </Button>
         </CardHeader>
