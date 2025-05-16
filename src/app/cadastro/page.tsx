@@ -17,6 +17,9 @@ import { useToast } from '@/hooks/use-toast';
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
 import { submitRegistrationForm, type FormState as RegistrationFormState } from '@/actions/register';
 import { Logo } from '@/components/icons/logo';
+import { auth, db } from "../../firebase";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 import {
   AlertDialog,
   AlertDialogAction,
