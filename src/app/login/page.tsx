@@ -8,17 +8,63 @@ import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { useRouter } from 'next/navigation'; // Import useRouter
 import type { FormEvent } from 'react';
+import { useState } from 'react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@/firebase';
+import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
+  const { toast } = useToast();
 
-  // Simulate login and redirect
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // In a real app, you'd validate credentials here
-    console.log("Simulating login...");
-    // Redirect to the dashboard
-    router.push('/dashboard');
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('Usuário logado:', userCredential.user);
+      const user = userCredential.user;
+
+      toast({
+        title: 'Login realizado com sucesso!',
+        description: `👋 Bem-vindo de volta, ${user.displayName}`,
+      });
+
+      router.push('/dashboard');
+    } catch (error: any) {
+      console.error('Erro ao fazer login:', error);
+
+      let message = 'Erro ao fazer login.';
+      console.error('Erro ao fazer login:', error);
+      console.log('Código do erro:', error.code);
+
+      switch (error.code) {
+        case 'auth/user-not-found':
+          message = 'Usuário não encontrado. Verifique o e-mail.';
+          break;
+        case 'auth/wrong-password':
+          message = 'Senha incorreta. Tente novamente.';
+          break;
+        case 'auth/invalid-email':
+          message = 'Formato de e-mail inválido.';
+          break;
+        case 'auth/invalid-credential':
+          message = 'E-mail ou senha incorretos. Verifique e tente novamente.';
+          break;
+        default:
+          message = 'Erro inesperado. Tente novamente.';
+          break;
+      }
+
+      toast({
+        title: 'Erro no login',
+        description: message,
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -33,11 +79,25 @@ export default function LoginPage() {
           <form className="space-y-4" onSubmit={handleLogin}>
             <div>
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="seu@email.com" required />
+              <Input
+                id="email"
+                type="email"
+                placeholder="seu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
             </div>
             <div>
               <Label htmlFor="password">Senha</Label>
-              <Input id="password" type="password" placeholder="Sua senha" required />
+              <Input
+                id="password"
+                type="password"
+                placeholder="Sua senha"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
             </div>
             <Button type="submit" className="w-full">
               Entrar
@@ -49,7 +109,7 @@ export default function LoginPage() {
               Crie uma agora
             </Link>
           </div>
-           <div className="text-center text-sm">
+          <div className="text-center text-sm">
             <Link href="/" className="font-medium text-primary hover:underline">
               &larr; Voltar para a página inicial
             </Link>

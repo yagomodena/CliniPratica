@@ -2,6 +2,10 @@
 'use server';
 
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
+import { auth, db } from '@/firebase';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { updateProfile } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 // Reusing FormState type, ensure it's compatible or define a specific one if needed.
 // For now, we assume it's compatible for message and status.
@@ -56,11 +60,71 @@ export async function submitRegistrationForm(
   console.log('Senha:', '[Protected]'); // Don't log password
   console.log('Área de Atuação:', area);
 
-  // Here you would typically:
-  // 1. Hash the password
-  // 2. Save user data to your database (e.g., Firestore)
-  // 3. Potentially create an authentication entry (e.g., Firebase Auth)
-  // 4. Handle any errors from these operations
+  try {
+    // 1. Cria usuário no Firebase Auth
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // 2. Atualiza o perfil do usuário com o nome completo
+    await updateProfile(user, {
+      displayName: fullName,
+    });
+
+    // 3. Define dados padrão e permissões
+    const userDoc = {
+      nomeCompleto: fullName,
+      email,
+      telefone: phone,
+      nomeEmpresa: companyName || '',
+      areaAtuacao: area || '',
+      plano: plan || 'essencial',
+      fotoPerfilUrl: '', // Pode ser atualizado depois
+      cargo: 'Administrador',
+      permissoes: {
+        dashboard: true,
+        pacientes: true,
+        agendas: true,
+        mensagens: true,
+        financeiro: true,
+        relatorios: true,
+        configuracoes: true,
+        usuarios: true,
+      },
+      criadoEm: serverTimestamp(),
+    };
+
+    // 4. Salva dados no Firestore (coleção "usuarios")
+    await setDoc(doc(db, 'usuarios', user.uid), userDoc);
+
+    return {
+      message: 'Cadastro realizado com sucesso!',
+      status: 'success',
+    };
+  } catch (error: any) {
+    console.error('Erro ao registrar:', error);
+
+    let message = 'Erro ao registrar. Tente novamente mais tarde.';
+
+    switch (error.code) {
+      case 'auth/email-already-in-use':
+        message = 'Este e-mail já está em uso. Tente fazer login ou use outro e-mail.';
+        break;
+      case 'auth/invalid-email':
+        message = 'O e-mail informado é inválido.';
+        break;
+      case 'auth/weak-password':
+        message = 'A senha deve conter no mínimo 6 caracteres.';
+        break;
+      default:
+        message = 'Erro ao registrar: ' + error.message;
+        break;
+    }
+
+    return {
+      message,
+      status: 'error',
+    };
+  }
 
   // Simulate success for now
   await new Promise(resolve => setTimeout(resolve, 1000));

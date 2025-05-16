@@ -4,7 +4,8 @@
 import { useEffect, Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Eye, EyeOff } from 'lucide-react';
@@ -52,7 +53,7 @@ function CadastroForm() {
   const planFromQuery = searchParams.get('plano') || '';
   const { toast } = useToast();
 
-  const [state, formAction] = useFormState(submitRegistrationForm, initialState);
+  const [state, formAction] = useActionState(submitRegistrationForm, initialState);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
