@@ -64,6 +64,7 @@ function CadastroForm() {
       fullName: '',
       email: '',
       phone: '',
+      companyName: '',
       password: '',
       confirmPassword: '',
       area: '',
@@ -87,7 +88,7 @@ function CadastroForm() {
         description: state.message,
         variant: 'success',
       });
-      form.reset({ fullName: '', email: '', phone: '', password: '', confirmPassword: '', area: '', plan: planFromQuery });
+      form.reset({ fullName: '', email: '', phone: '', companyName: '', password: '', confirmPassword: '', area: '', plan: planFromQuery });
       setTimeout(() => {
         router.push('/login');
       }, 2500);
@@ -172,7 +173,11 @@ function CadastroForm() {
             <Input id="phone" type="tel" placeholder="(XX) XXXXX-XXXX" {...form.register('phone')} />
             {form.formState.errors.phone && <p className="text-sm text-destructive mt-1">{form.formState.errors.phone.message}</p>}
           </div>
-          
+          <div>
+            <Label htmlFor="companyName">Nome da Empresa (Opcional)</Label>
+            <Input id="companyName" placeholder="Nome da sua clínica ou consultório" {...form.register('companyName')} />
+            {form.formState.errors.companyName && <p className="text-sm text-destructive mt-1">{form.formState.errors.companyName.message}</p>}
+          </div>
           <div>
             <Label htmlFor="password">Senha*</Label>
             <div className="relative">

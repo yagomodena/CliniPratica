@@ -1,3 +1,4 @@
+
 'use server';
 
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
@@ -43,7 +44,7 @@ export async function submitRegistrationForm(
     };
   }
 
-  const { fullName, email, phone, password, area, plan } = parsed.data;
+  const { fullName, email, phone, companyName, password, area, plan } = parsed.data;
 
   // Simulate API call or database save
   console.log('Formulário de cadastro recebido:');
@@ -51,6 +52,7 @@ export async function submitRegistrationForm(
   console.log('Nome:', fullName);
   console.log('Email:', email);
   console.log('Telefone:', phone);
+  console.log('Nome da Empresa:', companyName);
   console.log('Senha:', '[Protected]'); // Don't log password
   console.log('Área de Atuação:', area);
 
