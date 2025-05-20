@@ -17,29 +17,75 @@ import { Logo } from '@/components/icons/logo';
 import { Menu, LayoutDashboard, Users, Calendar, MessageSquare, BarChart, Settings, User, CreditCard, LogOut, Landmark } from 'lucide-react'; // Added Landmark
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { auth, db } from '@/firebase';
+import { User as FirebaseUser, onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, setDoc, getDoc, doc } from "firebase/firestore";
+import { useToast } from '@/hooks/use-toast';
 
 const navLinks = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/pacientes', label: 'Pacientes', icon: Users },
   { href: '/agenda', label: 'Agenda', icon: Calendar },
   { href: '/mensagens', label: 'Mensagens', icon: MessageSquare },
-  { href: '/financeiro', label: 'Financeiro', icon: Landmark }, // Added Financeiro link
+  { href: '/financeiro', label: 'Financeiro', icon: Landmark },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 
+const freePlanAllowed = ['/dashboard', '/pacientes', '/agenda', '/configuracoes'];
+
 export function AppHeader() {
   const router = useRouter();
   const pathname = usePathname();
+  const { toast } = useToast();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
+  const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
 
-  const handleLogout = () => {
-    console.log("Simulating logout...");
-    router.push('/login');
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUsuario(user);
+      if (user) {
+        const docRef = doc(db, "usuarios", user.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setCurrentUserPlan(data.plano || "Gratuito");
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push('/login');
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+      // Você pode exibir um toast de erro aqui, se quiser
+    }
   };
 
+  const isAccessible = (href: string) => {
+    if (currentUserPlan === 'Gratuito') {
+      return freePlanAllowed.includes(href);
+    }
+    return true;
+  };
+
+
   const handleNavigation = (href: string) => {
+    if (currentUserPlan === "Gratuito" && !freePlanAllowed.includes(href)) {
+      toast({
+        title: "Plano necessário",
+        description: "Essa funcionalidade está disponível apenas para planos Essencial, Profissional ou Clínica.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     router.push(href);
     setIsMobileMenuOpen(false);
   }
@@ -53,16 +99,26 @@ export function AppHeader() {
           </Link>
           <nav className="flex items-center gap-4 text-sm lg:gap-6">
             {navLinks.map((link) => (
-              <Link
+              <button
                 key={link.href}
-                href={link.href}
+                onClick={() => {
+                  if (!isAccessible(link.href)) {
+                    toast({
+                      title: "Plano necessário",
+                      description: "Essa funcionalidade está disponível apenas para planos Essencial, Profissional ou Clínica.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  router.push(link.href);
+                }}
                 className={cn(
                   "transition-colors hover:text-foreground/80",
                   pathname === link.href ? "text-foreground font-semibold" : "text-foreground/60"
                 )}
               >
                 {link.label}
-              </Link>
+              </button>
             ))}
           </nav>
         </div>
@@ -70,7 +126,7 @@ export function AppHeader() {
         {/* Mobile Menu Trigger */}
         <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
           <SheetTrigger asChild>
-             <Button
+            <Button
               variant="ghost"
               size="icon"
               className="md:hidden shrink-0"
@@ -79,25 +135,25 @@ export function AppHeader() {
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-           <div className="md:hidden flex-1 flex justify-center">
-             <Link href="/dashboard" className="flex items-center">
-               <Logo textClassName="text-primary text-xl" dotClassName="text-foreground text-xl" />
-             </Link>
-           </div>
+          <div className="md:hidden flex-1 flex justify-center">
+            <Link href="/dashboard" className="flex items-center">
+              <Logo textClassName="text-primary text-xl" dotClassName="text-foreground text-xl" />
+            </Link>
+          </div>
           <SheetContent side="left" className="pr-0 sm:max-w-xs">
-             <nav className="grid gap-y-4 pt-6">
-               {navLinks.map((link) => (
+            <nav className="grid gap-y-4 pt-6">
+              {navLinks.map((link) => (
                 <Button
                   key={link.href}
                   variant={pathname === link.href ? "secondary" : "ghost"}
                   className="w-full justify-start h-10 px-4 text-base"
                   onClick={() => handleNavigation(link.href)}
                 >
-                   <link.icon className="mr-2 h-4 w-4" />
-                   {link.label}
-                 </Button>
-               ))}
-             </nav>
+                  <link.icon className="mr-2 h-4 w-4" />
+                  {link.label}
+                </Button>
+              ))}
+            </nav>
           </SheetContent>
         </Sheet>
 
@@ -106,18 +162,27 @@ export function AppHeader() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                 <Avatar className="h-8 w-8">
-                  {/* Placeholder image, replace with actual user avatar if available */}
-                  <AvatarImage src="https://picsum.photos/100/100" alt="User Avatar" data-ai-hint="user avatar"/>
-                  <AvatarFallback>CP</AvatarFallback> {/* Initials as fallback */}
+                  <AvatarImage
+                    src={usuario?.photoURL || undefined}
+                    alt="User Avatar"
+                    data-ai-hint="user avatar"
+                  />
+                  <AvatarFallback>
+                    {usuario?.displayName
+                      ? usuario?.displayName.split(' ').map(n => n[0]).join('').toUpperCase()
+                      : 'CP'}
+                  </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">Usuário Exemplo</p>
+                  <p className="text-sm font-medium leading-none">
+                    {usuario?.displayName || 'Usuário'}
+                  </p>
                   <p className="text-xs leading-none text-muted-foreground">
-                    usuario@clinipratica.com
+                    {usuario?.email || 'email@exemplo.com'}
                   </p>
                 </div>
               </DropdownMenuLabel>
@@ -127,7 +192,7 @@ export function AppHeader() {
                 <span>Perfil</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push('/configuracoes?tab=plano')}>
-                 <CreditCard className="mr-2 h-4 w-4" />
+                <CreditCard className="mr-2 h-4 w-4" />
                 <span>Plano</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />

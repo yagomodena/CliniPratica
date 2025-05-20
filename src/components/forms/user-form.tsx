@@ -22,7 +22,7 @@ export const menuItemsConfig = [
   { id: 'relatorios', label: 'Relatórios', icon: BarChart },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
   { id: 'usuarios', label: 'Usuários', icon: UsersIcon },
-] as const; // Use as const for stricter typing of id
+] as const;
 
 type MenuItemId = typeof menuItemsConfig[number]['id'];
 
@@ -32,40 +32,46 @@ export type UserPermissions = {
 
 export interface User {
   id: string;
+  nomeCompleto: string;
+  areaAtuacao: '';
+  criadoEm: string;
+  fotoPerfilUrl: '';
+  nomeEmpresa: '';
+  plano: '';
+  telefone: '';
   email: string;
-  role: string;
-  permissions: UserPermissions;
+  cargo: string;
+  permissoes: UserPermissions;
   // Password is not stored here but handled in the form
 }
 
 export interface UserFormData extends Omit<User, 'id'> {
   password?: string;
   confirmPassword?: string;
-  permissions: UserPermissions; // Explicitly state permissions
+  permissoes: UserPermissions; // Explicitly state permissions
 }
 
 const passwordSchema = z.string().min(6, { message: 'A senha deve ter pelo menos 6 caracteres.' }).optional().or(z.literal(''));
 
 const userFormSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),
-  role: z.string().min(2, { message: 'O cargo deve ter pelo menos 2 caracteres.' }),
+  cargo: z.string().min(2, { message: 'O cargo deve ter pelo menos 2 caracteres.' }),
   password: passwordSchema,
   confirmPassword: passwordSchema,
-  permissions: z.object(
+  permissoes: z.object(
     menuItemsConfig.reduce((acc, item) => {
       acc[item.id] = z.boolean().optional();
       return acc;
     }, {} as Record<MenuItemId, z.ZodOptional<z.ZodBoolean>>)
-  ).default({}), // Provide a default empty object for permissions
+  ).default({}),
 }).refine(data => {
-    // If password is provided, confirmPassword must match
-    if (data.password && data.password.length > 0) {
-        return data.password === data.confirmPassword;
-    }
-    return true; // No validation needed if password is not being changed/set
+  if (data.password && data.password.length > 0) {
+    return data.password === data.confirmPassword;
+  }
+  return true;
 }, {
-    message: 'As senhas não coincidem.',
-    path: ['confirmPassword'],
+  message: 'As senhas não coincidem.',
+  path: ['confirmPassword'],
 });
 
 
@@ -81,11 +87,18 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
   const { register, handleSubmit, control, formState: { errors }, watch } = useForm<UserFormData>({
     resolver: zodResolver(userFormSchema),
     defaultValues: {
+      nomeCompleto: initialData?.nomeCompleto || '',
+      areaAtuacao: '',
+      criadoEm: '',
+      fotoPerfilUrl: '',
+      nomeEmpresa: initialData?.nomeEmpresa || '',
+      plano: initialData?.plano || '',
+      telefone: initialData?.telefone || '',
       email: initialData?.email || '',
-      role: initialData?.role || '',
+      cargo: initialData?.cargo || '',
       password: '',
       confirmPassword: '',
-      permissions: initialData?.permissions || menuItemsConfig.reduce((acc, item) => ({ ...acc, [item.id]: false }), {}),
+      permissoes: initialData?.permissoes || menuItemsConfig.reduce((acc, item) => ({ ...acc, [item.id]: false }), {}),
     },
   });
 
@@ -94,7 +107,6 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
 
   const handleFormSubmit = (data: UserFormData) => {
     const submissionData: UserFormData = { ...data };
-    // Remove password fields if they are empty and we are editing
     if (isEditing && !submissionData.password) {
       delete submissionData.password;
       delete submissionData.confirmPassword;
@@ -106,15 +118,39 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="grid gap-6 py-4">
       <div className="grid grid-cols-4 items-center gap-4">
+        <Label htmlFor="nomeCompleto" className="text-right">Nome Completo*</Label>
+        <Input id="nomeCompleto" {...register('nomeCompleto')} className="col-span-3" />
+        {errors.nomeCompleto && <p className="col-span-4 text-right text-sm text-destructive">{errors.nomeCompleto.message}</p>}
+      </div>
+
+      <div className="grid grid-cols-4 items-center gap-4">
+        <Label htmlFor="nomeEmpresa" className="text-right">Nome Empresa*</Label>
+        <Input id="nomeEmpresa" {...register('nomeEmpresa')} className="col-span-3" />
+        {errors.nomeEmpresa && <p className="col-span-4 text-right text-sm text-destructive">{errors.nomeEmpresa.message}</p>}
+      </div>
+
+      <div className="grid grid-cols-4 items-center gap-4">
+        <Label htmlFor="plano" className="text-right">Plano</Label>
+        <Input id="plano" {...register('plano')} className="col-span-3" />
+        {errors.plano && <p className="col-span-4 text-right text-sm text-destructive">{errors.plano.message}</p>}
+      </div>
+
+      <div className="grid grid-cols-4 items-center gap-4">
+        <Label htmlFor="telefone" className="text-right">Telefone*</Label>
+        <Input id="telefone" {...register('telefone')} className="col-span-3" />
+        {errors.telefone && <p className="col-span-4 text-right text-sm text-destructive">{errors.telefone.message}</p>}
+      </div>
+
+      <div className="grid grid-cols-4 items-center gap-4">
         <Label htmlFor="email" className="text-right">Email*</Label>
         <Input id="email" {...register('email')} className="col-span-3" />
         {errors.email && <p className="col-span-4 text-right text-sm text-destructive">{errors.email.message}</p>}
       </div>
 
       <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="role" className="text-right">Cargo*</Label>
-        <Input id="role" {...register('role')} className="col-span-3" />
-        {errors.role && <p className="col-span-4 text-right text-sm text-destructive">{errors.role.message}</p>}
+        <Label htmlFor="cargo" className="text-right">Cargo*</Label>
+        <Input id="cargo" {...register('cargo')} className="col-span-3" />
+        {errors.cargo && <p className="col-span-4 text-right text-sm text-destructive">{errors.cargo.message}</p>}
       </div>
 
       <div className="grid grid-cols-4 items-center gap-4">
@@ -127,14 +163,13 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
 
       {(isEditing ? !!passwordValue : true) && ( // Show confirm password if new user or if password has value during edit
         <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="confirmPassword" className="text-right">
+          <Label htmlFor="confirmPassword" className="text-right">
             {isEditing ? 'Confirmar Nova Senha' : 'Confirmar Senha*'}
-            </Label>
-            <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="col-span-3" />
-            {errors.confirmPassword && <p className="col-span-4 text-right text-sm text-destructive">{errors.confirmPassword.message}</p>}
+          </Label>
+          <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="col-span-3" />
+          {errors.confirmPassword && <p className="col-span-4 text-right text-sm text-destructive">{errors.confirmPassword.message}</p>}
         </div>
       )}
-
 
       <div>
         <Label className="text-base font-semibold">Permissões de Acesso</Label>
@@ -142,9 +177,9 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
           {menuItemsConfig.map((item) => (
             <div key={item.id} className="flex items-center space-x-2">
               <Controller
-                name={`permissions.${item.id}` as const}
+                name={`permissoes.${item.id}` as const}
                 control={control}
-                defaultValue={initialData?.permissions?.[item.id] || false}
+                defaultValue={initialData?.permissoes?.[item.id] || false}
                 render={({ field }) => (
                   <Checkbox
                     id={`permission-${item.id}`}
@@ -160,12 +195,12 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
             </div>
           ))}
         </div>
-         {errors.permissions && <p className="text-sm text-destructive mt-1">{typeof errors.permissions.message === 'string' ? errors.permissions.message : 'Erro nas permissões'}</p>}
+        {errors.permissoes && <p className="text-sm text-destructive mt-1">{typeof errors.permissoes.message === 'string' ? errors.permissoes.message : 'Erro nas permissões'}</p>}
       </div>
 
       <DialogFooter>
         <DialogClose asChild>
-            <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+          <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
         </DialogClose>
         <Button type="submit">{isEditing ? 'Salvar Alterações' : 'Adicionar Usuário'}</Button>
       </DialogFooter>

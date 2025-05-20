@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,21 +33,43 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge'; // Import Badge
 import { format, isFuture, parseISO, startOfDay } from 'date-fns'; // Added isFuture, parseISO, startOfDay
+import { db } from '@/firebase';
+import {
+  addDoc,
+  collection,
+  serverTimestamp,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  updateDoc,
+  deleteDoc
+} from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
-// Placeholder data
-// Added an 'internalId' to ensure stable keys even if 'id' changes or is reused by chance
-const initialPatients = [
-  { internalId: 'int-p001', id: 'p001', name: 'Ana Silva', lastVisit: '2024-07-15', nextVisit: '2024-08-15', status: 'Ativo', email: 'ana.silva@email.com', phone: '(11) 98765-4321', dob: '1985-03-15', address: 'Rua Exemplo, 123, São Paulo - SP' },
-  { internalId: 'int-p002', id: 'p002', name: 'Carlos Souza', lastVisit: '2024-07-10', nextVisit: '-', status: 'Ativo', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ' },
-  { internalId: 'int-p003', id: 'p003', name: 'Beatriz Lima', lastVisit: '2024-06-20', nextVisit: '2024-07-25', status: 'Ativo', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG' },
-  { internalId: 'int-p004', id: 'p004', name: 'Daniel Costa', lastVisit: '2024-07-18', nextVisit: '-', status: 'Inativo', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR' },
-  { internalId: 'int-p005', id: 'p005', name: 'Fernanda Oliveira', lastVisit: '2024-07-01', nextVisit: '2024-08-01', status: 'Ativo', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS' },
-];
+type HistoryItem = { date: string; type: string; notes: string };
+type DocumentItem = { name: string; uploadDate: string; url: string };
 
-type Patient = typeof initialPatients[0];
+type Patient = {
+  internalId: string;
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  dob: string;
+  address: string;
+  status: 'Ativo' | 'Inativo';
+  avatar: string;
+  history: HistoryItem[];
+  documents: DocumentItem[];
+  slug: string;
+  lastVisit: string;
+  nextVisit: string;
+};
 
 export default function PacientesPage() {
-  const [patients, setPatients] = useState<Patient[]>(initialPatients);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isNewPatientDialogOpen, setIsNewPatientDialogOpen] = useState(false);
   const { toast } = useToast();
@@ -68,81 +90,163 @@ export default function PacientesPage() {
     setNewPatient(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleAddPatient = (e: React.FormEvent<HTMLFormElement>) => {
+  // Buscar pacientes do Firestore para o usuário logado
+  const fetchPatients = async () => {
+    const auth = getAuth();
+    const user = auth.currentUser;
+
+    if (!user) return;
+
+    try {
+      const q = query(
+        collection(db, 'pacientes'),
+        where('uid', '==', user.uid)
+      );
+
+      const querySnapshot = await getDocs(q);
+
+      const loadedPatients: Patient[] = [];
+
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        loadedPatients.push({
+          internalId: docSnap.id,
+          id: docSnap.id,
+          name: data.name,
+          email: data.email || '',
+          phone: data.phone || '',
+          dob: data.dob || '',
+          address: data.address || '',
+          status: data.status || 'Ativo',
+          avatar: data.avatar || 'https://placehold.co/100x100.png',
+          history: data.history || [],
+          documents: data.documents || [],
+          slug: data.slug || generateSlug(data.name),
+          lastVisit: data.lastVisit || '-',
+          nextVisit: data.nextVisit || '-',
+        });
+      });
+
+      setPatients(loadedPatients);
+    } catch (error) {
+      console.error("Erro ao buscar pacientes:", error);
+    }
+  };
+
+  // useEffect apenas chama a função
+  useEffect(() => {
+    fetchPatients();
+  }, []);
+
+  {/* Função de adicionar um novo paciente */ }
+  const handleAddPatient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!newPatient.name || !newPatient.email) {
-       toast({ title: "Erro de Validação", description: "Nome e Email são obrigatórios.", variant: "destructive" });
+
+    const auth = getAuth();
+    const user = auth.currentUser;
+
+    if (!user) {
+      toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
     }
 
-    // Validate Date of Birth
-    if (newPatient.dob) {
-      try {
-        const dobDate = parseISO(newPatient.dob);
-        if (isFuture(dobDate) || dobDate > today) { // Check if dob is in the future or later than today
-          toast({
-            title: "Data de Nascimento Inválida",
-            description: "A data de nascimento não pode ser uma data futura.",
-            variant: "destructive",
-          });
-          return;
-        }
-      } catch (error) {
-        toast({
-          title: "Formato de Data Inválido",
-          description: "Por favor, insira uma data de nascimento válida.",
-          variant: "destructive",
-        });
+    let nomeEmpresa = '';
+    try {
+      const userDocRef = doc(db, 'usuarios', user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (userDocSnap.exists()) {
+        nomeEmpresa = userDocSnap.data().nomeEmpresa || '';
+      } else {
+        toast({ title: "Erro", description: "Dados do usuário não encontrados.", variant: "destructive" });
         return;
       }
+    } catch (error) {
+      console.error("Erro ao buscar dados do usuário:", error);
+      toast({ title: "Erro", description: "Falha ao buscar dados do usuário.", variant: "destructive" });
+      return;
     }
 
+    // Validações
+    if (!newPatient.name || !newPatient.email) {
+      toast({ title: "Erro de Validação", description: "Nome e Email são obrigatórios.", variant: "destructive" });
+      return;
+    }
 
-    const newInternalId = `int-p${Date.now()}`; // More robust unique ID
-    const newPublicId = `p${(Math.random() * 1000).toFixed(0).padStart(3, '0')}`; // Keep simpler public ID for display/URL?
-    const patientToAdd: Patient = {
-      internalId: newInternalId,
-      id: newPublicId,
-      name: newPatient.name!,
-      email: newPatient.email!,
-      phone: newPatient.phone || '',
-      dob: newPatient.dob || '',
-      address: newPatient.address || '',
-      lastVisit: new Date().toISOString().split('T')[0],
-      nextVisit: '-',
-      status: newPatient.status || 'Ativo',
-    };
-    setPatients(prev => [patientToAdd, ...prev]);
-    setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo' });
-    setIsNewPatientDialogOpen(false);
-    toast({ title: "Sucesso!", description: `Paciente ${patientToAdd.name} adicionado.`, variant: "success" });
-    console.log("Novo paciente adicionado:", patientToAdd);
+    const slug = generateSlug(newPatient.name);
+
+    try {
+      await addDoc(collection(db, 'pacientes'), {
+        ...newPatient,
+        uid: user.uid,
+        nomeEmpresa,
+        status: newPatient.status || 'Ativo',
+        createdAt: serverTimestamp(),
+        lastVisit: new Date().toISOString().split('T')[0],
+        nextVisit: '-',
+        slug, // <- este é o novo campo para poder buscar depois
+        avatar: 'https://placehold.co/100x100.png',
+        history: [], // <- inicia como vazio
+        documents: [], // <- inicia como vazio
+      });
+
+      toast({ title: "Sucesso!", description: `Paciente ${newPatient.name} adicionado.`, variant: "success" });
+      setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo' });
+      setIsNewPatientDialogOpen(false);
+      await fetchPatients();
+    } catch (error) {
+      console.error("Erro ao adicionar paciente:", error);
+      toast({ title: "Erro", description: "Não foi possível salvar o paciente.", variant: "destructive" });
+    }
   };
 
-   const handleUpdatePatientStatus = (patientInternalId: string, newStatus: 'Ativo' | 'Inativo') => {
-      setPatients(prev => prev.map(p =>
-          p.internalId === patientInternalId ? { ...p, status: newStatus } : p
-      ));
-      const patientName = patients.find(p => p.internalId === patientInternalId)?.name || 'Paciente';
-      const isInactive = newStatus.toLowerCase() === "inativo";
-      toast({
-          title: "Status Atualizado",
-          description: `Status de ${patientName} alterado para ${newStatus}.`,
-          variant: isInactive ? "warning" : "success"
+  const handleUpdatePatientStatus = async (patientInternalId: string, newStatus: 'Ativo' | 'Inativo') => {
+    setPatients(prev =>
+      prev.map(p =>
+        p.internalId === patientInternalId ? { ...p, status: newStatus } : p
+      )
+    );
+
+    const patientName = patients.find(p => p.internalId === patientInternalId)?.name || 'Paciente';
+    const isInactive = newStatus.toLowerCase() === "inativo";
+
+    toast({
+      title: "Status Atualizado",
+      description: `Status de ${patientName} alterado para ${newStatus}.`,
+      variant: isInactive ? "warning" : "success"
+    });
+
+    console.log(`Paciente ${patientInternalId} status alterado para ${newStatus}`);
+
+    // Atualizar no Firestore
+    try {
+      const patientRef = doc(db, 'pacientes', patientInternalId);
+      await updateDoc(patientRef, {
+        status: newStatus
       });
-      console.log(`Paciente ${patientInternalId} status alterado para ${newStatus}`);
-      // Note: In a real app, make an API call here.
+    } catch (error) {
+      console.error("Erro ao atualizar status do paciente:", error);
+    }
   };
 
-  const handleDeletePatient = (patientInternalId: string, patientName: string) => {
-      setPatients(prev => prev.filter(p => p.internalId !== patientInternalId));
-      toast({
-          title: "Paciente Excluído",
-          description: `Paciente ${patientName} foi removido com sucesso.`,
-          variant: "destructive"
-      });
-      console.log("Paciente excluído:", patientInternalId);
-      // Note: In a real application, this would involve an API call.
+  const handleDeletePatient = async (patientInternalId: string, patientName: string) => {
+    setPatients(prev => prev.filter(p => p.internalId !== patientInternalId));
+
+    toast({
+      title: "Paciente Excluído",
+      description: `Paciente ${patientName} foi removido com sucesso.`,
+      variant: "destructive"
+    });
+
+    console.log("Paciente excluído:", patientInternalId);
+
+    // Deletar do Firestore
+    try {
+      const patientRef = doc(db, 'pacientes', patientInternalId);
+      await deleteDoc(patientRef);
+    } catch (error) {
+      console.error("Erro ao excluir paciente:", error);
+    }
   };
 
   const filteredPatients = patients.filter(patient =>
@@ -172,7 +276,7 @@ export default function PacientesPage() {
             <form onSubmit={handleAddPatient}>
               <div className="grid gap-4 py-4">
                 {/* Form fields remain the same */}
-                 <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="name" className="text-right">
                     Nome*
                   </Label>
@@ -199,7 +303,7 @@ export default function PacientesPage() {
                     required
                   />
                 </div>
-                 <div className="grid grid-cols-4 items-center gap-4">
+                <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="phone" className="text-right">
                     Telefone
                   </Label>
@@ -227,22 +331,22 @@ export default function PacientesPage() {
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
-                   <Label htmlFor="address" className="text-right">
-                     Endereço
-                   </Label>
-                   <Input
-                     id="address"
-                     name="address"
-                     value={newPatient.address}
-                     onChange={handleInputChange}
-                     className="col-span-3"
-                   />
-                 </div>
+                  <Label htmlFor="address" className="text-right">
+                    Endereço
+                  </Label>
+                  <Input
+                    id="address"
+                    name="address"
+                    value={newPatient.address}
+                    onChange={handleInputChange}
+                    className="col-span-3"
+                  />
+                </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
-                   <Button type="button" variant="outline">Cancelar</Button>
-                 </DialogClose>
+                  <Button type="button" variant="outline">Cancelar</Button>
+                </DialogClose>
                 <Button type="submit">Salvar Paciente</Button>
               </DialogFooter>
             </form>
@@ -284,78 +388,77 @@ export default function PacientesPage() {
                   <TableCell className="font-medium">{patient.name}</TableCell>
                   <TableCell className="hidden sm:table-cell">{patient.lastVisit}</TableCell>
                   {/* <TableCell className="hidden md:table-cell">{patient.nextVisit}</TableCell> */}
-                   <TableCell>
-                     <Badge variant={patient.status === 'Ativo' ? 'default' : 'secondary'} className={patient.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}> {/* Conditional Badge styling */}
-                       {patient.status}
-                     </Badge>
-                   </TableCell>
-                   <TableCell className="text-right space-x-1"> {/* Adjusted spacing */}
+                  <TableCell>
+                    <Badge variant={patient.status === 'Ativo' ? 'default' : 'secondary'} className={patient.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}> {/* Conditional Badge styling */}
+                      {patient.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right space-x-1"> {/* Adjusted spacing */}
                     {/* View Details Button */}
                     <Button asChild variant="ghost" size="icon" className="text-blue-600 hover:bg-blue-100 h-8 w-8" title="Ver Detalhes">
-                        <Link href={`/pacientes/${generateSlug(patient.name)}`}>
-                            <Eye className="h-4 w-4" />
-                        </Link>
+                      <Link href={`/pacientes/${generateSlug(patient.name)}`}>
+                        <Eye className="h-4 w-4" />
+                      </Link>
                     </Button>
 
                     {/* Activate/Inactivate Button with Confirmation */}
                     <AlertDialog>
-                       <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={`${
-                              patient.status === 'Ativo' ? 'text-orange-600 hover:bg-orange-100' : 'text-green-600 hover:bg-green-100'
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={`${patient.status === 'Ativo' ? 'text-orange-600 hover:bg-orange-100' : 'text-green-600 hover:bg-green-100'
                             } h-8 w-8`}
-                            title={patient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
+                          title={patient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
+                        >
+                          {patient.status === 'Ativo' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Tem certeza que deseja {patient.status === 'Ativo' ? 'inativar' : 'ativar'} o paciente <strong>{patient.name}</strong>?
+                            {patient.status === 'Ativo' && ' Pacientes inativos não podem ser selecionados para novos agendamentos.'}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            className={patient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
+                            onClick={() => handleUpdatePatientStatus(patient.internalId, patient.status === 'Ativo' ? 'Inativo' : 'Ativo')}
                           >
-                            {patient.status === 'Ativo' ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                               <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
-                               <AlertDialogDescription>
-                                  Tem certeza que deseja {patient.status === 'Ativo' ? 'inativar' : 'ativar'} o paciente <strong>{patient.name}</strong>?
-                                  {patient.status === 'Ativo' && ' Pacientes inativos não podem ser selecionados para novos agendamentos.'}
-                               </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                               <AlertDialogAction
-                                 className={patient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
-                                 onClick={() => handleUpdatePatientStatus(patient.internalId, patient.status === 'Ativo' ? 'Inativo' : 'Ativo')}
-                                >
-                                 {patient.status === 'Ativo' ? 'Inativar' : 'Ativar'}
-                               </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
+                            {patient.status === 'Ativo' ? 'Inativar' : 'Ativar'}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
                     </AlertDialog>
 
 
                     {/* Delete Button with Confirmation */}
                     <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 h-8 w-8" title="Excluir Paciente">
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita e removerá todo o histórico associado.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction
-                                    className="bg-destructive hover:bg-destructive/90"
-                                    onClick={() => handleDeletePatient(patient.internalId, patient.name)}
-                                >
-                                    Excluir
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 h-8 w-8" title="Excluir Paciente">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita e removerá todo o histórico associado.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive hover:bg-destructive/90"
+                            onClick={() => handleDeletePatient(patient.internalId, patient.name)}
+                          >
+                            Excluir
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
                     </AlertDialog>
                   </TableCell>
                 </TableRow>
