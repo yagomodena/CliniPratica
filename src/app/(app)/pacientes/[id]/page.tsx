@@ -11,8 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import dynamic from 'next/dynamic'; 
-import 'react-quill/dist/quill.snow.css'; 
+import dynamic from 'next/dynamic';
+import 'react-quill/dist/quill.snow.css';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
@@ -51,7 +51,7 @@ const deletePatientFromStore = (slug: string) => {
 
 
 // Data structure definitions
-type HistoryItem = { date: string; type: string; notes: string }; 
+type HistoryItem = { date: string; type: string; notes: string };
 type DocumentItem = { name: string; uploadDate: string; url: string };
 type Patient = {
   internalId: string;
@@ -94,7 +94,7 @@ export default function PacienteDetalhePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
-  const [newHistoryNote, setNewHistoryNote] = useState(''); 
+  const [newHistoryNote, setNewHistoryNote] = useState('');
   const [newHistoryType, setNewHistoryType] = useState('');
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
@@ -118,8 +118,10 @@ export default function PacienteDetalhePage() {
   }, [appointmentTypes]);
 
   useEffect(() => {
-    setNewHistoryType(getFirstActiveTypeName());
-  }, [appointmentTypes, getFirstActiveTypeName]);
+    if (isClient) { // Ensure this only runs client-side and after types are potentially available
+        setNewHistoryType(getFirstActiveTypeName());
+    }
+  }, [appointmentTypes, getFirstActiveTypeName, isClient]);
 
 
   useEffect(() => {
@@ -143,16 +145,16 @@ export default function PacienteDetalhePage() {
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const data = docSnap.data() as Omit<Patient, 'internalId'>; 
+          const data = docSnap.data() as Omit<Patient, 'internalId'>;
           const fetchedPatient = { ...data, internalId: docSnap.id, slug: patientSlug };
           setPatient(fetchedPatient);
           setEditedPatient({ ...fetchedPatient });
-          if (fetchedPatient.history.length === 0) {
+          if (fetchedPatient.history.length === 0 && isClient) { // Check isClient here too
             setNewHistoryType(getFirstActiveTypeName());
           }
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto.", variant: "destructive" });
-          // router.push('/pacientes'); 
+          // router.push('/pacientes');
         }
       } catch (error) {
         console.error("Erro ao buscar paciente:", error);
@@ -169,7 +171,7 @@ export default function PacienteDetalhePage() {
         setIsLoading(false);
         router.push('/pacientes');
     }
-  }, [params.id, getFirstActiveTypeName, toast, router]);
+  }, [params.id, getFirstActiveTypeName, toast, router, isClient]); // Added isClient to dependency array
 
   const handleSaveEditedPatient = async () => {
     if (!editedPatient || !editedPatient.internalId) {
@@ -188,7 +190,7 @@ export default function PacienteDetalhePage() {
       };
 
       await updateDoc(patientRef, dataToSave);
-      
+
       setPatient({ ...editedPatient });
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
@@ -201,7 +203,7 @@ export default function PacienteDetalhePage() {
 
   const handleEditToggle = () => {
     if (isEditing) {
-        handleSaveEditedPatient(); 
+        handleSaveEditedPatient();
     } else if (patient) {
       setEditedPatient({ ...patient });
       setIsEditing(true);
@@ -210,7 +212,7 @@ export default function PacienteDetalhePage() {
 
   const handleCancelEdit = () => {
     if (patient) {
-      setEditedPatient({ ...patient }); 
+      setEditedPatient({ ...patient });
     }
     setIsEditing(false);
   };
@@ -231,7 +233,7 @@ export default function PacienteDetalhePage() {
       await updateDoc(patientRef, { status: newStatus });
 
       setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
-      if (editedPatient) { 
+      if (editedPatient) {
           setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
       }
 
@@ -266,9 +268,9 @@ export default function PacienteDetalhePage() {
     const newEntry: HistoryItem = {
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
-      notes: newHistoryNote, 
+      notes: newHistoryNote,
     };
-    
+
     try {
         const patientRef = doc(db, 'pacientes', patient.internalId);
         const updatedHistory = [newEntry, ...(patient.history || [])];
@@ -276,8 +278,8 @@ export default function PacienteDetalhePage() {
 
         const updatedPatient = { ...patient, history: updatedHistory };
         setPatient(updatedPatient);
-        setEditedPatient(updatedPatient); 
-        setNewHistoryNote(''); 
+        setEditedPatient(updatedPatient);
+        setNewHistoryNote('');
         setNewHistoryType(getFirstActiveTypeName());
         toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
     } catch (error) {
@@ -297,7 +299,7 @@ export default function PacienteDetalhePage() {
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument), 
+      url: URL.createObjectURL(newDocument),
     };
     const updatedPatient = { ...patient, documents: [newDocEntry, ...(patient.documents || [])] };
     setPatient(updatedPatient);
@@ -465,23 +467,22 @@ export default function PacienteDetalhePage() {
   };
 
   const displayPatient = isEditing ? editedPatient : patient;
-  
+
+  // Basic modules and formats for ReactQuill, can be expanded
   const quillModules = {
     toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{'list': 'ordered'}, {'list': 'bullet'}],
-      [{ 'align': [] }],
-      ['link'], 
+      [{ 'header': [1, 2, false] }],
+      ['bold', 'italic', 'underline','strike', 'blockquote'],
+      [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
+      ['link'],
       ['clean']
     ],
   };
 
   const quillFormats = [
     'header',
-    'bold', 'italic', 'underline', 'strike',
-    'list', 'bullet',
-    'align',
+    'bold', 'italic', 'underline', 'strike', 'blockquote',
+    'list', 'bullet', 'indent',
     'link'
   ];
 
@@ -629,16 +630,14 @@ export default function PacienteDetalhePage() {
                   </div>
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
-                    {/* Replace Textarea with ReactQuill */}
                     <div className="mt-1">
                       {isClient && ReactQuill ? (
                         <ReactQuill
                           theme="snow"
                           value={newHistoryNote}
                           onChange={setNewHistoryNote}
-                          modules={quillModules}
-                          formats={quillFormats}
-                          
+                          // modules={quillModules} // Temporarily removed
+                          // formats={quillFormats} // Temporarily removed
                         />
                       ) : <div className="p-3 border rounded-md min-h-[124px] bg-muted/50 flex items-center justify-center text-sm text-muted-foreground animate-pulse">Carregando editor...</div> }
                     </div>
@@ -890,3 +889,5 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
+
+    
