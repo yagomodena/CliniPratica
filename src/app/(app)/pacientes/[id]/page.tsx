@@ -6,12 +6,14 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil } from "lucide-react"; // Added UserCheck, UserX, Plus, Search, Pencil
-import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from 'next/dynamic'; // Import dynamic
+import 'react-quill/dist/quill.snow.css'; // Import Quill styles
+
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
 import { format, parseISO } from 'date-fns';
@@ -35,6 +37,9 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
+// Dynamically import ReactQuill to ensure it's client-side only
+const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+
 // Function to update the global store (simulated)
 const updatePatientInStore = (slug: string, updatedData: Patient) => {
   console.log("Patient store updated for:", slug);
@@ -46,10 +51,10 @@ const deletePatientFromStore = (slug: string) => {
 
 
 // Data structure definitions
-type HistoryItem = { date: string; type: string; notes: string };
+type HistoryItem = { date: string; type: string; notes: string }; // notes will now store HTML
 type DocumentItem = { name: string; uploadDate: string; url: string };
 type Patient = {
-  internalId: string; // Added internal ID for more reliable state updates
+  internalId: string;
   id: string;
   name: string;
   email: string;
@@ -74,7 +79,7 @@ const initialAppointmentTypesData: AppointmentTypeObject[] = [
   { name: 'Consulta', status: 'active' },
   { name: 'Retorno', status: 'active' },
   { name: 'Avaliação', status: 'active' },
-  { name: 'Observação', status: 'active' }, // Added from original patient detail select
+  { name: 'Observação', status: 'active' },
   { name: 'Outro', status: 'active' },
 ];
 
@@ -83,22 +88,18 @@ export default function PacienteDetalhePage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
-  const patientSlug = params.id as string; // Use slug from URL
+  const patientSlug = params.id as string;
 
-  // State for patient data and edit mode
   const [patient, setPatient] = useState<Patient | undefined>(undefined);
   const [isEditing, setIsEditing] = useState(false);
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
-  // State for New History Entry
-  const [newHistoryNote, setNewHistoryNote] = useState('');
-  const [newHistoryType, setNewHistoryType] = useState(''); // Will be initialized by getFirstActiveTypeName
+  const [newHistoryNote, setNewHistoryNote] = useState(''); // Will store HTML
+  const [newHistoryType, setNewHistoryType] = useState('');
 
-  // State for Document Upload
   const [newDocument, setNewDocument] = useState<File | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Loading state
+  const [isLoading, setIsLoading] = useState(true);
 
-  // State for Appointment Types (consistent with AgendaPage)
   const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>(initialAppointmentTypesData);
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
@@ -111,7 +112,6 @@ export default function PacienteDetalhePage() {
   }, [appointmentTypes]);
 
   useEffect(() => {
-    // Initialize newHistoryType with the first active type name
     setNewHistoryType(getFirstActiveTypeName());
   }, [appointmentTypes, getFirstActiveTypeName]);
 
@@ -128,7 +128,6 @@ export default function PacienteDetalhePage() {
           return;
         }
 
-        const userId = user.uid;
         const patientSlug = params.id as string;
 
         const patientsRef = collection(db, 'pacientes');
@@ -155,7 +154,7 @@ export default function PacienteDetalhePage() {
     };
 
     fetchPatient();
-  }, [params.id, getFirstActiveTypeName]);
+  }, [params.id, getFirstActiveTypeName, toast]); // Added toast to dependency array
 
   const handleEditToggle = () => {
     if (isEditing && editedPatient) {
@@ -183,7 +182,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleToggleStatus = async () => {
-    if (!patient) return; // <-- garante que patient existe
+    if (!patient) return;
 
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
@@ -191,7 +190,7 @@ export default function PacienteDetalhePage() {
 
       await updateDoc(patientRef, { status: newStatus });
 
-      setPatient(prev => prev ? { ...prev, status: newStatus } : prev); // <-- só atualiza se houver valor
+      setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
 
       toast({
         title: `Paciente ${newStatus === 'Ativo' ? 'ativado' : 'inativado'}`,
@@ -223,14 +222,14 @@ export default function PacienteDetalhePage() {
     const newEntry: HistoryItem = {
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
-      notes: newHistoryNote,
+      notes: newHistoryNote, // newHistoryNote is now HTML from ReactQuill
     };
     const updatedPatient = { ...patient, history: [newEntry, ...patient.history] };
     setPatient(updatedPatient);
     setEditedPatient(updatedPatient);
     updatePatientInStore(patientSlug, updatedPatient);
-    setNewHistoryNote('');
-    setNewHistoryType(getFirstActiveTypeName()); // Reset to first active type
+    setNewHistoryNote(''); // Reset Quill editor content
+    setNewHistoryType(getFirstActiveTypeName());
     toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
   };
 
@@ -290,7 +289,6 @@ export default function PacienteDetalhePage() {
     }
   };
 
-  // Appointment Type Management Functions (copied and adapted from AgendaPage)
   const handleAddCustomType = () => {
     const trimmedType = newCustomTypeName.trim();
     if (!trimmedType) {
@@ -307,7 +305,6 @@ export default function PacienteDetalhePage() {
     setNewCustomTypeName('');
     setIsAddTypeDialogOpen(false);
 
-    // If newHistoryType was empty or not active, set it to the new type
     if (newHistoryType === '' || !appointmentTypes.find(t => t.name === newHistoryType && t.status === 'active')) {
       setNewHistoryType(trimmedType);
     }
@@ -330,14 +327,9 @@ export default function PacienteDetalhePage() {
 
     setAppointmentTypes(prevTypes => prevTypes.map(t => t.name === originalName ? { ...t, name: newNameTrimmed } : t).sort((a, b) => a.name.localeCompare(b.name)));
 
-    // Update newHistoryType if it was the one being edited
     if (newHistoryType === originalName) {
       setNewHistoryType(newNameTrimmed);
     }
-
-    // Update existing history items (if desired, this is a more complex operation on patient.history)
-    // For now, only affects new entries and the select field.
-
     setEditingTypeInfo(null);
     toast({ title: "Sucesso", description: `Nome do tipo "${originalName}" atualizado para "${newNameTrimmed}".`, variant: "success" });
   };
@@ -361,7 +353,6 @@ export default function PacienteDetalhePage() {
       ).sort((a, b) => a.name.localeCompare(b.name))
     );
 
-    // If the currently selected newHistoryType was deactivated, switch to the first available active type
     if (newStatus === 'inactive' && newHistoryType === typeName) {
       setNewHistoryType(getFirstActiveTypeName());
     }
@@ -423,6 +414,26 @@ export default function PacienteDetalhePage() {
   };
 
   const displayPatient = isEditing ? editedPatient : patient;
+  
+  // Quill modules configuration (basic example)
+  const quillModules = {
+    toolbar: [
+      [{ 'header': [1, 2, 3, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{'list': 'ordered'}, {'list': 'bullet'}],
+      [{ 'align': [] }],
+      ['link'], // Image and video buttons are part of default toolbar, but upload needs custom handling
+      ['clean']
+    ],
+  };
+
+  const quillFormats = [
+    'header',
+    'bold', 'italic', 'underline', 'strike',
+    'list', 'bullet',
+    'align',
+    'link', 'image', 'video'
+  ];
 
   return (
     <div className="space-y-6">
@@ -568,13 +579,18 @@ export default function PacienteDetalhePage() {
                   </div>
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
-                    <Textarea
-                      id="atendimento-notas"
-                      placeholder="Registre aqui os detalhes da consulta, evolução, plano, etc."
-                      rows={4}
-                      value={newHistoryNote}
-                      onChange={(e) => setNewHistoryNote(e.target.value)}
-                    />
+                    {/* Replace Textarea with ReactQuill */}
+                    <div className="mt-1">
+                      <ReactQuill
+                        theme="snow"
+                        value={newHistoryNote}
+                        onChange={setNewHistoryNote}
+                        modules={quillModules}
+                        formats={quillFormats}
+                        placeholder="Registre aqui os detalhes da consulta, evolução, plano, etc."
+                        className="bg-background text-foreground [&_.ql-editor]:min-h-[100px]"
+                      />
+                    </div>
                   </div>
                 </CardContent>
                 <CardFooter>
@@ -593,7 +609,8 @@ export default function PacienteDetalhePage() {
                       <span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-foreground whitespace-pre-wrap">{item.notes}</p>
+                      {/* Render HTML content safely */}
+                      <div className="text-sm text-foreground prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: item.notes }} />
                     </CardContent>
                   </Card>
                 ))
@@ -761,15 +778,15 @@ export default function PacienteDetalhePage() {
                       onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)}
                       className="h-8"
                     />
-                    <Button size="icon" className="h-8 w-8" onClick={handleSaveEditedTypeName} title="Salvar Nome"><Save className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo(null)} title="Cancelar Edição"><X className="h-4 w-4" /></Button>
+                    <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar Nome"><Save className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo(null)} title="Cancelar Edição"><X className="h-4 w-4" /></Button>
                   </div>
                 ) : (
                   <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
                   {editingTypeInfo?.originalName !== type.name && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo({ originalName: type.name, currentName: type.name })} title="Editar Nome">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ originalName: type.name, currentName: type.name })} title="Editar Nome">
                       <Pencil className="h-4 w-4" />
                     </Button>
                   )}
@@ -784,7 +801,7 @@ export default function PacienteDetalhePage() {
                       setTypeToToggleStatusConfirm(type);
                     }}
                     aria-label={`Status do tipo ${type.name}`}
-                    className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400"
+                    className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0"
                   />
                 </div>
               </div>
@@ -823,4 +840,3 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
-
