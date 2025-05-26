@@ -37,10 +37,8 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-const ReactQuill = dynamic(
-  () => import('react-quill').then(mod => mod.default || mod),
-  { ssr: false }
-);
+// Dynamically import ReactQuill to ensure it's client-side only
+const ReactQuill = dynamic(() => import('react-quill').then(mod => mod.default || mod), { ssr: false });
 
 // Function to update the global store (simulated)
 const updatePatientInStore = (slug: string, updatedData: Patient) => {
@@ -640,8 +638,7 @@ export default function PacienteDetalhePage() {
                           onChange={setNewHistoryNote}
                           modules={quillModules}
                           formats={quillFormats}
-                          placeholder="Registre aqui os detalhes da consulta, evolução, plano, etc."
-                          className="bg-background text-foreground [&_.ql-editor]:min-h-[100px]"
+                          
                         />
                       ) : <div className="p-3 border rounded-md min-h-[124px] bg-muted/50 flex items-center justify-center text-sm text-muted-foreground animate-pulse">Carregando editor...</div> }
                     </div>
