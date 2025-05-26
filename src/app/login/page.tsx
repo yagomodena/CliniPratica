@@ -30,38 +30,41 @@ export default function LoginPage() {
 
       toast({
         title: 'Login realizado com sucesso!',
-        description: `👋 Bem-vindo de volta, ${user.displayName}`,
+        description: `👋 Bem-vindo de volta, ${user.displayName || user.email}`,
+        variant: 'success',
       });
 
       router.push('/dashboard');
     } catch (error: any) {
-      console.error('Erro ao fazer login:', error);
+      console.error('Erro ao fazer login - Código:', error.code, 'Mensagem:', error.message, error);
 
-      let message = 'Erro ao fazer login.';
-      console.error('Erro ao fazer login:', error);
-      console.log('Código do erro:', error.code);
+      let toastMessage = 'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente.';
 
       switch (error.code) {
-        case 'auth/user-not-found':
-          message = 'Usuário não encontrado. Verifique o e-mail.';
-          break;
-        case 'auth/wrong-password':
-          message = 'Senha incorreta. Tente novamente.';
+        case 'auth/user-not-found': // Often superseded by invalid-credential
+        case 'auth/wrong-password': // Often superseded by invalid-credential
+        case 'auth/invalid-credential':
+          toastMessage = 'E-mail ou senha incorretos. Verifique e tente novamente.';
           break;
         case 'auth/invalid-email':
-          message = 'Formato de e-mail inválido.';
+          toastMessage = 'O formato do e-mail informado é inválido.';
           break;
-        case 'auth/invalid-credential':
-          message = 'E-mail ou senha incorretos. Verifique e tente novamente.';
+        case 'auth/user-disabled':
+          toastMessage = 'Esta conta de usuário foi desabilitada.';
+          break;
+        case 'auth/too-many-requests':
+          toastMessage = 'Acesso bloqueado temporariamente devido a muitas tentativas. Tente novamente mais tarde.';
           break;
         default:
-          message = 'Erro inesperado. Tente novamente.';
+          // For other unmapped errors, the default toastMessage is already set.
+          // Additional specific logging for unmapped errors can be done here if needed.
+          console.warn('Erro de login não mapeado diretamente:', error.code, error.message);
           break;
       }
 
       toast({
-        title: 'Erro no login',
-        description: message,
+        title: 'Erro no Login',
+        description: toastMessage,
         variant: 'destructive',
       });
     }
@@ -86,6 +89,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                autoComplete="email"
               />
             </div>
             <div>
@@ -97,6 +101,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                autoComplete="current-password"
               />
             </div>
             <Button type="submit" className="w-full">
@@ -119,4 +124,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
