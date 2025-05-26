@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Ensure useState is imported
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,8 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import dynamic from 'next/dynamic'; // Import dynamic
-import 'react-quill/dist/quill.snow.css'; // Import Quill styles
+import dynamic from 'next/dynamic'; 
+import 'react-quill/dist/quill.snow.css'; 
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
@@ -37,10 +37,8 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-// Dynamically import ReactQuill to ensure it's client-side only
-// Attempt a more robust dynamic import for ReactQuill
 const ReactQuill = dynamic(
-  () => import('react-quill').then(mod => mod.default || mod), // Try mod.default, fallback to mod
+  () => import('react-quill').then(mod => mod.default || mod),
   { ssr: false }
 );
 
@@ -55,7 +53,7 @@ const deletePatientFromStore = (slug: string) => {
 
 
 // Data structure definitions
-type HistoryItem = { date: string; type: string; notes: string }; // notes will now store HTML
+type HistoryItem = { date: string; type: string; notes: string }; 
 type DocumentItem = { name: string; uploadDate: string; url: string };
 type Patient = {
   internalId: string;
@@ -98,7 +96,7 @@ export default function PacienteDetalhePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
-  const [newHistoryNote, setNewHistoryNote] = useState(''); // Will store HTML
+  const [newHistoryNote, setNewHistoryNote] = useState(''); 
   const [newHistoryType, setNewHistoryType] = useState('');
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
@@ -110,6 +108,12 @@ export default function PacienteDetalhePage() {
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
   const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
   const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
+
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
@@ -141,7 +145,7 @@ export default function PacienteDetalhePage() {
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const data = docSnap.data() as Omit<Patient, 'internalId'>; // Type from Firestore doesn't have internalId yet
+          const data = docSnap.data() as Omit<Patient, 'internalId'>; 
           const fetchedPatient = { ...data, internalId: docSnap.id, slug: patientSlug };
           setPatient(fetchedPatient);
           setEditedPatient({ ...fetchedPatient });
@@ -150,7 +154,7 @@ export default function PacienteDetalhePage() {
           }
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto.", variant: "destructive" });
-          // router.push('/pacientes'); // Consider redirecting if patient not found
+          // router.push('/pacientes'); 
         }
       } catch (error) {
         console.error("Erro ao buscar paciente:", error);
@@ -176,7 +180,6 @@ export default function PacienteDetalhePage() {
     }
     try {
       const patientRef = doc(db, 'pacientes', editedPatient.internalId);
-      // Prepare data for Firestore, ensuring no undefined values that Firestore dislikes
       const dataToSave: Partial<Patient> = {
         name: editedPatient.name || '',
         email: editedPatient.email || '',
@@ -184,13 +187,11 @@ export default function PacienteDetalhePage() {
         dob: editedPatient.dob || '',
         address: editedPatient.address || '',
         status: editedPatient.status || 'Ativo',
-        // avatar, history, documents are typically updated by their specific functions
       };
 
       await updateDoc(patientRef, dataToSave);
       
       setPatient({ ...editedPatient });
-      // updatePatientInStore(patientSlug, editedPatient); // Keep if you have a global store
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -202,7 +203,7 @@ export default function PacienteDetalhePage() {
 
   const handleEditToggle = () => {
     if (isEditing) {
-        handleSaveEditedPatient(); // Call save function when finishing edit
+        handleSaveEditedPatient(); 
     } else if (patient) {
       setEditedPatient({ ...patient });
       setIsEditing(true);
@@ -211,7 +212,7 @@ export default function PacienteDetalhePage() {
 
   const handleCancelEdit = () => {
     if (patient) {
-      setEditedPatient({ ...patient }); // Reset changes
+      setEditedPatient({ ...patient }); 
     }
     setIsEditing(false);
   };
@@ -232,7 +233,7 @@ export default function PacienteDetalhePage() {
       await updateDoc(patientRef, { status: newStatus });
 
       setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
-      if (editedPatient) { // Also update editedPatient if it exists
+      if (editedPatient) { 
           setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
       }
 
@@ -295,17 +296,14 @@ export default function PacienteDetalhePage() {
 
   const handleDocumentUpload = () => {
     if (!newDocument || !patient) return;
-    // Simulate upload for now
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument), // Temporary URL for client-side display
+      url: URL.createObjectURL(newDocument), 
     };
-    // In a real app, you'd upload to Firebase Storage here and save the URL
     const updatedPatient = { ...patient, documents: [newDocEntry, ...(patient.documents || [])] };
     setPatient(updatedPatient);
     setEditedPatient(updatedPatient);
-    // updatePatientInStore(patientSlug, updatedPatient); // If using global store
     setNewDocument(null);
     const fileInput = document.getElementById('document-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
@@ -314,12 +312,10 @@ export default function PacienteDetalhePage() {
 
   const handleDeleteDocument = (docName: string) => {
     if (!patient) return;
-    // Simulate deletion for now
     const updatedDocs = (patient.documents || []).filter(doc => doc.name !== docName);
     const updatedPatient = { ...patient, documents: updatedDocs };
     setPatient(updatedPatient);
     setEditedPatient(updatedPatient);
-    // updatePatientInStore(patientSlug, updatedPatient); // If using global store
     toast({ title: "Documento Excluído (Simulado)", description: `Documento "${docName}" removido localmente.`, variant: "default" });
   };
 
@@ -637,7 +633,7 @@ export default function PacienteDetalhePage() {
                     <Label htmlFor="atendimento-notas">Observações</Label>
                     {/* Replace Textarea with ReactQuill */}
                     <div className="mt-1">
-                      {typeof window !== 'undefined' && ReactQuill && (
+                      {isClient && ReactQuill ? (
                         <ReactQuill
                           theme="snow"
                           value={newHistoryNote}
@@ -647,7 +643,7 @@ export default function PacienteDetalhePage() {
                           placeholder="Registre aqui os detalhes da consulta, evolução, plano, etc."
                           className="bg-background text-foreground [&_.ql-editor]:min-h-[100px]"
                         />
-                      )}
+                      ) : <div className="p-3 border rounded-md min-h-[124px] bg-muted/50 flex items-center justify-center text-sm text-muted-foreground animate-pulse">Carregando editor...</div> }
                     </div>
                   </div>
                 </CardContent>
@@ -667,7 +663,6 @@ export default function PacienteDetalhePage() {
                       <span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span>
                     </CardHeader>
                     <CardContent>
-                      {/* Render HTML content safely */}
                       <div className="text-sm text-foreground prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: item.notes }} />
                     </CardContent>
                   </Card>
@@ -898,6 +893,3 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
-
-
-    
