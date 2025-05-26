@@ -38,7 +38,11 @@ import {
 import { getAuth } from 'firebase/auth';
 
 // Dynamically import ReactQuill to ensure it's client-side only
-const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+// Attempt a more robust dynamic import for ReactQuill
+const ReactQuill = dynamic(
+  () => import('react-quill').then(mod => mod.default || mod), // Try mod.default, fallback to mod
+  { ssr: false }
+);
 
 // Function to update the global store (simulated)
 const updatePatientInStore = (slug: string, updatedData: Patient) => {
@@ -125,6 +129,7 @@ export default function PacienteDetalhePage() {
 
         if (!user) {
           toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
+          setIsLoading(false);
           return;
         }
 
@@ -136,14 +141,16 @@ export default function PacienteDetalhePage() {
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const data = docSnap.data() as Patient;
-          setPatient(data);
-          setEditedPatient({ ...data });
-          if (data.history.length === 0) {
+          const data = docSnap.data() as Omit<Patient, 'internalId'>; // Type from Firestore doesn't have internalId yet
+          const fetchedPatient = { ...data, internalId: docSnap.id, slug: patientSlug };
+          setPatient(fetchedPatient);
+          setEditedPatient({ ...fetchedPatient });
+          if (fetchedPatient.history.length === 0) {
             setNewHistoryType(getFirstActiveTypeName());
           }
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto.", variant: "destructive" });
+          // router.push('/pacientes'); // Consider redirecting if patient not found
         }
       } catch (error) {
         console.error("Erro ao buscar paciente:", error);
@@ -153,15 +160,49 @@ export default function PacienteDetalhePage() {
       }
     };
 
-    fetchPatient();
-  }, [params.id, getFirstActiveTypeName, toast]); // Added toast to dependency array
+    if (patientSlug) {
+        fetchPatient();
+    } else {
+        toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
+        setIsLoading(false);
+        router.push('/pacientes');
+    }
+  }, [params.id, getFirstActiveTypeName, toast, router]);
 
-  const handleEditToggle = () => {
-    if (isEditing && editedPatient) {
+  const handleSaveEditedPatient = async () => {
+    if (!editedPatient || !editedPatient.internalId) {
+      toast({ title: "Erro", description: "Não foi possível identificar o paciente para salvar.", variant: "destructive" });
+      return;
+    }
+    try {
+      const patientRef = doc(db, 'pacientes', editedPatient.internalId);
+      // Prepare data for Firestore, ensuring no undefined values that Firestore dislikes
+      const dataToSave: Partial<Patient> = {
+        name: editedPatient.name || '',
+        email: editedPatient.email || '',
+        phone: editedPatient.phone || '',
+        dob: editedPatient.dob || '',
+        address: editedPatient.address || '',
+        status: editedPatient.status || 'Ativo',
+        // avatar, history, documents are typically updated by their specific functions
+      };
+
+      await updateDoc(patientRef, dataToSave);
+      
       setPatient({ ...editedPatient });
-      updatePatientInStore(patientSlug, editedPatient);
+      // updatePatientInStore(patientSlug, editedPatient); // Keep if you have a global store
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
+    } catch (error) {
+      console.error("Erro ao salvar alterações do paciente:", error);
+      toast({ title: "Erro", description: "Não foi possível salvar as alterações do paciente.", variant: "destructive" });
+    }
+  };
+
+
+  const handleEditToggle = () => {
+    if (isEditing) {
+        handleSaveEditedPatient(); // Call save function when finishing edit
     } else if (patient) {
       setEditedPatient({ ...patient });
       setIsEditing(true);
@@ -170,7 +211,7 @@ export default function PacienteDetalhePage() {
 
   const handleCancelEdit = () => {
     if (patient) {
-      setEditedPatient({ ...patient });
+      setEditedPatient({ ...patient }); // Reset changes
     }
     setIsEditing(false);
   };
@@ -182,7 +223,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleToggleStatus = async () => {
-    if (!patient) return;
+    if (!patient || !patient.internalId) return;
 
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
@@ -191,11 +232,15 @@ export default function PacienteDetalhePage() {
       await updateDoc(patientRef, { status: newStatus });
 
       setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
+      if (editedPatient) { // Also update editedPatient if it exists
+          setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
+      }
+
 
       toast({
         title: `Paciente ${newStatus === 'Ativo' ? 'ativado' : 'inativado'}`,
         description: `O status de ${patient.name} foi atualizado com sucesso.`,
-        variant: 'success',
+        variant: newStatus === 'Ativo' ? 'success' : 'warning',
       });
     } catch (error) {
       console.error("Erro ao atualizar status do paciente:", error);
@@ -208,8 +253,8 @@ export default function PacienteDetalhePage() {
   };
 
 
-  const handleAddHistory = () => {
-    if (!newHistoryNote.trim() || !patient || !newHistoryType.trim()) {
+  const handleAddHistory = async () => {
+    if (!newHistoryNote.trim() || !patient || !patient.internalId || !newHistoryType.trim()) {
       toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são necessários.", variant: "destructive" });
       return;
     }
@@ -222,15 +267,24 @@ export default function PacienteDetalhePage() {
     const newEntry: HistoryItem = {
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
-      notes: newHistoryNote, // newHistoryNote is now HTML from ReactQuill
+      notes: newHistoryNote, 
     };
-    const updatedPatient = { ...patient, history: [newEntry, ...patient.history] };
-    setPatient(updatedPatient);
-    setEditedPatient(updatedPatient);
-    updatePatientInStore(patientSlug, updatedPatient);
-    setNewHistoryNote(''); // Reset Quill editor content
-    setNewHistoryType(getFirstActiveTypeName());
-    toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
+    
+    try {
+        const patientRef = doc(db, 'pacientes', patient.internalId);
+        const updatedHistory = [newEntry, ...(patient.history || [])];
+        await updateDoc(patientRef, { history: updatedHistory });
+
+        const updatedPatient = { ...patient, history: updatedHistory };
+        setPatient(updatedPatient);
+        setEditedPatient(updatedPatient); 
+        setNewHistoryNote(''); 
+        setNewHistoryType(getFirstActiveTypeName());
+        toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
+    } catch (error) {
+        console.error("Erro ao adicionar histórico:", error);
+        toast({ title: "Erro", description: "Não foi possível adicionar o registro ao histórico.", variant: "destructive" });
+    }
   };
 
   const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,33 +295,36 @@ export default function PacienteDetalhePage() {
 
   const handleDocumentUpload = () => {
     if (!newDocument || !patient) return;
+    // Simulate upload for now
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument),
+      url: URL.createObjectURL(newDocument), // Temporary URL for client-side display
     };
-    const updatedPatient = { ...patient, documents: [newDocEntry, ...patient.documents] };
+    // In a real app, you'd upload to Firebase Storage here and save the URL
+    const updatedPatient = { ...patient, documents: [newDocEntry, ...(patient.documents || [])] };
     setPatient(updatedPatient);
     setEditedPatient(updatedPatient);
-    updatePatientInStore(patientSlug, updatedPatient);
+    // updatePatientInStore(patientSlug, updatedPatient); // If using global store
     setNewDocument(null);
     const fileInput = document.getElementById('document-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
-    toast({ title: "Documento Enviado", description: `Documento "${newDocEntry.name}" anexado.`, variant: "success" });
+    toast({ title: "Documento Anexado (Simulado)", description: `Documento "${newDocEntry.name}" adicionado localmente. Upload real não implementado.`, variant: "success" });
   };
 
   const handleDeleteDocument = (docName: string) => {
     if (!patient) return;
-    const updatedDocs = patient.documents.filter(doc => doc.name !== docName);
+    // Simulate deletion for now
+    const updatedDocs = (patient.documents || []).filter(doc => doc.name !== docName);
     const updatedPatient = { ...patient, documents: updatedDocs };
     setPatient(updatedPatient);
     setEditedPatient(updatedPatient);
-    updatePatientInStore(patientSlug, updatedPatient);
-    toast({ title: "Documento Excluído", description: `Documento "${docName}" removido.`, variant: "default" });
+    // updatePatientInStore(patientSlug, updatedPatient); // If using global store
+    toast({ title: "Documento Excluído (Simulado)", description: `Documento "${docName}" removido localmente.`, variant: "default" });
   };
 
   const handleDeletePatient = async () => {
-    if (!patient) return;
+    if (!patient || !patient.internalId) return;
 
     try {
       await deleteDoc(doc(db, 'pacientes', patient.internalId));
@@ -415,14 +472,13 @@ export default function PacienteDetalhePage() {
 
   const displayPatient = isEditing ? editedPatient : patient;
   
-  // Quill modules configuration (basic example)
   const quillModules = {
     toolbar: [
       [{ 'header': [1, 2, 3, false] }],
       ['bold', 'italic', 'underline', 'strike'],
       [{'list': 'ordered'}, {'list': 'bullet'}],
       [{ 'align': [] }],
-      ['link'], // Image and video buttons are part of default toolbar, but upload needs custom handling
+      ['link'], 
       ['clean']
     ],
   };
@@ -432,7 +488,7 @@ export default function PacienteDetalhePage() {
     'bold', 'italic', 'underline', 'strike',
     'list', 'bullet',
     'align',
-    'link', 'image', 'video'
+    'link'
   ];
 
   return (
@@ -581,15 +637,17 @@ export default function PacienteDetalhePage() {
                     <Label htmlFor="atendimento-notas">Observações</Label>
                     {/* Replace Textarea with ReactQuill */}
                     <div className="mt-1">
-                      <ReactQuill
-                        theme="snow"
-                        value={newHistoryNote}
-                        onChange={setNewHistoryNote}
-                        modules={quillModules}
-                        formats={quillFormats}
-                        placeholder="Registre aqui os detalhes da consulta, evolução, plano, etc."
-                        className="bg-background text-foreground [&_.ql-editor]:min-h-[100px]"
-                      />
+                      {typeof window !== 'undefined' && ReactQuill && (
+                        <ReactQuill
+                          theme="snow"
+                          value={newHistoryNote}
+                          onChange={setNewHistoryNote}
+                          modules={quillModules}
+                          formats={quillFormats}
+                          placeholder="Registre aqui os detalhes da consulta, evolução, plano, etc."
+                          className="bg-background text-foreground [&_.ql-editor]:min-h-[100px]"
+                        />
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -840,3 +898,6 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
+
+
+    
