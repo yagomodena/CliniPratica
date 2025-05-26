@@ -36,7 +36,7 @@ export default function LoginPage() {
 
       router.push('/dashboard');
     } catch (error: any) {
-      console.error('Erro ao fazer login - Código:', error.code, 'Mensagem:', error.message, error);
+      console.error('Erro ao fazer login - Código:', error.code, 'Mensagem:', error.message);
 
       let toastMessage = 'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente.';
 
@@ -56,9 +56,8 @@ export default function LoginPage() {
           toastMessage = 'Acesso bloqueado temporariamente devido a muitas tentativas. Tente novamente mais tarde.';
           break;
         default:
-          // For other unmapped errors, the default toastMessage is already set.
-          // Additional specific logging for unmapped errors can be done here if needed.
           console.warn('Erro de login não mapeado diretamente:', error.code, error.message);
+          // For other unmapped errors, the default toastMessage is already set.
           break;
       }
 
