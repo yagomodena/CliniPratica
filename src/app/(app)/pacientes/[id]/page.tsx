@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react'; // Ensure useState is imported
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,8 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import dynamic from 'next/dynamic';
-import 'react-quill/dist/quill.snow.css';
+// Removed dynamic import for ReactQuill and its CSS
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
@@ -36,9 +35,8 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { TiptapEditor } from '@/components/tiptap-editor'; // Import the new Tiptap editor
 
-// Dynamically import ReactQuill to ensure it's client-side only
-const ReactQuill = dynamic(() => import('react-quill').then(mod => mod.default || mod), { ssr: false });
 
 // Function to update the global store (simulated)
 const updatePatientInStore = (slug: string, updatedData: Patient) => {
@@ -51,7 +49,7 @@ const deletePatientFromStore = (slug: string) => {
 
 
 // Data structure definitions
-type HistoryItem = { date: string; type: string; notes: string };
+type HistoryItem = { date: string; type: string; notes: string }; // notes will store HTML
 type DocumentItem = { name: string; uploadDate: string; url: string };
 type Patient = {
   internalId: string;
@@ -94,7 +92,7 @@ export default function PacienteDetalhePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
-  const [newHistoryNote, setNewHistoryNote] = useState('');
+  const [newHistoryNote, setNewHistoryNote] = useState(''); // Will store HTML from Tiptap
   const [newHistoryType, setNewHistoryType] = useState('');
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
@@ -107,21 +105,20 @@ export default function PacienteDetalhePage() {
   const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
   const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
 
-  const [isClient, setIsClient] = useState(false);
+  // const [isClient, setIsClient] = useState(false); // No longer needed for ReactQuill
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+  // useEffect(() => {
+  //   setIsClient(true);
+  // }, []);
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
   }, [appointmentTypes]);
 
   useEffect(() => {
-    if (isClient) { // Ensure this only runs client-side and after types are potentially available
-        setNewHistoryType(getFirstActiveTypeName());
-    }
-  }, [appointmentTypes, getFirstActiveTypeName, isClient]);
+    // This effect might still be useful to set initial newHistoryType
+    setNewHistoryType(getFirstActiveTypeName());
+  }, [appointmentTypes, getFirstActiveTypeName]);
 
 
   useEffect(() => {
@@ -149,7 +146,7 @@ export default function PacienteDetalhePage() {
           const fetchedPatient = { ...data, internalId: docSnap.id, slug: patientSlug };
           setPatient(fetchedPatient);
           setEditedPatient({ ...fetchedPatient });
-          if (fetchedPatient.history.length === 0 && isClient) { // Check isClient here too
+          if (fetchedPatient.history.length === 0) { 
             setNewHistoryType(getFirstActiveTypeName());
           }
         } else {
@@ -165,13 +162,13 @@ export default function PacienteDetalhePage() {
     };
 
     if (patientSlug) {
-        fetchPatient();
+      fetchPatient();
     } else {
-        toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
-        setIsLoading(false);
-        router.push('/pacientes');
+      toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
+      setIsLoading(false);
+      router.push('/pacientes');
     }
-  }, [params.id, getFirstActiveTypeName, toast, router, isClient]); // Added isClient to dependency array
+  }, [params.id, getFirstActiveTypeName, toast, router]);
 
   const handleSaveEditedPatient = async () => {
     if (!editedPatient || !editedPatient.internalId) {
@@ -203,7 +200,7 @@ export default function PacienteDetalhePage() {
 
   const handleEditToggle = () => {
     if (isEditing) {
-        handleSaveEditedPatient();
+      handleSaveEditedPatient();
     } else if (patient) {
       setEditedPatient({ ...patient });
       setIsEditing(true);
@@ -234,7 +231,7 @@ export default function PacienteDetalhePage() {
 
       setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
       if (editedPatient) {
-          setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
+        setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
       }
 
 
@@ -255,7 +252,10 @@ export default function PacienteDetalhePage() {
 
 
   const handleAddHistory = async () => {
-    if (!newHistoryNote.trim() || !patient || !patient.internalId || !newHistoryType.trim()) {
+    // Basic check for empty HTML from Tiptap (might need to be more robust, e.g., checking for actual text content)
+    const isNoteEmpty = !newHistoryNote || newHistoryNote === '<p></p>';
+
+    if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim()) {
       toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são necessários.", variant: "destructive" });
       return;
     }
@@ -268,23 +268,23 @@ export default function PacienteDetalhePage() {
     const newEntry: HistoryItem = {
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
-      notes: newHistoryNote,
+      notes: newHistoryNote, // newHistoryNote now contains HTML from Tiptap
     };
 
     try {
-        const patientRef = doc(db, 'pacientes', patient.internalId);
-        const updatedHistory = [newEntry, ...(patient.history || [])];
-        await updateDoc(patientRef, { history: updatedHistory });
+      const patientRef = doc(db, 'pacientes', patient.internalId);
+      const updatedHistory = [newEntry, ...(patient.history || [])];
+      await updateDoc(patientRef, { history: updatedHistory });
 
-        const updatedPatient = { ...patient, history: updatedHistory };
-        setPatient(updatedPatient);
-        setEditedPatient(updatedPatient);
-        setNewHistoryNote('');
-        setNewHistoryType(getFirstActiveTypeName());
-        toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
+      const updatedPatient = { ...patient, history: updatedHistory };
+      setPatient(updatedPatient);
+      setEditedPatient(updatedPatient);
+      setNewHistoryNote(''); // Reset to empty string for Tiptap
+      setNewHistoryType(getFirstActiveTypeName());
+      toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
     } catch (error) {
-        console.error("Erro ao adicionar histórico:", error);
-        toast({ title: "Erro", description: "Não foi possível adicionar o registro ao histórico.", variant: "destructive" });
+      console.error("Erro ao adicionar histórico:", error);
+      toast({ title: "Erro", description: "Não foi possível adicionar o registro ao histórico.", variant: "destructive" });
     }
   };
 
@@ -468,23 +468,6 @@ export default function PacienteDetalhePage() {
 
   const displayPatient = isEditing ? editedPatient : patient;
 
-  // Basic modules and formats for ReactQuill, can be expanded
-  const quillModules = {
-    toolbar: [
-      [{ 'header': [1, 2, false] }],
-      ['bold', 'italic', 'underline','strike', 'blockquote'],
-      [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
-      ['link'],
-      ['clean']
-    ],
-  };
-
-  const quillFormats = [
-    'header',
-    'bold', 'italic', 'underline', 'strike', 'blockquote',
-    'list', 'bullet', 'indent',
-    'link'
-  ];
 
   return (
     <div className="space-y-6">
@@ -630,21 +613,18 @@ export default function PacienteDetalhePage() {
                   </div>
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
-                    <div className="mt-1">
-                      {isClient && ReactQuill ? (
-                        <ReactQuill
-                          theme="snow"
-                          value={newHistoryNote}
-                          onChange={setNewHistoryNote}
-                          // modules={quillModules} // Temporarily removed
-                          // formats={quillFormats} // Temporarily removed
-                        />
-                      ) : <div className="p-3 border rounded-md min-h-[124px] bg-muted/50 flex items-center justify-center text-sm text-muted-foreground animate-pulse">Carregando editor...</div> }
+                     <div className="mt-1">
+                       <TiptapEditor
+                        content={newHistoryNote}
+                        onChange={setNewHistoryNote}
+                       />
                     </div>
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button onClick={handleAddHistory} disabled={!newHistoryNote.trim()}><PlusCircle className="mr-2 h-4 w-4" /> Adicionar ao Histórico</Button>
+                  <Button onClick={handleAddHistory} disabled={!newHistoryNote.trim() || newHistoryNote === '<p></p>'}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Adicionar ao Histórico
+                  </Button>
                 </CardFooter>
               </Card>
 
@@ -889,5 +869,3 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
-
-    
