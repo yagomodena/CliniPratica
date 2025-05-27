@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from 'next/dynamic';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
@@ -36,6 +37,10 @@ import {
 import { getAuth } from 'firebase/auth';
 import { TiptapEditor } from '@/components/tiptap-editor';
 
+
+// Dynamically import ReactQuill to ensure it's client-side only
+// const ReactQuill = dynamic(() => import('react-quill').then(mod => mod.default || mod), { ssr: false });
+// import 'react-quill/dist/quill.snow.css'; // Import Quill styles
 
 // Function to update the global store (simulated)
 const updatePatientInStore = (slug: string, updatedData: Patient) => {
@@ -107,6 +112,12 @@ export default function PacienteDetalhePage() {
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
 
+  // const [isClient, setIsClient] = useState(false);
+
+  // useEffect(() => {
+  //   setIsClient(true);
+  // }, []);
+
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
@@ -139,16 +150,16 @@ export default function PacienteDetalhePage() {
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
           const data = docSnap.data() as Omit<Patient, 'internalId'>;
-          const fetchedPatient = { 
-            ...data, 
-            internalId: docSnap.id, 
+          const fetchedPatient = {
+            ...data,
+            internalId: docSnap.id,
             slug: patientSlug,
             // Ensure history items have a unique key if not already present (e.g., from Firebase)
             history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}` })),
           };
           setPatient(fetchedPatient);
           setEditedPatient({ ...fetchedPatient });
-          if (fetchedPatient.history.length === 0) { 
+          if (fetchedPatient.history.length === 0) {
             setNewHistoryType(getFirstActiveTypeName());
           }
         } else {
@@ -498,7 +509,7 @@ export default function PacienteDetalhePage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className={patient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50' : 'text-green-600 border-green-300 hover:bg-green-50'}
+                    className={patient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-black' : 'text-green-600 border-green-300 hover:bg-green-50 hover:text-black'}
                   >
                     {patient.status === 'Ativo' ? <UserX className="mr-2 h-4 w-4" /> : <UserCheck className="mr-2 h-4 w-4" />}
                     {patient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
@@ -619,7 +630,7 @@ export default function PacienteDetalhePage() {
                   </div>
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
-                     <div className="mt-1">
+                    <div className="mt-1">
                        <TiptapEditor
                         content={newHistoryNote}
                         onChange={setNewHistoryNote}
@@ -645,11 +656,11 @@ export default function PacienteDetalhePage() {
                       <span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span>
                     </CardHeader>
                     <CardContent>
-                      <div 
-                        className="text-sm text-foreground history-note-content prose prose-sm max-w-none" 
-                        dangerouslySetInnerHTML={{ 
-                          __html: item.notes.length > 250 ? item.notes.substring(0, 250) + "..." : item.notes 
-                        }} 
+                      <div
+                        className="text-sm text-foreground history-note-content prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{
+                          __html: item.notes.length > 250 ? item.notes.substring(0, 250) + "..." : item.notes
+                        }}
                       />
                       {item.notes.length > 250 && (
                         <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary" onClick={() => handleOpenHistoryModal(item)}>
@@ -794,9 +805,9 @@ export default function PacienteDetalhePage() {
           </DialogHeader>
           <div className="py-4 max-h-[60vh] overflow-y-auto">
             {selectedHistoryNote && (
-              <div 
+              <div
                 className="history-note-content prose prose-sm sm:prose-base max-w-none"
-                dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }} 
+                dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }}
               />
             )}
           </div>
