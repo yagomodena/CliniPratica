@@ -12,15 +12,13 @@ import {
   List,
   ListOrdered,
   Heading2,
-  Pilcrow, // Changed from Type to Pilcrow for paragraph icon
+  Pilcrow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TiptapEditorProps {
   content: string;
   onChange: (newContent: string) => void;
-  onSave?: () => void;
-  isSaveDisabled?: boolean;
 }
 
 const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
@@ -28,7 +26,6 @@ const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
     return null;
   }
 
-  // Define toolbar buttons with explicit commands and isActive checks
   const toolbarButtons = [
     {
       command: () => editor.chain().focus().toggleBold().run(),
@@ -78,7 +75,7 @@ const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
     <div className="flex flex-wrap gap-1 border-b border-input p-2 bg-muted/50 rounded-t-md">
       {toolbarButtons.map((btn) => (
         <Button
-          key={btn.label} // Use label as key for simplicity, assuming labels are unique
+          key={btn.label}
           type="button"
           variant="ghost"
           size="icon"
@@ -87,6 +84,7 @@ const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
             btn.isActive() ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
           )}
           onClick={btn.command}
+          disabled={!editor.can()[btn.command.name.startsWith('toggle') ? `toggle${btn.label.replace(' ', '')}` : `set${btn.label.replace(' ', '')}`]?.()} // Basic can check
           title={btn.label}
           aria-pressed={btn.isActive()}
         >
@@ -104,11 +102,8 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // StarterKit includes:
-        // bold, italic, strike, paragraph, heading, bulletList, orderedList
-        // code, codeBlock, blockquote, horizontalRule, hardBreak,
-        // listItem, orderedList, bulletList, heading
-        // Ensure defaults are not accidentally turned off if not explicitly configured
+        // Ensure defaults are not accidentally turned off
+        // StarterKit includes paragraph, heading, bulletList, orderedList by default
       }),
     ],
     content: content,
@@ -118,7 +113,8 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     editorProps: {
       attributes: {
         class:
-          'prose prose-sm sm:prose-base max-w-none p-3 focus:outline-none min-h-[150px] w-full',
+          // Removed 'prose prose-sm sm:prose-base max-w-none'
+          'p-3 focus:outline-none min-h-[150px] w-full text-sm leading-relaxed',
       },
     },
   });
