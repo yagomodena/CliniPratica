@@ -4,7 +4,7 @@
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye } from "lucide-react"; // Added Eye
+import { Calendar as CalendarIcon, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -37,24 +37,25 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { Switch } from '@/components/ui/switch';
 
+import { getAuth, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db, auth } from '@/firebase';
 
-// --- Placeholder Data (Shared between Agenda and Pacientes) ---
-const initialPatients = [
-  { id: 'p001', name: 'Ana Silva', email: 'ana.silva@email.com', phone: '(11) 98765-4321', dob: '1985-03-15', address: 'Rua Exemplo, 123, São Paulo - SP', status: 'Ativo' },
-  { id: 'p002', name: 'Carlos Souza', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ', status: 'Ativo' },
-  { id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: '1978-05-01', address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo' },
-  { id: 'p004', name: 'Daniel Costa', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR', status: 'Inativo' },
-  { id: 'p005', name: 'Fernanda Oliveira', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS', status: 'Ativo' },
-];
-// --- End Placeholder Data ---
-
+// Patient data structure fetched from Firebase
+type PatientFromFirebase = {
+  id: string; // Firestore document ID
+  name: string;
+  status: string;
+  slug: string; // Slug for linking
+};
 
 // Appointment data structure
 type Appointment = {
   id: string;
   time: string;
-  patientId: string;
+  patientId: string; // Firestore document ID of the patient
   patientName: string;
+  patientSlug: string; // Slug for linking to patient detail page
   type: string; // This will store the name of the appointment type
   notes?: string;
 };
@@ -63,26 +64,25 @@ type AppointmentsData = {
   [dateKey: string]: Appointment[];
 };
 
-// Initial appointment data
+// Initial appointment data (placeholders, adapt or remove if fetching appointments from Firebase)
 const initialAppointments: AppointmentsData = {
   [format(addDays(new Date(), 1), 'yyyy-MM-dd')]: [
-    { id: 'appt-1', time: '09:00', patientId: 'p001', patientName: 'Ana Silva', type: 'Consulta', notes: 'Consulta inicial' },
-    { id: 'appt-2', time: '10:30', patientId: 'p002', patientName: 'Carlos Souza', type: 'Retorno' },
+    { id: 'appt-1', time: '09:00', patientId: 'p001_placeholder', patientName: 'Ana Silva (Exemplo)', patientSlug: 'ana-silva-exemplo', type: 'Consulta', notes: 'Consulta inicial de exemplo' },
+    { id: 'appt-2', time: '10:30', patientId: 'p002_placeholder', patientName: 'Carlos Souza (Exemplo)', patientSlug: 'carlos-souza-exemplo', type: 'Retorno' },
   ],
   [format(addDays(new Date(), 3), 'yyyy-MM-dd')]: [
-    { id: 'appt-3', time: '14:00', patientId: 'p003', patientName: 'Beatriz Lima', type: 'Consulta' },
+    { id: 'appt-3', time: '14:00', patientId: 'p003_placeholder', patientName: 'Beatriz Lima (Exemplo)', patientSlug: 'beatriz-lima-exemplo', type: 'Consulta' },
   ],
 };
 
 type AppointmentFormValues = {
   patientId: string;
-  type: string; // Stores the name of the appointment type
+  type: string;
   date: string;
   time: string;
   notes: string;
 }
 
-// Structure for appointment types
 type AppointmentTypeObject = {
   name: string;
   status: 'active' | 'inactive';
@@ -101,25 +101,23 @@ export default function AgendaPage() {
   const [clientNow, setClientNow] = useState<Date | undefined>(undefined);
 
   const [appointments, setAppointments] = useState<AppointmentsData>(initialAppointments);
-  const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo'));
   const { toast } = useToast();
 
-  // State for Appointment Types
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [firebasePatients, setFirebasePatients] = useState<PatientFromFirebase[]>([]);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(true);
+
   const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>(initialAppointmentTypesData);
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
-
-  // State for Manage Appointment Types Dialog
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
   const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
   const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
-
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
   }, [appointmentTypes]);
 
-  // State for New Appointment Dialog
   const [isNewAppointmentDialogOpen, setIsNewAppointmentDialogOpen] = useState(false);
   const [newAppointmentForm, setNewAppointmentForm] = useState<AppointmentFormValues>({
     patientId: '',
@@ -129,16 +127,59 @@ export default function AgendaPage() {
     notes: '',
   });
 
-  // State for Edit Appointment Dialog
   const [isEditAppointmentDialogOpen, setIsEditAppointmentDialogOpen] = useState(false);
   const [editingAppointmentInfo, setEditingAppointmentInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
   const [editAppointmentForm, setEditAppointmentForm] = useState<AppointmentFormValues>({
     patientId: '', type: getFirstActiveTypeName(), date: '', time: '', notes: '',
   });
 
-  // State for Delete Confirmation Dialog (for appointments)
   const [isDeleteApptConfirmOpen, setIsDeleteApptConfirmOpen] = useState(false);
   const [appointmentToDeleteInfo, setAppointmentToDeleteInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (!user) {
+        setFirebasePatients([]);
+        setIsLoadingPatients(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      const fetchPatientsForUser = async () => {
+        setIsLoadingPatients(true);
+        try {
+          const patientsRef = collection(db, 'pacientes');
+          const q = query(patientsRef, where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
+          const querySnapshot = await getDocs(q);
+          const fetchedPatientsData: PatientFromFirebase[] = [];
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            fetchedPatientsData.push({
+              id: docSnap.id,
+              name: data.name as string,
+              status: data.status as string,
+              slug: data.slug as string, // Ensure slug is fetched
+            });
+          });
+          setFirebasePatients(fetchedPatientsData);
+        } catch (error) {
+          console.error("Erro ao buscar pacientes:", error);
+          toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes.", variant: "destructive" });
+          setFirebasePatients([]);
+        } finally {
+          setIsLoadingPatients(false);
+        }
+      };
+      fetchPatientsForUser();
+    } else {
+      setFirebasePatients([]);
+      setIsLoadingPatients(false);
+    }
+  }, [currentUser, toast]);
 
 
   useEffect(() => {
@@ -152,7 +193,7 @@ export default function AgendaPage() {
     setNewAppointmentForm(prev => ({
         ...prev,
         date: format(now, 'yyyy-MM-dd'),
-        type: getFirstActiveTypeName() // Ensure type is set on mount
+        type: getFirstActiveTypeName()
     }));
      setEditAppointmentForm(prev => ({ ...prev, type: getFirstActiveTypeName() }));
   }, [getFirstActiveTypeName]);
@@ -193,12 +234,10 @@ export default function AgendaPage() {
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    if (!clientToday || !clientNow) return true; // Should not happen if clientNow/clientToday are set
-    // Check if the date of the appointment is before today
+    if (!clientToday || !clientNow) return true;
     if (isBefore(startOfDay(dateTime), clientToday)) {
         return true;
     }
-    // If the appointment is for today, check if the time is in the past
     if (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow)) {
         return true;
     }
@@ -224,7 +263,6 @@ export default function AgendaPage() {
         return;
     }
 
-
     const appointmentDateTime = validateAppointmentDateTime(date, time);
     if (!appointmentDateTime) return;
 
@@ -238,7 +276,7 @@ export default function AgendaPage() {
       return;
     }
 
-    const selectedPatient = patients.find(p => p.id === patientId);
+    const selectedPatient = firebasePatients.find(p => p.id === patientId);
     if (!selectedPatient) {
       toast({ title: "Erro", description: "Paciente selecionado inválido.", variant: "destructive" });
       return;
@@ -249,6 +287,7 @@ export default function AgendaPage() {
       time,
       patientId,
       patientName: selectedPatient.name,
+      patientSlug: selectedPatient.slug,
       type,
       notes,
     };
@@ -310,7 +349,7 @@ export default function AgendaPage() {
       return;
     }
 
-    const selectedPatient = patients.find(p => p.id === patientId);
+    const selectedPatient = firebasePatients.find(p => p.id === patientId);
     if (!selectedPatient) {
       toast({ title: "Erro", description: "Paciente selecionado inválido.", variant: "destructive" });
       return;
@@ -320,6 +359,7 @@ export default function AgendaPage() {
       ...originalAppointment,
       patientId,
       patientName: selectedPatient.name,
+      patientSlug: selectedPatient.slug,
       type,
       time,
       notes,
@@ -439,7 +479,6 @@ export default function AgendaPage() {
 
     const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
 
-    // Prevent deactivating the last active type
     if (newStatus === 'inactive') {
       const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
       if (activeTypesCount <= 1) {
@@ -469,7 +508,7 @@ export default function AgendaPage() {
       description: `O tipo "${typeName}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`,
       variant: "success"
     });
-    setTypeToToggleStatusConfirm(null); // Close if a confirmation dialog was open for this
+    setTypeToToggleStatusConfirm(null);
   };
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
@@ -485,7 +524,6 @@ export default function AgendaPage() {
 
   const formattedDateKey = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
   const todaysAppointments: Appointment[] = appointments[formattedDateKey] || [];
-  const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
   const isSelectedDatePast = selectedDate && clientToday ? isBefore(startOfDay(selectedDate), clientToday) : false;
 
   const apptDateTimeForEditButton = (apptTime: string) => formattedDateKey ? parse(`${formattedDateKey} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date()) : null;
@@ -521,8 +559,13 @@ export default function AgendaPage() {
                 <Select value={newAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'patientId', value)} required>
                   <SelectTrigger id="newPatientId" className="col-span-3"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
                   <SelectContent>
-                    {patients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                    {patients.length === 0 && <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>}
+                    {isLoadingPatients ? (
+                      <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
+                    ) : firebasePatients.length === 0 ? (
+                      <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
+                    ) : (
+                      firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -626,16 +669,16 @@ export default function AgendaPage() {
                              </AlertDialogDescription>
                            </AlertDialogHeader>
                            <AlertDialogFooter>
-                             <AlertDialogCancel onClick={() => {setAppointmentToDeleteInfo(null);}}>Cancelar</AlertDialogCancel> {/* Removed setIsDeleteApptConfirmOpen(false) here, it's handled by onOpenChange of AlertDialog */}
-                             <AlertDialogAction onClick={() => { 
-                               setAppointmentToDeleteInfo({ appointment: appt, dateKey: formattedDateKey }); // Set info then call confirm
+                             <AlertDialogCancel onClick={() => {setAppointmentToDeleteInfo(null);}}>Cancelar</AlertDialogCancel>
+                             <AlertDialogAction onClick={() => {
+                               setAppointmentToDeleteInfo({ appointment: appt, dateKey: formattedDateKey });
                                handleConfirmDeleteAppt();
                              }} className="bg-destructive hover:bg-destructive/90">Excluir Agendamento</AlertDialogAction>
                            </AlertDialogFooter>
                          </AlertDialogContent>
                     </AlertDialog>
                     <Button asChild variant="ghost" size="sm" className="h-8">
-                      <Link href={`/pacientes/${generateSlug(appt.patientName)}`}>
+                       <Link href={`/pacientes/${appt.patientSlug}`}>
                         <span className="sm:hidden">Ver</span>
                         <span className="hidden sm:inline">Ver Paciente</span>
                       </Link>
@@ -669,7 +712,13 @@ export default function AgendaPage() {
                 <Select value={editAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm,'patientId', value)} required>
                   <SelectTrigger id="editPatientId" className="col-span-3"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
                   <SelectContent>
-                    {patients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                     {isLoadingPatients ? (
+                      <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
+                    ) : firebasePatients.length === 0 ? (
+                      <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
+                    ) : (
+                      firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -782,7 +831,7 @@ export default function AgendaPage() {
                         setTypeToToggleStatusConfirm(type);
                     }}
                     aria-label={`Status do tipo ${type.name}`}
-                    className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" /* Example custom colors */
+                    className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400"
                   />
                 </div>
               </div>
@@ -818,10 +867,9 @@ export default function AgendaPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Appointment Confirmation Dialog (reusing based on state) */}
        <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={(isOpen) => {
            if (!isOpen) {
-               setAppointmentToDeleteInfo(null); // Clear info when dialog closes
+               setAppointmentToDeleteInfo(null);
            }
            setIsDeleteApptConfirmOpen(isOpen);
        }}>
