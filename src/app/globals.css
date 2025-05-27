@@ -121,19 +121,33 @@
 }
 
 /* Tiptap specific styles to ensure lists are visible */
-.tiptap-editable-area ul {
+.tiptap-editable-area ul,
+.history-note-content ul {
   list-style-type: disc !important; /* Ensure bullets are shown */
-  margin-left: 1.5rem !important; /* Equivalent to ml-6 */
-  padding-left: 1rem !important; /* Equivalent to pl-4 */
+  margin-left: 1.5rem !important; 
+  padding-left: 1rem !important;
 }
 
-.tiptap-editable-area ol {
+.tiptap-editable-area ol,
+.history-note-content ol {
   list-style-type: decimal !important; /* Ensure numbers are shown */
-  margin-left: 1.5rem !important; /* Equivalent to ml-6 */
-  padding-left: 1rem !important; /* Equivalent to pl-4 */
+  margin-left: 1.5rem !important; 
+  padding-left: 1rem !important;
 }
 
-.tiptap-editable-area li {
+.tiptap-editable-area li,
+.history-note-content li {
   /* You can add margin-bottom or other list item specific styles here if needed */
   /* Example: margin-bottom: 0.25em; */
+}
+
+/* Ensure prose styles do not overly strip list appearances if used */
+.prose ul, .prose ol {
+  list-style-type: revert;
+  padding-left: revert;
+  margin-left: revert;
+}
+
+.prose li::marker {
+  color: inherit; /* Ensures marker color matches text if not overridden by prose */
 }

@@ -6,12 +6,11 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye } from "lucide-react"; // Added Eye
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-// Removed dynamic import for ReactQuill and its CSS
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
@@ -35,7 +34,7 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { TiptapEditor } from '@/components/tiptap-editor'; // Import the new Tiptap editor
+import { TiptapEditor } from '@/components/tiptap-editor';
 
 
 // Function to update the global store (simulated)
@@ -49,7 +48,7 @@ const deletePatientFromStore = (slug: string) => {
 
 
 // Data structure definitions
-type HistoryItem = { date: string; type: string; notes: string }; // notes will store HTML
+type HistoryItem = { id?: string; date: string; type: string; notes: string }; // Added optional id for keying
 type DocumentItem = { name: string; uploadDate: string; url: string };
 type Patient = {
   internalId: string;
@@ -92,7 +91,7 @@ export default function PacienteDetalhePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
-  const [newHistoryNote, setNewHistoryNote] = useState(''); // Will store HTML from Tiptap
+  const [newHistoryNote, setNewHistoryNote] = useState('');
   const [newHistoryType, setNewHistoryType] = useState('');
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
@@ -105,18 +104,15 @@ export default function PacienteDetalhePage() {
   const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
   const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
 
-  // const [isClient, setIsClient] = useState(false); // No longer needed for ReactQuill
+  const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
+  const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
 
-  // useEffect(() => {
-  //   setIsClient(true);
-  // }, []);
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
   }, [appointmentTypes]);
 
   useEffect(() => {
-    // This effect might still be useful to set initial newHistoryType
     setNewHistoryType(getFirstActiveTypeName());
   }, [appointmentTypes, getFirstActiveTypeName]);
 
@@ -143,7 +139,13 @@ export default function PacienteDetalhePage() {
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
           const data = docSnap.data() as Omit<Patient, 'internalId'>;
-          const fetchedPatient = { ...data, internalId: docSnap.id, slug: patientSlug };
+          const fetchedPatient = { 
+            ...data, 
+            internalId: docSnap.id, 
+            slug: patientSlug,
+            // Ensure history items have a unique key if not already present (e.g., from Firebase)
+            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}` })),
+          };
           setPatient(fetchedPatient);
           setEditedPatient({ ...fetchedPatient });
           if (fetchedPatient.history.length === 0) { 
@@ -151,7 +153,6 @@ export default function PacienteDetalhePage() {
           }
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto.", variant: "destructive" });
-          // router.push('/pacientes');
         }
       } catch (error) {
         console.error("Erro ao buscar paciente:", error);
@@ -252,8 +253,7 @@ export default function PacienteDetalhePage() {
 
 
   const handleAddHistory = async () => {
-    // Basic check for empty HTML from Tiptap (might need to be more robust, e.g., checking for actual text content)
-    const isNoteEmpty = !newHistoryNote || newHistoryNote === '<p></p>';
+    const isNoteEmpty = !newHistoryNote || newHistoryNote.trim() === '<p></p>';
 
     if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim()) {
       toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são necessários.", variant: "destructive" });
@@ -266,9 +266,10 @@ export default function PacienteDetalhePage() {
     }
 
     const newEntry: HistoryItem = {
+      id: `hist-${Date.now()}`, // Simple unique ID for client-side keying
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
-      notes: newHistoryNote, // newHistoryNote now contains HTML from Tiptap
+      notes: newHistoryNote,
     };
 
     try {
@@ -279,7 +280,7 @@ export default function PacienteDetalhePage() {
       const updatedPatient = { ...patient, history: updatedHistory };
       setPatient(updatedPatient);
       setEditedPatient(updatedPatient);
-      setNewHistoryNote(''); // Reset to empty string for Tiptap
+      setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName());
       toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
     } catch (error) {
@@ -419,6 +420,11 @@ export default function PacienteDetalhePage() {
   };
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
+
+  const handleOpenHistoryModal = (note: HistoryItem) => {
+    setSelectedHistoryNote(note);
+    setIsHistoryNoteModalOpen(true);
+  };
 
 
   if (isLoading) {
@@ -622,7 +628,7 @@ export default function PacienteDetalhePage() {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button onClick={handleAddHistory} disabled={!newHistoryNote.trim() || newHistoryNote === '<p></p>'}>
+                  <Button onClick={handleAddHistory} disabled={!newHistoryNote.trim() || newHistoryNote.trim() === '<p></p>'}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Adicionar ao Histórico
                   </Button>
                 </CardFooter>
@@ -630,8 +636,8 @@ export default function PacienteDetalhePage() {
 
               <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
               {displayPatient?.history && displayPatient.history.length > 0 ? (
-                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
-                  <Card key={index} className="bg-muted/50">
+                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item) => (
+                  <Card key={item.id || item.date} className="bg-muted/50">
                     <CardHeader className="pb-3 flex flex-row justify-between items-center">
                       <CardTitle className="text-base">
                         {item.type}
@@ -639,7 +645,17 @@ export default function PacienteDetalhePage() {
                       <span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span>
                     </CardHeader>
                     <CardContent>
-                      <div className="text-sm text-foreground prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: item.notes }} />
+                      <div 
+                        className="text-sm text-foreground history-note-content prose prose-sm max-w-none" 
+                        dangerouslySetInnerHTML={{ 
+                          __html: item.notes.length > 250 ? item.notes.substring(0, 250) + "..." : item.notes 
+                        }} 
+                      />
+                      {item.notes.length > 250 && (
+                        <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary" onClick={() => handleOpenHistoryModal(item)}>
+                           Ver Detalhes
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
                 ))
@@ -767,6 +783,32 @@ export default function PacienteDetalhePage() {
         </CardContent>
       </Card>
 
+      {/* History Note Detail Modal */}
+      <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}>
+        <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle>Detalhes do Atendimento - {selectedHistoryNote?.type}</DialogTitle>
+            <DialogDescription>
+              Data: {selectedHistoryNote ? formatDate(selectedHistoryNote.date) : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 max-h-[60vh] overflow-y-auto">
+            {selectedHistoryNote && (
+              <div 
+                className="history-note-content prose prose-sm sm:prose-base max-w-none"
+                dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }} 
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">Fechar</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Add New Appointment Type Dialog */}
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
@@ -869,3 +911,4 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
+
