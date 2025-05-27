@@ -119,3 +119,21 @@
     /* font-family removed, will be handled by next/font */
   }
 }
+
+/* Tiptap specific styles to ensure lists are visible */
+.tiptap-editable-area ul {
+  list-style-type: disc !important; /* Ensure bullets are shown */
+  margin-left: 1.5rem !important; /* Equivalent to ml-6 */
+  padding-left: 1rem !important; /* Equivalent to pl-4 */
+}
+
+.tiptap-editable-area ol {
+  list-style-type: decimal !important; /* Ensure numbers are shown */
+  margin-left: 1.5rem !important; /* Equivalent to ml-6 */
+  padding-left: 1rem !important; /* Equivalent to pl-4 */
+}
+
+.tiptap-editable-area li {
+  /* You can add margin-bottom or other list item specific styles here if needed */
+  /* Example: margin-bottom: 0.25em; */
+}

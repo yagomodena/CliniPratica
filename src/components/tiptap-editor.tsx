@@ -32,49 +32,49 @@ const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
       isActive: () => editor.isActive('bold'),
       icon: Bold,
       label: 'Negrito',
-      canExecute: () => editor.can().toggleBold(),
+      canExecute: () => editor.can().chain().focus().toggleBold().run(),
     },
     {
       command: () => editor.chain().focus().toggleItalic().run(),
       isActive: () => editor.isActive('italic'),
       icon: Italic,
       label: 'Itálico',
-      canExecute: () => editor.can().toggleItalic(),
+      canExecute: () => editor.can().chain().focus().toggleItalic().run(),
     },
     {
       command: () => editor.chain().focus().toggleStrike().run(),
       isActive: () => editor.isActive('strike'),
       icon: Strikethrough,
       label: 'Riscado',
-      canExecute: () => editor.can().toggleStrike(),
+      canExecute: () => editor.can().chain().focus().toggleStrike().run(),
     },
     {
       command: () => editor.chain().focus().setParagraph().run(),
       isActive: () => editor.isActive('paragraph'),
       icon: Pilcrow,
       label: 'Parágrafo',
-      canExecute: () => editor.can().setParagraph(),
+      canExecute: () => editor.can().chain().focus().setParagraph().run(),
     },
     {
       command: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
       isActive: () => editor.isActive('heading', { level: 2 }),
       icon: Heading2,
       label: 'Título',
-      canExecute: () => editor.can().toggleHeading({ level: 2 }),
+      canExecute: () => editor.can().chain().focus().toggleHeading({ level: 2 }).run(),
     },
     {
       command: () => editor.chain().focus().toggleBulletList().run(),
       isActive: () => editor.isActive('bulletList'),
       icon: List,
       label: 'Lista Marcadores',
-      canExecute: () => editor.can().toggleBulletList(),
+      canExecute: () => editor.can().chain().focus().toggleBulletList().run(),
     },
     {
       command: () => editor.chain().focus().toggleOrderedList().run(),
       isActive: () => editor.isActive('orderedList'),
       icon: ListOrdered,
       label: 'Lista Numerada',
-      canExecute: () => editor.can().toggleOrderedList(),
+      canExecute: () => editor.can().chain().focus().toggleOrderedList().run(),
     },
   ];
 
@@ -91,7 +91,7 @@ const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
             btn.isActive() ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
           )}
           onClick={btn.command}
-          disabled={!btn.canExecute()} // Using the more specific canExecute check
+          disabled={!btn.canExecute()}
           title={btn.label}
           aria-pressed={btn.isActive()}
         >
@@ -109,8 +109,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Ensure defaults are not accidentally turned off
-        // StarterKit includes paragraph, heading, bulletList, orderedList by default
+        // Defaults should be fine for basic lists
       }),
     ],
     content: content,
@@ -120,7 +119,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     editorProps: {
       attributes: {
         class:
-          'p-3 focus:outline-none min-h-[150px] w-full text-sm leading-relaxed',
+          'tiptap-editable-area p-3 focus:outline-none min-h-[150px] w-full text-sm leading-relaxed', // Added tiptap-editable-area
       },
     },
   });
