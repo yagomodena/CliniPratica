@@ -32,42 +32,49 @@ const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
       isActive: () => editor.isActive('bold'),
       icon: Bold,
       label: 'Negrito',
+      canExecute: () => editor.can().toggleBold(),
     },
     {
       command: () => editor.chain().focus().toggleItalic().run(),
       isActive: () => editor.isActive('italic'),
       icon: Italic,
       label: 'Itálico',
+      canExecute: () => editor.can().toggleItalic(),
     },
     {
       command: () => editor.chain().focus().toggleStrike().run(),
       isActive: () => editor.isActive('strike'),
       icon: Strikethrough,
       label: 'Riscado',
+      canExecute: () => editor.can().toggleStrike(),
     },
     {
       command: () => editor.chain().focus().setParagraph().run(),
       isActive: () => editor.isActive('paragraph'),
       icon: Pilcrow,
       label: 'Parágrafo',
+      canExecute: () => editor.can().setParagraph(),
     },
     {
       command: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
       isActive: () => editor.isActive('heading', { level: 2 }),
       icon: Heading2,
       label: 'Título',
+      canExecute: () => editor.can().toggleHeading({ level: 2 }),
     },
     {
       command: () => editor.chain().focus().toggleBulletList().run(),
       isActive: () => editor.isActive('bulletList'),
       icon: List,
       label: 'Lista Marcadores',
+      canExecute: () => editor.can().toggleBulletList(),
     },
     {
       command: () => editor.chain().focus().toggleOrderedList().run(),
       isActive: () => editor.isActive('orderedList'),
       icon: ListOrdered,
       label: 'Lista Numerada',
+      canExecute: () => editor.can().toggleOrderedList(),
     },
   ];
 
@@ -84,7 +91,7 @@ const TiptapToolbar = ({ editor }: { editor: Editor | null }) => {
             btn.isActive() ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
           )}
           onClick={btn.command}
-          disabled={!editor.can()[btn.command.name.startsWith('toggle') ? `toggle${btn.label.replace(' ', '')}` : `set${btn.label.replace(' ', '')}`]?.()} // Basic can check
+          disabled={!btn.canExecute()} // Using the more specific canExecute check
           title={btn.label}
           aria-pressed={btn.isActive()}
         >
@@ -113,7 +120,6 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     editorProps: {
       attributes: {
         class:
-          // Removed 'prose prose-sm sm:prose-base max-w-none'
           'p-3 focus:outline-none min-h-[150px] w-full text-sm leading-relaxed',
       },
     },
