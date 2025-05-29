@@ -79,7 +79,7 @@ import {
   Coins,
   Wallet,
   ReceiptText,
-  MoreHorizontal, // Icon for dropdown trigger
+  MoreHorizontal, 
 } from 'lucide-react';
 import {
   ChartContainer,
@@ -338,6 +338,7 @@ export default function FinanceiroPage() {
           start = startOfDay(range.from);
           end = endOfDay(range.from);
         } else {
+          // Fallback to current month if custom range is incomplete
           start = startOfMonth(now); 
           end = endOfMonth(now);
         }
@@ -362,13 +363,71 @@ export default function FinanceiroPage() {
   }, [transactions, selectedPeriod, customDateRange, getDateRangeForPeriod]);
 
 
+  const getPreviousPeriodRange = useCallback((currentStart: Date, currentEnd: Date, periodType: PeriodOption): { start: Date; end: Date } => {
+    let prevStart: Date, prevEnd: Date;
+
+    switch (periodType) {
+      case 'today':
+        prevEnd = subDays(currentStart, 1); // Yesterday
+        prevStart = startOfDay(prevEnd);
+        break;
+      case 'yesterday':
+        prevEnd = subDays(currentStart, 1); // Day before yesterday
+        prevStart = startOfDay(prevEnd);
+        break;
+      case 'last7days':
+        prevEnd = subDays(currentStart, 1);
+        prevStart = subDays(prevEnd, 6); // The 7 days before the current 7-day range
+        break;
+      case 'thisMonth':
+        prevStart = startOfMonth(subMonths(currentStart, 1)); // Last month
+        prevEnd = endOfMonth(prevStart);
+        break;
+      case 'lastMonth':
+        prevStart = startOfMonth(subMonths(currentStart, 1)); // Month before last month
+        prevEnd = endOfMonth(prevStart);
+        break;
+      case 'custom':
+        const diff = differenceInDays(currentEnd, currentStart);
+        prevEnd = subDays(currentStart, 1);
+        prevStart = subDays(prevEnd, diff);
+        break;
+      default: // Fallback, should ideally not be reached
+        prevStart = startOfMonth(subMonths(currentStart, 1));
+        prevEnd = endOfMonth(prevStart);
+    }
+    return { start: startOfDay(prevStart), end: endOfDay(prevEnd) };
+  }, []);
+
+
   const summaryData = useMemo(() => {
-    const receivedTransactions = filteredTransactions.filter(t => t.status === 'Recebido');
-    const totalRevenue = receivedTransactions.reduce((sum, t) => sum + t.amount, 0);
-    const paidAppointments = receivedTransactions.filter(t => t.type === 'atendimento' && t.status === 'Recebido').length;
-    const revenueFromAppointments = receivedTransactions.filter(t => t.type === 'atendimento').reduce((sum, t) => sum + t.amount, 0);
-    const averagePerAppointment = paidAppointments > 0 ? revenueFromAppointments / paidAppointments : 0; 
-    const comparisonPercentage = Math.random() > 0.5 ? 15 : -5; 
+    const { start: currentPeriodStart, end: currentPeriodEnd } = getDateRangeForPeriod(selectedPeriod, customDateRange);
+    
+    const currentPeriodTransactions = transactions.filter(t => 
+        t.status === 'Recebido' && isWithinInterval(t.date, { start: currentPeriodStart, end: currentPeriodEnd })
+    );
+    const totalRevenue = currentPeriodTransactions.reduce((sum, t) => sum + t.amount, 0);
+    
+    const paidAppointments = currentPeriodTransactions.filter(t => t.type === 'atendimento').length;
+    const revenueFromAppointments = currentPeriodTransactions.filter(t => t.type === 'atendimento').reduce((sum, t) => sum + t.amount, 0);
+    const averagePerAppointment = paidAppointments > 0 ? revenueFromAppointments / paidAppointments : 0;
+
+    // Calculate previous period revenue
+    const { start: prevPeriodStart, end: prevPeriodEnd } = getPreviousPeriodRange(currentPeriodStart, currentPeriodEnd, selectedPeriod);
+    const previousPeriodTransactions = transactions.filter(t =>
+        t.status === 'Recebido' && isWithinInterval(t.date, { start: prevPeriodStart, end: prevPeriodEnd })
+    );
+    const previousPeriodRevenue = previousPeriodTransactions.reduce((sum, t) => sum + t.amount, 0);
+
+    let comparisonPercentage: number | null = null;
+    if (previousPeriodRevenue > 0) {
+      comparisonPercentage = ((totalRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100;
+    } else if (totalRevenue > 0) {
+      comparisonPercentage = 100; // Infinite increase if previous was 0 and current is > 0
+    } else if (previousPeriodRevenue === 0 && totalRevenue === 0) {
+      comparisonPercentage = 0; // No change
+    }
+    // If previousPeriodRevenue > 0 and totalRevenue is 0, comparisonPercentage will be -100, which is correct.
 
     return {
       totalRevenue,
@@ -376,7 +435,8 @@ export default function FinanceiroPage() {
       averagePerAppointment,
       comparisonPercentage,
     };
-  }, [filteredTransactions]);
+  }, [transactions, selectedPeriod, customDateRange, getDateRangeForPeriod, getPreviousPeriodRange]);
+
 
   const chartData = useMemo(() => {
     const dataMap = new Map<string, number>();
@@ -599,6 +659,16 @@ export default function FinanceiroPage() {
     }
   };
 
+  const getEvolutionTextAndColor = (percentage: number | null): { text: string; colorClass: string } => {
+    if (percentage === null) return { text: "Dados Indisponíveis", colorClass: "text-muted-foreground" };
+    if (percentage > 5) return { text: "Crescimento Forte", colorClass: "text-green-600" };
+    if (percentage > 0) return { text: "Crescimento", colorClass: "text-green-600" };
+    if (percentage === 0) return { text: "Estável", colorClass: "text-foreground" };
+    if (percentage < -5) return { text: "Redução Significativa", colorClass: "text-red-600" };
+    if (percentage < 0) return { text: "Redução", colorClass: "text-red-600" };
+    return { text: "Estável", colorClass: "text-foreground" };
+  };
+
 
   if (!clientNow || isLoadingTransactions || !currentUser) {
     return (
@@ -659,7 +729,6 @@ export default function FinanceiroPage() {
                         selected={transactionForm.date ? parseISO(transactionForm.date) : undefined}
                         onSelect={(date) => handleDateChange(date, 'date')}
                         locale={ptBR}
-                        
                         />
                     </PopoverContent>
                 </Popover>
@@ -783,9 +852,13 @@ export default function FinanceiroPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">R$ {summaryData.totalRevenue.toFixed(2)}</div>
-            <p className={`text-xs ${summaryData.comparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage}% em relação ao período anterior
-            </p>
+             {summaryData.comparisonPercentage !== null ? (
+                <p className={`text-xs ${summaryData.comparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage.toFixed(1)}% em relação ao período anterior
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Não há dados do período anterior para comparação.</p>
+              )}
           </CardContent>
         </Card>
         <Card className="shadow-sm">
@@ -814,8 +887,16 @@ export default function FinanceiroPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">Positiva</div>
-            <p className="text-xs text-muted-foreground">Comparado ao período anterior (simulado)</p>
+            <div className={`text-2xl font-bold ${getEvolutionTextAndColor(summaryData.comparisonPercentage).colorClass}`}>
+                {getEvolutionTextAndColor(summaryData.comparisonPercentage).text}
+            </div>
+            {summaryData.comparisonPercentage !== null ? (
+                <p className="text-xs text-muted-foreground">
+                    {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage.toFixed(1)}% em relação ao período anterior
+                </p>
+            ) : (
+                <p className="text-xs text-muted-foreground">Não há dados do período anterior.</p>
+            )}
           </CardContent>
         </Card>
       </div>
