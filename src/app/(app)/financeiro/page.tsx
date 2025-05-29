@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, FormEvent } from 'react';
 import {
   Card,
   CardHeader,
@@ -47,7 +47,6 @@ import {
   Users,
   Percent,
   TrendingUp,
-  BarChartBig,
   PlusCircle,
   Edit2,
   Trash2,
@@ -55,50 +54,87 @@ import {
   Calendar as CalendarIcon,
   CheckCircle,
   XCircle,
-  Clock, // Changed from CircleHelp for Pending
-  AlertTriangle, // For Overdue status
+  Clock,
+  AlertTriangle,
   Landmark,
   Smartphone,
   CreditCardIcon,
-  Coins, 
-  Wallet, // Generic for 'Outro' payment method
-  ReceiptText, // Icon for the new table
+  Coins,
+  Wallet,
+  ReceiptText,
 } from 'lucide-react';
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis, Line, LineChart } from 'recharts';
+import { Bar, BarChart as RechartsBarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import {
   format,
   startOfDay,
   endOfDay,
   subDays,
-  startOfWeek,
-  endOfWeek,
   startOfMonth,
   endOfMonth,
   subMonths,
   isWithinInterval,
   parseISO,
-  differenceInDays, // Added for overdue calculation
-  isBefore, // Added for overdue calculation
+  differenceInDays,
+  isBefore,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { DateRange } from 'react-day-picker';
+import { Badge } from '@/components/ui/badge';
+import { auth, db } from '@/firebase';
+import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  getDocs,
+  addDoc,
+  doc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+  Timestamp,
+  getDoc
+} from 'firebase/firestore';
 
 import {
-  initialTransactions,
-  placeholderPatients,
   paymentMethods,
   transactionStatuses,
-  type FinancialTransaction,
   type PaymentMethod,
   type TransactionStatus,
   type TransactionType,
+  transactionTypes, // Ensure transactionTypes is exported and imported if used for select
 } from '@/lib/financeiro-data';
-import { Badge } from '@/components/ui/badge';
+
+
+export interface FinancialTransaction {
+  id: string; // Firestore document ID
+  ownerId: string; // UID of the user or clinic identifier
+  date: Date; // JavaScript Date object (converted from Firestore Timestamp)
+  description: string;
+  patientId?: string;
+  patientName?: string;
+  appointmentId?: string;
+  amount: number;
+  paymentMethod: PaymentMethod;
+  status: TransactionStatus;
+  notes?: string;
+  type: TransactionType;
+  createdAt?: Date; // Converted from Firestore Timestamp
+  updatedAt?: Date; // Converted from Firestore Timestamp
+}
+
+type PatientForSelect = {
+  id: string; // Firestore document ID
+  name: string;
+  slug: string; // Potentially useful for linking later
+};
+
 
 type PeriodOption =
   | 'today'
@@ -117,9 +153,8 @@ const periodOptions: { value: PeriodOption; label: string }[] = [
   { value: 'custom', label: 'Período Personalizado' },
 ];
 
-type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date'> & { date: string };
+type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date' | 'ownerId' | 'createdAt' | 'updatedAt'> & { date: string };
 
-// Type for the new "Contas a Receber" table data
 type ReceivableEntry = {
   id: string;
   patientName?: string;
@@ -135,7 +170,8 @@ type ReceivableEntry = {
 
 export default function FinanceiroPage() {
   const { toast } = useToast();
-  const [transactions, setTransactions] = useState<FinancialTransaction[]>(initialTransactions);
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodOption>('thisMonth');
   const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined);
   
@@ -148,12 +184,104 @@ export default function FinanceiroPage() {
     status: 'Recebido',
     type: 'manual',
     date: format(new Date(), 'yyyy-MM-dd'),
+    patientId: '', // Initialize patientId
   });
 
   const [clientNow, setClientNow] = useState<Date | null>(null);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [firebasePatients, setFirebasePatients] = useState<PatientForSelect[]>([]);
+  const [isLoadingFirebasePatients, setIsLoadingFirebasePatients] = useState(true);
+
+
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (!user) {
+        setTransactions([]);
+        setIsLoadingTransactions(false);
+        setFirebasePatients([]);
+        setIsLoadingFirebasePatients(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    // Set clientNow once on mount to avoid hydration mismatches with date-fns
     setClientNow(new Date());
   }, []);
+
+  const fetchFinancialTransactions = useCallback(async (user: FirebaseUser) => {
+    if (!user) return;
+    setIsLoadingTransactions(true);
+    try {
+      const transactionsRef = collection(db, 'financialTransactions');
+      // For now, all users query their own transactions. Clínica sharing logic would change this.
+      const q = query(transactionsRef, where('ownerId', '==', user.uid), orderBy('date', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const fetchedTransactions: FinancialTransaction[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        fetchedTransactions.push({
+          id: docSnap.id,
+          ownerId: data.ownerId,
+          date: (data.date as Timestamp).toDate(),
+          description: data.description,
+          patientId: data.patientId,
+          patientName: data.patientName,
+          amount: data.amount,
+          paymentMethod: data.paymentMethod as PaymentMethod,
+          status: data.status as TransactionStatus,
+          notes: data.notes,
+          type: data.type as TransactionType,
+          createdAt: data.createdAt ? (data.createdAt as Timestamp).toDate() : undefined,
+          updatedAt: data.updatedAt ? (data.updatedAt as Timestamp).toDate() : undefined,
+        });
+      });
+      setTransactions(fetchedTransactions);
+    } catch (error: any) {
+      console.error("Erro ao buscar transações financeiras:", error);
+      let description = "Não foi possível carregar os lançamentos.";
+      if (error.code === 'failed-precondition') {
+         description = "A consulta requer um índice no Firestore. Verifique o console do Firebase (geralmente para 'ownerId' e 'date' na coleção 'financialTransactions').";
+      }
+      toast({ title: "Erro nos Lançamentos", description, variant: "destructive" });
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  }, [toast]);
+
+  const fetchPatientsForSelect = useCallback(async (user: FirebaseUser) => {
+    if (!user) return;
+    setIsLoadingFirebasePatients(true);
+    try {
+      const patientsRef = collection(db, 'pacientes');
+      const q = query(patientsRef, where('uid', '==', user.uid), where('status', '==', 'Ativo'), orderBy('name'));
+      const querySnapshot = await getDocs(q);
+      const fetchedPatients: PatientForSelect[] = [];
+      querySnapshot.forEach((docSnap) => {
+        fetchedPatients.push({
+          id: docSnap.id,
+          name: docSnap.data().name as string,
+          slug: docSnap.data().slug as string,
+        });
+      });
+      setFirebasePatients(fetchedPatients);
+    } catch (error) {
+      console.error("Erro ao buscar pacientes:", error);
+      toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes ativos.", variant: "destructive" });
+    } finally {
+      setIsLoadingFirebasePatients(false);
+    }
+  }, [toast]);
+
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchFinancialTransactions(currentUser);
+      fetchPatientsForSelect(currentUser);
+    }
+  }, [currentUser, fetchFinancialTransactions, fetchPatientsForSelect]);
 
 
   const getDateRangeForPeriod = useCallback((period: PeriodOption, range?: DateRange): { start: Date; end: Date } => {
@@ -190,9 +318,8 @@ export default function FinanceiroPage() {
         } else if (range?.from) {
           start = startOfDay(range.from);
           end = endOfDay(range.from);
-        }
-         else {
-          start = startOfMonth(now);
+        } else {
+          start = startOfMonth(now); // Default for custom if no range
           end = endOfMonth(now);
         }
         break;
@@ -203,11 +330,18 @@ export default function FinanceiroPage() {
     return { start, end };
   }, [clientNow]);
 
-
   const filteredTransactions = useMemo(() => {
     const { start, end } = getDateRangeForPeriod(selectedPeriod, customDateRange);
-    return transactions.filter((t) => isWithinInterval(t.date, { start, end }));
+    return transactions.filter((t) => {
+        try {
+            return isWithinInterval(t.date, { start, end });
+        } catch (e) {
+            console.error("Error filtering transaction by date", t, e);
+            return false;
+        }
+    });
   }, [transactions, selectedPeriod, customDateRange, getDateRangeForPeriod]);
+
 
   const summaryData = useMemo(() => {
     const receivedTransactions = filteredTransactions.filter(t => t.status === 'Recebido');
@@ -231,15 +365,26 @@ export default function FinanceiroPage() {
       const dayKey = format(t.date, 'dd/MM');
       dataMap.set(dayKey, (dataMap.get(dayKey) || 0) + t.amount);
     });
-    return Array.from(dataMap.entries()).map(([name, value]) => ({ name, faturamento: value })).sort((a,b) => parseISO(a.name.split('/').reverse().join('-')).getTime() - parseISO(b.name.split('/').reverse().join('-')).getTime());
-  }, [filteredTransactions]);
+    // Sort by date before returning
+    return Array.from(dataMap.entries())
+      .map(([name, value]) => ({ name, faturamento: value }))
+      .sort((a,b) => {
+        const [dayA, monthA] = a.name.split('/').map(Number);
+        const [dayB, monthB] = b.name.split('/').map(Number);
+        // Assuming current year for sorting, this might need adjustment for cross-year periods
+        const dateA = new Date(clientNow?.getFullYear() || new Date().getFullYear(), monthA - 1, dayA);
+        const dateB = new Date(clientNow?.getFullYear() || new Date().getFullYear(), monthB - 1, dayB);
+        return dateA.getTime() - dateB.getTime();
+      });
+  }, [filteredTransactions, clientNow]);
+
 
   const receivablesData = useMemo(() => {
     if (!clientNow) return [];
     const todayForComparison = startOfDay(clientNow);
 
     return filteredTransactions
-      .filter(t => t.type === 'atendimento' && t.status !== 'Cancelado') // Focus on patient receivables
+      .filter(t => t.type === 'atendimento' && t.status !== 'Cancelado') 
       .map((t): ReceivableEntry => {
         let paymentStatusDisplay: ReceivableEntry['paymentStatusDisplay'] = 'Pendente';
         let daysOverdue: number | undefined = undefined;
@@ -247,7 +392,7 @@ export default function FinanceiroPage() {
 
         if (t.status === 'Recebido') {
           paymentStatusDisplay = 'Pago';
-          paymentDate = t.date; // Assuming payment date is the transaction date for received items
+          paymentDate = t.date; 
         } else if (t.status === 'Pendente') {
           const dueDate = startOfDay(t.date);
           if (isBefore(dueDate, todayForComparison)) {
@@ -270,7 +415,7 @@ export default function FinanceiroPage() {
           paymentMethod: t.paymentMethod,
         };
       })
-      .sort((a, b) => b.dueDate.getTime() - a.dueDate.getTime()); // Sort by due date descending
+      .sort((a, b) => b.dueDate.getTime() - a.dueDate.getTime());
   }, [filteredTransactions, clientNow]);
 
 
@@ -297,54 +442,78 @@ export default function FinanceiroPage() {
     }
   }
 
-  const handleSubmitTransaction = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmitTransaction = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!transactionForm.description || transactionForm.amount <= 0 || !transactionForm.date) {
+    if (!currentUser) {
+      toast({ title: 'Erro', description: 'Usuário não autenticado.', variant: 'destructive' });
+      return;
+    }
+    if (!transactionForm.description || transactionForm.amount == undefined || transactionForm.amount <= 0 || !transactionForm.date) {
       toast({ title: 'Erro de Validação', description: 'Descrição, valor e data são obrigatórios.', variant: 'destructive' });
       return;
     }
 
     const transactionDate = parseISO(transactionForm.date as string);
+    const selectedPatient = firebasePatients.find(p => p.id === transactionForm.patientId);
 
-    const newTransaction: FinancialTransaction = {
-      id: editingTransaction ? editingTransaction.id : `ft-${Date.now()}`,
-      date: transactionDate,
+    const transactionDataToSave = {
+      ownerId: currentUser.uid, // Or clinic shared ID logic
+      date: Timestamp.fromDate(transactionDate),
       description: transactionForm.description!,
-      patientId: transactionForm.patientId,
-      patientName: placeholderPatients.find(p => p.id === transactionForm.patientId)?.name,
+      patientId: transactionForm.patientId || null,
+      patientName: selectedPatient?.name || (transactionForm.type === 'manual' ? null : transactionForm.patientName), // Use selected patient name
       amount: transactionForm.amount!,
       paymentMethod: transactionForm.paymentMethod as PaymentMethod,
       status: transactionForm.status as TransactionStatus,
-      notes: transactionForm.notes,
-      type: transactionForm.type as TransactionType
+      notes: transactionForm.notes || '',
+      type: transactionForm.type as TransactionType,
+      updatedAt: serverTimestamp(),
     };
 
-    if (editingTransaction) {
-      setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? newTransaction : t));
-      toast({ title: 'Sucesso!', description: 'Lançamento atualizado.', variant: 'success'});
-    } else {
-      setTransactions(prev => [newTransaction, ...prev].sort((a,b) => b.date.getTime() - a.date.getTime()));
-      toast({ title: 'Sucesso!', description: 'Novo lançamento adicionado.', variant: 'success'});
+    try {
+      if (editingTransaction) {
+        const transactionRef = doc(db, 'financialTransactions', editingTransaction.id);
+        await updateDoc(transactionRef, transactionDataToSave);
+        toast({ title: 'Sucesso!', description: 'Lançamento atualizado.', variant: 'success'});
+      } else {
+        await addDoc(collection(db, 'financialTransactions'), {
+          ...transactionDataToSave,
+          createdAt: serverTimestamp(),
+        });
+        toast({ title: 'Sucesso!', description: 'Novo lançamento adicionado.', variant: 'success'});
+      }
+      
+      setIsAddTransactionDialogOpen(false);
+      setEditingTransaction(null);
+      setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
+      await fetchFinancialTransactions(currentUser); // Re-fetch
+    } catch (error) {
+        console.error("Erro ao salvar lançamento:", error);
+        toast({ title: "Erro ao Salvar", description: "Não foi possível salvar o lançamento.", variant: "destructive"});
     }
-    
-    setIsAddTransactionDialogOpen(false);
-    setEditingTransaction(null);
-    setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd') });
   };
 
   const handleEditTransaction = (transaction: FinancialTransaction) => {
     setEditingTransaction(transaction);
     setTransactionForm({
       ...transaction,
-      date: format(transaction.date, 'yyyy-MM-dd'),
+      date: format(transaction.date, 'yyyy-MM-dd'), // Convert Date to string for form
       amount: transaction.amount, 
+      patientId: transaction.patientId || '', // Ensure patientId is handled
     });
     setIsAddTransactionDialogOpen(true);
   };
 
-  const handleDeleteTransaction = (transactionId: string) => {
-    setTransactions(prev => prev.filter(t => t.id !== transactionId));
-    toast({ title: 'Lançamento Excluído', description: 'O lançamento foi removido.', variant: 'destructive' });
+  const handleDeleteTransaction = async (transactionId: string) => {
+    if (!currentUser) return;
+    try {
+        await deleteDoc(doc(db, 'financialTransactions', transactionId));
+        toast({ title: 'Lançamento Excluído', description: 'O lançamento foi removido.', variant: 'destructive' });
+        await fetchFinancialTransactions(currentUser); // Re-fetch
+    } catch (error) {
+        console.error("Erro ao excluir lançamento:", error);
+        toast({ title: "Erro ao Excluir", description: "Não foi possível remover o lançamento.", variant: "destructive"});
+    }
   };
   
   const handleExportExcel = () => {
@@ -358,7 +527,7 @@ export default function FinanceiroPage() {
   const getPaymentStatusBadgeVariant = (status: ReceivableEntry['paymentStatusDisplay']) => {
     switch (status) {
       case 'Pago': return 'success';
-      case 'Pendente': return 'default'; // Using default for pending, can customize
+      case 'Pendente': return 'default';
       case 'Atrasado': return 'destructive';
       default: return 'secondary';
     }
@@ -387,7 +556,7 @@ export default function FinanceiroPage() {
   };
 
 
-  if (!clientNow) {
+  if (!clientNow || isLoadingTransactions || !currentUser) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <p className="text-xl text-muted-foreground">Carregando dados financeiros...</p>
@@ -398,17 +567,17 @@ export default function FinanceiroPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-3xl font-bold text-foreground">Controle Financeiro</h1>
         <Dialog open={isAddTransactionDialogOpen} onOpenChange={(isOpen) => {
           setIsAddTransactionDialogOpen(isOpen);
           if (!isOpen) {
             setEditingTransaction(null);
-            setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd') });
+            setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
           }
         }}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="w-full sm:w-auto">
               <PlusCircle className="mr-2 h-4 w-4" /> Novo Lançamento
             </Button>
           </DialogTrigger>
@@ -420,21 +589,21 @@ export default function FinanceiroPage() {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmitTransaction} className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="description" className="text-right">Descrição*</Label>
-                <Input id="description" name="description" value={transactionForm.description} onChange={handleFormInputChange} className="col-span-3" required />
+              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                <Label htmlFor="description" className="sm:text-right">Descrição*</Label>
+                <Input id="description" name="description" value={transactionForm.description} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="amount" className="text-right">Valor (R$)*</Label>
-                <Input id="amount" name="amount" type="number" value={transactionForm.amount} onChange={handleFormInputChange} className="col-span-3" required min="0.01" step="0.01" />
+              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                <Label htmlFor="amount" className="sm:text-right">Valor (R$)*</Label>
+                <Input id="amount" name="amount" type="number" value={transactionForm.amount} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required min="0.01" step="0.01" />
               </div>
-               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="date" className="text-right">Data*</Label>
+               <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                <Label htmlFor="date" className="sm:text-right">Data*</Label>
                 <Popover>
                     <PopoverTrigger asChild>
                         <Button
                         variant={"outline"}
-                        className={`col-span-3 justify-start text-left font-normal ${!transactionForm.date && "text-muted-foreground"}`}
+                        className={`col-span-1 sm:col-span-3 justify-start text-left font-normal w-full ${!transactionForm.date && "text-muted-foreground"}`}
                         >
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {transactionForm.date ? format(parseISO(transactionForm.date), "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
@@ -451,28 +620,28 @@ export default function FinanceiroPage() {
                     </PopoverContent>
                 </Popover>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="paymentMethod" className="text-right">Forma Pgto.*</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                <Label htmlFor="paymentMethod" className="sm:text-right">Forma Pgto.*</Label>
                 <Select name="paymentMethod" value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)} required>
-                  <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {paymentMethods.map(pm => <SelectItem key={pm} value={pm}>{pm}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="status" className="text-right">Status*</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                <Label htmlFor="status" className="sm:text-right">Status*</Label>
                 <Select name="status" value={transactionForm.status} onValueChange={(value) => handleFormSelectChange('status', value)} required>
-                  <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {transactionStatuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="type" className="text-right">Tipo*</Label>
+               <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                <Label htmlFor="type" className="sm:text-right">Tipo*</Label>
                 <Select name="type" value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value as TransactionType)} required>
-                  <SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="manual">Manual</SelectItem>
                     <SelectItem value="atendimento">Vinculado a Atendimento</SelectItem>
@@ -480,19 +649,25 @@ export default function FinanceiroPage() {
                 </Select>
               </div>
               {transactionForm.type === 'atendimento' && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="patientId" className="text-right">Paciente</Label>
-                    <Select name="patientId" value={transactionForm.patientId} onValueChange={(value) => handleFormSelectChange('patientId', value)}>
-                    <SelectTrigger className="col-span-3"><SelectValue placeholder="Selecione (opcional)" /></SelectTrigger>
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                    <Label htmlFor="patientId" className="sm:text-right">Paciente</Label>
+                    <Select name="patientId" value={transactionForm.patientId || ''} onValueChange={(value) => handleFormSelectChange('patientId', value)}>
+                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue placeholder={isLoadingFirebasePatients ? "Carregando..." : "Selecione (opcional)"} /></SelectTrigger>
                     <SelectContent>
-                        {placeholderPatients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                        {isLoadingFirebasePatients ? (
+                            <SelectItem value="loading" disabled>Carregando...</SelectItem>
+                        ) : firebasePatients.length === 0 ? (
+                            <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
+                        ) : (
+                           firebasePatients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                        )}
                     </SelectContent>
                     </Select>
                 </div>
               )}
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="notes" className="text-right pt-2">Observações</Label>
-                <Textarea id="notes" name="notes" value={transactionForm.notes} onChange={handleFormInputChange} className="col-span-3" rows={3} />
+              <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-x-4 gap-y-2">
+                <Label htmlFor="notes" className="sm:text-right sm:pt-2">Observações</Label>
+                <Textarea id="notes" name="notes" value={transactionForm.notes} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" rows={3} />
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
@@ -609,19 +784,18 @@ export default function FinanceiroPage() {
         <CardContent>
           <ChartContainer config={{ faturamento: { label: 'Faturamento (R$)', color: 'hsl(var(--primary))' } }} className="h-[300px] w-full">
             <ResponsiveContainer>
-              <BarChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+              <RechartsBarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                 <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                 <ChartTooltip content={<ChartTooltipContent hideLabel />} />
                 <Bar dataKey="faturamento" fill="var(--color-faturamento)" radius={4} />
-              </BarChart>
+              </RechartsBarChart>
             </ResponsiveContainer>
           </ChartContainer>
         </CardContent>
       </Card>
 
-      {/* Nova Tabela: Contas a Receber por Paciente */}
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" />Contas a Receber por Paciente</CardTitle>
@@ -747,7 +921,7 @@ export default function FinanceiroPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center h-24">
-                    Nenhum lançamento encontrado para o período selecionado.
+                    {isLoadingTransactions ? "Carregando lançamentos..." : "Nenhum lançamento encontrado para o período selecionado."}
                   </TableCell>
                 </TableRow>
               )}
@@ -759,3 +933,4 @@ export default function FinanceiroPage() {
   );
 }
 
+    
