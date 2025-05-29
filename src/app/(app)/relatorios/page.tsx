@@ -46,11 +46,10 @@ const chartConfigNewPatients = {
     total: { label: "Novos Pacientes", color: "hsl(var(--chart-3))" },
 };
 
-// Updated config for distinct colors
 const chartConfigActiveInactive = {
-    ativos: { label: "Ativos", color: "hsl(var(--chart-2))" }, // Using a green-ish color from theme
-    inativos: { label: "Inativos", color: "hsl(var(--muted-foreground))" }, // Using a muted color for inactive
-    // 'count' is still the dataKey for the bar values.
+    count: { label: "Quantidade" }, // Added for tooltip translation
+    ativos: { label: "Ativos", color: "hsl(var(--chart-2))" }, // Using a green-ish color
+    inativos: { label: "Inativos", color: "hsl(var(--destructive))" }, // Using destructive color (red)
 };
 
 
@@ -97,7 +96,6 @@ export default function RelatoriosPage() {
         apptsRef,
         where('uid', '==', user.uid),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd'))
-        // Removed status filter to count all non-cancelled by default based on previous revert
       );
       const querySnapshot = await getDocs(q);
 
@@ -107,7 +105,6 @@ export default function RelatoriosPage() {
         if (apptDateStr) {
           try {
             const apptDate = parseISO(apptDateStr);
-            // Ensure we are comparing against the correct month and year for aggregation
             const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
             const monthEntry = monthsData.find(m => m.month === apptMonthKey);
             if (monthEntry) {
@@ -214,7 +211,7 @@ export default function RelatoriosPage() {
       fetchMonthlyAppointmentsCounts(currentUser, clientNow);
       fetchNewPatientsPerMonth(currentUser, clientNow);
       fetchActiveInactivePatientCounts(currentUser);
-    } else if (clientNow) { // Ensure clientNow is available before setting defaults
+    } else if (clientNow) { 
         setIsLoadingMonthlyAppointments(false);
         setIsLoadingNewPatients(false);
         setIsLoadingActiveInactiveData(false);
@@ -349,3 +346,4 @@ export default function RelatoriosPage() {
     </div>
   );
 }
+
