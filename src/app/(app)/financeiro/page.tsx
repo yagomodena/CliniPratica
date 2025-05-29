@@ -67,7 +67,7 @@ import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from '@/components/ui/chart';
+} from "@/components/ui/chart";
 import { Bar, BarChart as RechartsBarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import {
   format,
@@ -614,7 +614,7 @@ export default function FinanceiroPage() {
                         mode="single"
                         selected={transactionForm.date ? parseISO(transactionForm.date) : undefined}
                         onSelect={(date) => handleDateChange(date, 'date')}
-                        initialFocus
+                        
                         locale={ptBR}
                         />
                     </PopoverContent>
