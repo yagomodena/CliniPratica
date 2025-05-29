@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil, X as XIcon, Gift } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift } from "lucide-react";
 import {
   ChartContainer,
   ChartTooltip,
@@ -28,15 +28,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
-import { parseISO, getMonth, getDate } from 'date-fns';
+import { parseISO, getMonth, getDate, format } from 'date-fns';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { collection, getDoc, doc, query, where, getDocs } from "firebase/firestore";
+import { 
+  collection, 
+  getDoc, 
+  doc, 
+  query, 
+  where, 
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  serverTimestamp,
+  Timestamp,
+  orderBy
+} from "firebase/firestore";
 
 // Type for patients fetched from Firebase, used in select dropdowns for alerts
 type PatientForSelect = {
   id: string; // Firestore document ID
   name: string;
+  slug: string; // Slug for linking
 };
 
 // Patient data structure for birthday checks (can be simplified or expanded as needed)
@@ -48,14 +62,16 @@ type PatientForBirthday = {
 };
 
 
-// Alert data structure
+// Alert data structure, now includes Firestore document ID
 type Alert = {
-  id: string;
+  id: string; // Firestore document ID
+  uid: string;
   patientId: string; // Firestore document ID of the patient
   patientName: string;
+  patientSlug: string;
   reason: string;
-  createdAt: Date;
-  status: 'active' | 'resolved';
+  createdAt: Date; // Converted from Firestore Timestamp
+  // status: 'active'; // We'll only fetch active alerts or delete resolved ones
 };
 
 // New Alert Form structure
@@ -63,9 +79,6 @@ type AlertForm = {
   patientId: string;
   reason: string;
 }
-
-// Initial alert data (these might need to be cleared or migrated if patientIds don't match real ones)
-const initialAlerts: Alert[] = [];
 
 // Placeholder data for charts and appointments
 const weeklyAppointmentsData = [
@@ -93,7 +106,7 @@ const todaysAppointments = [
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
 export default function DashboardPage() {
-  const [alerts, setAlerts] = useState<Alert[]>(initialAlerts);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [isNewAlertDialogOpen, setIsNewAlertDialogOpen] = useState(false);
   const [isEditAlertDialogOpen, setIsEditAlertDialogOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<Alert | null>(null);
@@ -122,39 +135,67 @@ export default function DashboardPage() {
           setCurrentUserPlan(data.plano || "Gratuito");
         }
       } else {
-        setFirebasePatients([]); // Clear patients if user logs out
+        setFirebasePatients([]); 
+        setAlerts([]); // Clear alerts if user logs out
         setIsLoadingFirebasePatients(false);
       }
     });
     return () => unsubscribe();
   }, []);
 
+  const fetchAlerts = async (currentUsuario: FirebaseUser) => {
+    if (!currentUsuario) return;
+    try {
+      const alertsRef = collection(db, 'alertas');
+      const q = query(alertsRef, where('uid', '==', currentUsuario.uid), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const fetchedAlerts: Alert[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        fetchedAlerts.push({
+          id: docSnap.id,
+          uid: data.uid,
+          patientId: data.patientId,
+          patientName: data.patientName,
+          patientSlug: data.patientSlug,
+          reason: data.reason,
+          createdAt: (data.createdAt as Timestamp).toDate(), // Convert Firestore Timestamp to JS Date
+        });
+      });
+      setAlerts(fetchedAlerts);
+    } catch (error) {
+      console.error("Erro ao buscar alertas:", error);
+      toast({ title: "Erro ao buscar alertas", description: "Não foi possível carregar os alertas.", variant: "destructive" });
+    }
+  };
+
   useEffect(() => {
     if (usuario) {
-      const fetchPatientsForUser = async () => {
+      const fetchPatientsAndAlerts = async () => {
         setIsLoadingFirebasePatients(true);
         try {
+          // Fetch Patients
           const patientsRef = collection(db, 'pacientes');
-          const q = query(patientsRef, where('uid', '==', usuario.uid), where('status', '==', 'Ativo'));
-          const querySnapshot = await getDocs(q);
+          const pq = query(patientsRef, where('uid', '==', usuario.uid), where('status', '==', 'Ativo'));
+          const patientsSnapshot = await getDocs(pq);
           const fetchedPatients: PatientForSelect[] = [];
-          const fetchedBirthdayPatients: PatientForBirthday[] = [];
+          const fetchedBirthdayPatientsData: PatientForBirthday[] = [];
           const todayDate = new Date();
           const currentMonth = getMonth(todayDate);
           const currentDay = getDate(todayDate);
 
-          querySnapshot.forEach((docSnap) => {
+          patientsSnapshot.forEach((docSnap) => {
             const data = docSnap.data();
             fetchedPatients.push({
               id: docSnap.id,
               name: data.name as string,
+              slug: data.slug as string, // Ensure slug is fetched
             });
-            // Also populate birthday patients from this fetched data
             if (data.dob) {
               try {
                 const dobDate = parseISO(data.dob);
                 if (getMonth(dobDate) === currentMonth && getDate(dobDate) === currentDay) {
-                  fetchedBirthdayPatients.push({
+                  fetchedBirthdayPatientsData.push({
                     id: docSnap.id,
                     name: data.name as string,
                     dob: data.dob as string,
@@ -167,17 +208,22 @@ export default function DashboardPage() {
             }
           });
           setFirebasePatients(fetchedPatients);
-          setBirthdayPatients(fetchedBirthdayPatients);
+          setBirthdayPatients(fetchedBirthdayPatientsData);
+          
+          // Fetch Alerts
+          await fetchAlerts(usuario);
+
         } catch (error) {
-          console.error("Erro ao buscar pacientes:", error);
-          toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes.", variant: "destructive" });
+          console.error("Erro ao buscar dados do dashboard:", error);
+          toast({ title: "Erro ao carregar dados", description: "Não foi possível carregar informações.", variant: "destructive" });
           setFirebasePatients([]);
           setBirthdayPatients([]);
+          setAlerts([]);
         } finally {
           setIsLoadingFirebasePatients(false);
         }
       };
-      fetchPatientsForUser();
+      fetchPatientsAndAlerts();
     }
   }, [usuario, toast]);
 
@@ -195,8 +241,12 @@ export default function DashboardPage() {
     setAlertForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAddAlert = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddAlert = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!usuario) {
+      toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
+      return;
+    }
     if (!alertForm.patientId || !alertForm.reason.trim()) {
       toast({
         title: "Erro de Validação",
@@ -212,24 +262,29 @@ export default function DashboardPage() {
       return;
     }
 
-    const newAlertEntry: Alert = {
-      id: `a${Date.now()}`,
-      patientId: selectedPatient.id,
-      patientName: selectedPatient.name, // Use name from fetched Firebase patients
-      reason: alertForm.reason.trim(),
-      createdAt: new Date(),
-      status: 'active',
-    };
+    try {
+      const newAlertData = {
+        uid: usuario.uid,
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.name,
+        patientSlug: selectedPatient.slug,
+        reason: alertForm.reason.trim(),
+        createdAt: serverTimestamp(),
+      };
+      await addDoc(collection(db, 'alertas'), newAlertData);
 
-    setAlerts(prev => [newAlertEntry, ...prev]);
-
-    setAlertForm({ patientId: '', reason: '' });
-    setIsNewAlertDialogOpen(false);
-    toast({
-      title: "Sucesso!",
-      description: `Alerta adicionado para ${selectedPatient.name}.`,
-      variant: "success",
-    });
+      setAlertForm({ patientId: '', reason: '' });
+      setIsNewAlertDialogOpen(false);
+      toast({
+        title: "Sucesso!",
+        description: `Alerta adicionado para ${selectedPatient.name}.`,
+        variant: "success",
+      });
+      await fetchAlerts(usuario); // Re-fetch alerts
+    } catch (error) {
+      console.error("Erro ao adicionar alerta:", error);
+      toast({ title: "Erro", description: "Não foi possível salvar o alerta.", variant: "destructive" });
+    }
   };
 
   const handleOpenEditAlert = (alertToEdit: Alert) => {
@@ -241,9 +296,9 @@ export default function DashboardPage() {
     setIsEditAlertDialogOpen(true);
   };
 
-  const handleEditAlert = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleEditAlert = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!editingAlert || !alertForm.patientId || !alertForm.reason.trim()) {
+    if (!editingAlert || !alertForm.patientId || !alertForm.reason.trim() || !usuario) {
       toast({
         title: "Erro de Validação",
         description: "Por favor, preencha todos os campos.",
@@ -258,29 +313,46 @@ export default function DashboardPage() {
       return;
     }
 
-    setAlerts(prev => prev.map(alert =>
-      alert.id === editingAlert.id
-        ? { ...alert, patientId: selectedPatient.id, patientName: selectedPatient.name, reason: alertForm.reason.trim() }
-        : alert
-    ));
+    try {
+      const alertRef = doc(db, 'alertas', editingAlert.id);
+      await updateDoc(alertRef, {
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.name,
+        patientSlug: selectedPatient.slug,
+        reason: alertForm.reason.trim(),
+        // createdAt will not be updated here, keep original timestamp
+      });
 
-    setEditingAlert(null);
-    setAlertForm({ patientId: '', reason: '' });
-    setIsEditAlertDialogOpen(false);
-    toast({
-      title: "Sucesso!",
-      description: "Alerta atualizado com sucesso.",
-      variant: "success",
-    });
+      setEditingAlert(null);
+      setAlertForm({ patientId: '', reason: '' });
+      setIsEditAlertDialogOpen(false);
+      toast({
+        title: "Sucesso!",
+        description: "Alerta atualizado com sucesso.",
+        variant: "success",
+      });
+      await fetchAlerts(usuario); // Re-fetch alerts
+    } catch (error) {
+      console.error("Erro ao editar alerta:", error);
+      toast({ title: "Erro", description: "Não foi possível atualizar o alerta.", variant: "destructive" });
+    }
   };
 
 
-  const handleResolveAlert = (alertId: string) => {
-    setAlerts(prev => prev.filter(alert => alert.id !== alertId));
-    toast({
-      title: "Alerta Resolvido",
-      description: "O alerta foi removido da lista de pendentes.",
-    });
+  const handleResolveAlert = async (alertId: string) => {
+    if (!usuario) return;
+    try {
+      await deleteDoc(doc(db, 'alertas', alertId));
+      toast({
+        title: "Alerta Resolvido",
+        description: "O alerta foi removido.",
+        variant: "success"
+      });
+      await fetchAlerts(usuario); // Re-fetch alerts
+    } catch (error) {
+      console.error("Erro ao resolver alerta:", error);
+      toast({ title: "Erro", description: "Não foi possível remover o alerta.", variant: "destructive" });
+    }
   };
 
   const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
@@ -289,9 +361,6 @@ export default function DashboardPage() {
     console.log("Updating plan to:", planName);
     setCurrentUserPlan(planName);
   };
-
-  const activeAlerts = alerts.filter(alert => alert.status === 'active');
-
 
   return (
     <div className="space-y-8">
@@ -469,8 +538,8 @@ export default function DashboardPage() {
                 <p>Este recurso está disponível apenas para os planos:</p>
                 <strong className="text-primary">Essencial, Profissional ou Clínica</strong>
               </div>
-            ) : activeAlerts.length > 0 ? (
-              activeAlerts.map((alert) => (
+            ) : alerts.length > 0 ? ( // Use alerts state here
+              alerts.map((alert) => (
                 <div key={alert.id} className="flex items-start justify-between text-sm space-x-2 bg-muted/30 p-2 rounded-md">
                   <div className="flex items-start space-x-2 flex-1 min-w-0">
                     <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
@@ -594,7 +663,13 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <Dialog open={isEditAlertDialogOpen} onOpenChange={setIsEditAlertDialogOpen}>
+      <Dialog open={isEditAlertDialogOpen} onOpenChange={(isOpen) => {
+        setIsEditAlertDialogOpen(isOpen);
+        if (!isOpen) {
+          setEditingAlert(null);
+          setAlertForm({ patientId: '', reason: '' });
+        }
+      }}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Editar Alerta</DialogTitle>
@@ -666,3 +741,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
