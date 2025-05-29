@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -37,6 +37,9 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { TiptapEditor } from '@/components/tiptap-editor';
+
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // Data structure definitions
 type HistoryItem = { id?: string; date: string; type: string; notes: string };
@@ -88,12 +91,12 @@ export default function PacienteDetalhePage() {
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
   const [newHistoryNote, setNewHistoryNote] = useState('');
-  const [newHistoryType, setNewHistoryType] = useState(''); // Initialize as empty
+  const [newHistoryType, setNewHistoryType] = useState(''); 
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]); // Initialize as empty
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]); 
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
@@ -106,7 +109,7 @@ export default function PacienteDetalhePage() {
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
 
   const fetchCurrentUserData = useCallback(async () => {
-    const authInstance = getAuth(); // Use getAuth() for consistency
+    const authInstance = getAuth(); 
     const currentUser = authInstance.currentUser;
     if (!currentUser) throw new Error("Usuário não autenticado");
 
@@ -124,30 +127,36 @@ export default function PacienteDetalhePage() {
       const currentUser = authInstance.currentUser;
       if (!currentUser) return;
 
-      const user = await fetchCurrentUserData(); // Call inside this useCallback
+      const user = await fetchCurrentUserData(); 
       const tiposRef = getAppointmentTypesPath(user);
       const snapshot = await getDocs(tiposRef);
 
-      const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({ // Ensure it maps to AppointmentTypeObject
-        name: docSnap.data().name,
-        status: docSnap.data().status as 'active' | 'inactive', // Cast status
-      }));
+      const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({ 
+        name: docSnap.data().name as string,
+        status: docSnap.data().status as 'active' | 'inactive', 
+      })).sort((a, b) => a.name.localeCompare(b.name));
 
-      setAppointmentTypes(tipos.length > 0 ? tipos : initialAppointmentTypesData); // Fallback to initial if none found
+      setAppointmentTypes(tipos.length > 0 ? tipos : initialAppointmentTypesData); 
     } catch (error) {
       console.error("Erro ao buscar tipos:", error);
-      setAppointmentTypes(initialAppointmentTypesData); // Fallback on error
+      setAppointmentTypes(initialAppointmentTypesData); 
     }
-  }, [fetchCurrentUserData]); // Dependency on fetchCurrentUserData
+  }, [fetchCurrentUserData]); 
 
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
   }, [appointmentTypes]);
 
-  // Effect to fetch patient data
   useEffect(() => {
-    const fetchPatient = async () => {
+    const fetchPatientData = async () => {
+      if (!patientSlug) {
+        toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
+        setIsLoading(false);
+        router.push('/pacientes');
+        return;
+      }
+
       setIsLoading(true);
       try {
         const authInstance = getAuth();
@@ -169,13 +178,15 @@ export default function PacienteDetalhePage() {
           const fetchedPatient = {
             ...data,
             internalId: docSnap.id,
-            slug: patientSlug,
+            slug: patientSlug, // Ensure slug is consistent
             history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}` })),
           };
           setPatient(fetchedPatient);
-          setEditedPatient({ ...fetchedPatient });
+          setEditedPatient({ ...fetchedPatient }); // Initialize editedPatient
         } else {
-          toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto.", variant: "destructive" });
+          toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
+          setPatient(undefined); // Clear patient if not found
+          setEditedPatient(undefined);
         }
       } catch (error) {
         console.error("Erro ao buscar paciente:", error);
@@ -184,52 +195,24 @@ export default function PacienteDetalhePage() {
         setIsLoading(false);
       }
     };
+    fetchPatientData();
+  }, [patientSlug, router, toast]);
 
-    if (patientSlug) {
-      fetchPatient();
-    } else {
-      toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
-      setIsLoading(false);
-      router.push('/pacientes');
-    }
-  }, [patientSlug, toast, router]);
 
-  // Effect to fetch appointment types
   useEffect(() => {
     fetchAppointmentTypes();
   }, [fetchAppointmentTypes]);
 
-  // Effect to initialize or update newHistoryType based on patient and appointmentTypes
   useEffect(() => {
     if (appointmentTypes.length > 0) {
       const firstActive = getFirstActiveTypeName();
-      let typeToSet = newHistoryType;
-      let needsUpdate = false;
-
-      // If patient is loaded, history is empty, and newHistoryType is not set or invalid
-      if (patient && patient.history.length === 0) {
-        const currentTypeIsValidForEmptyHistory = newHistoryType && appointmentTypes.some(t => t.name === newHistoryType && t.status === 'active');
-        if (!currentTypeIsValidForEmptyHistory && firstActive) {
-          typeToSet = firstActive;
-          needsUpdate = true;
-        }
-      }
-      
-      // If newHistoryType is set but no longer valid (not active or doesn't exist)
-      const currentTypeIsValidGeneral = newHistoryType && appointmentTypes.some(t => t.name === newHistoryType && t.status === 'active');
-      if (newHistoryType && !currentTypeIsValidGeneral) {
-        typeToSet = firstActive || '';
-        needsUpdate = true;
-      } else if (!newHistoryType && firstActive) { // If newHistoryType is empty and active types are available
-        typeToSet = firstActive;
-        needsUpdate = true;
-      }
-
-      if (needsUpdate && newHistoryType !== typeToSet) {
-        setNewHistoryType(typeToSet);
+      // Only update newHistoryType if it's currently empty or invalid
+      const currentTypeIsValid = newHistoryType && appointmentTypes.some(t => t.name === newHistoryType && t.status === 'active');
+      if (!currentTypeIsValid && firstActive) {
+        setNewHistoryType(firstActive);
       }
     }
-  }, [patient, appointmentTypes, getFirstActiveTypeName, newHistoryType]);
+  }, [appointmentTypes, getFirstActiveTypeName, newHistoryType]);
 
 
   const handleSaveEditedPatient = async () => {
@@ -250,7 +233,7 @@ export default function PacienteDetalhePage() {
 
       await updateDoc(patientRef, dataToSave);
 
-      setPatient({ ...editedPatient }); // Update main patient state
+      setPatient({ ...editedPatient }); 
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -327,7 +310,7 @@ export default function PacienteDetalhePage() {
     }
 
     const newEntry: HistoryItem = {
-      id: `hist-${Date.now()}`, // Simple unique ID for client-side keying
+      id: `hist-${Date.now()}`, 
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
       notes: newHistoryNote,
@@ -340,7 +323,7 @@ export default function PacienteDetalhePage() {
 
       const updatedPatientData = { ...patient, history: updatedHistory };
       setPatient(updatedPatientData);
-      if(isEditing) setEditedPatient(updatedPatientData); // Keep editedPatient in sync if editing mode is on
+      if(isEditing) setEditedPatient(updatedPatientData); 
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName());
       toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
@@ -358,11 +341,10 @@ export default function PacienteDetalhePage() {
 
   const handleDocumentUpload = () => {
     if (!newDocument || !patient) return;
-    // Implement actual Firebase Storage upload here in a real app
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument), // Placeholder URL
+      url: URL.createObjectURL(newDocument), 
     };
     const updatedPatientData = { ...patient, documents: [newDocEntry, ...(patient.documents || [])] };
     setPatient(updatedPatientData);
@@ -375,7 +357,6 @@ export default function PacienteDetalhePage() {
 
   const handleDeleteDocument = (docName: string) => {
     if (!patient) return;
-    // Implement actual Firebase Storage deletion here in a real app
     const updatedDocs = (patient.documents || []).filter(doc => doc.name !== docName);
     const updatedPatientData = { ...patient, documents: updatedDocs };
     setPatient(updatedPatientData);
@@ -392,7 +373,7 @@ export default function PacienteDetalhePage() {
       toast({
         title: 'Paciente excluído',
         description: `O paciente ${patient.name} foi removido com sucesso.`,
-        variant: 'success', // Or destructive
+        variant: 'success', 
       });
 
       router.push('/pacientes');
@@ -420,9 +401,7 @@ export default function PacienteDetalhePage() {
     try {
       const user = await fetchCurrentUserData();
       const tiposRef = getAppointmentTypesPath(user);
-      // Firestore document ID can be auto-generated or based on name
-      const docId = trimmedName.toLowerCase().replace(/\s+/g, '_'); // Example ID generation
-      await setDoc(doc(tiposRef, docId), { // Use setDoc with a specific ID or addDoc for auto-ID
+      const docRef = await addDoc(tiposRef, {
         name: trimmedName,
         status: 'active',
         createdAt: serverTimestamp(),
@@ -431,7 +410,7 @@ export default function PacienteDetalhePage() {
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
       toast({ title: "Sucesso", description: "Tipo de atendimento adicionado." });
-      fetchAppointmentTypes(); // Refresh list
+      await fetchAppointmentTypes(); 
     } catch (error) {
       console.error("Erro ao adicionar tipo:", error);
       toast({ title: "Erro", description: "Falha ao adicionar tipo.", variant: "destructive" });
@@ -465,8 +444,7 @@ export default function PacienteDetalhePage() {
 
       setEditingTypeInfo(null);
       toast({ title: "Sucesso", description: "Nome do tipo atualizado." });
-      fetchAppointmentTypes(); // Refresh list
-      // Update newHistoryType if it was the one being edited
+      await fetchAppointmentTypes(); 
       if (newHistoryType === originalName) setNewHistoryType(newNameTrimmed);
 
     } catch (error) {
@@ -487,7 +465,6 @@ export default function PacienteDetalhePage() {
         return;
     }
 
-
     try {
         const user = await fetchCurrentUserData();
         const tiposRef = getAppointmentTypesPath(user);
@@ -501,8 +478,8 @@ export default function PacienteDetalhePage() {
 
         setTypeToToggleStatusConfirm(null);
         toast({ title: "Status Alterado", description: `Tipo "${typeName}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.` });
-        fetchAppointmentTypes(); // Refresh list
-        // If the currently selected newHistoryType was just deactivated, reset it
+        await fetchAppointmentTypes(); 
+        
         if (newHistoryType === typeName && newStatus === 'inactive') {
             setNewHistoryType(getFirstActiveTypeName() || '');
         }
@@ -533,7 +510,7 @@ export default function PacienteDetalhePage() {
       const docToDeleteRef = querySnapshot.docs[0].ref;
       await deleteDoc(docToDeleteRef);
       toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
-      await fetchAppointmentTypes(); // Refresh list
+      await fetchAppointmentTypes(); 
 
       if (newHistoryType === typeToDelete.name) {
         setNewHistoryType(getFirstActiveTypeName() || '');
@@ -554,6 +531,72 @@ export default function PacienteDetalhePage() {
     setSelectedHistoryNote(note);
     setIsHistoryNoteModalOpen(true);
   };
+  
+  const handleExportPdf = async () => {
+    if (!selectedHistoryNote || !patient) {
+      toast({ title: "Erro", description: "Nenhuma nota selecionada para exportar.", variant: "destructive" });
+      return;
+    }
+
+    const contentElement = document.getElementById('historyNoteContentToExport');
+    if (!contentElement) {
+      toast({ title: "Erro", description: "Conteúdo da nota não encontrado para exportar.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const canvas = await html2canvas(contentElement, {
+        scale: 2, // Increase scale for better quality
+        useCORS: true, // If there are external images, though unlikely for Tiptap content
+        logging: true,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgWidth = imgProps.width;
+      const imgHeight = imgProps.height;
+
+      // Calculate image aspect ratio
+      const ratio = imgWidth / imgHeight;
+      let newImgWidth = pdfWidth - 20; // Page width - margins
+      let newImgHeight = newImgWidth / ratio;
+
+      // Check if image height exceeds page height, if so, scale by height
+      if (newImgHeight > pdfHeight - 20) {
+        newImgHeight = pdfHeight - 20; // Page height - margins
+        newImgWidth = newImgHeight * ratio;
+      }
+      
+      // Add patient name and note date to PDF
+      pdf.setFontSize(16);
+      pdf.text(`Paciente: ${patient.name}`, 10, 10);
+      pdf.setFontSize(12);
+      pdf.text(`Data do Atendimento: ${formatDate(selectedHistoryNote.date)} (${selectedHistoryNote.type})`, 10, 20);
+      
+      // Add a line separator
+      pdf.setLineWidth(0.5);
+      pdf.line(10, 25, pdfWidth - 10, 25);
+
+      pdf.addImage(imgData, 'PNG', 10, 30, newImgWidth, newImgHeight); // Position image after header
+
+      const fileName = `evolucao-${patient.slug}-${selectedHistoryNote.date}.pdf`;
+      pdf.save(fileName);
+
+      toast({ title: "Sucesso", description: "PDF exportado com sucesso!", variant: "success" });
+
+    } catch (error) {
+      console.error("Erro ao exportar PDF:", error);
+      toast({ title: "Erro ao Exportar", description: "Não foi possível gerar o PDF.", variant: "destructive" });
+    }
+  };
 
 
   if (isLoading) {
@@ -564,7 +607,7 @@ export default function PacienteDetalhePage() {
     );
   }
 
-  if (!patient && !isLoading) { // Ensure not loading before showing not found
+  if (!patient && !isLoading) { 
     return (
       <div className="text-center py-10">
         <h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1>
@@ -573,8 +616,8 @@ export default function PacienteDetalhePage() {
     );
   }
 
-  const displayPatient = isEditing ? editedPatient : patient; // Use patient data for display if not editing
-  if (!displayPatient) { // Fallback if displayPatient is somehow null after loading checks
+  const displayPatient = isEditing ? editedPatient : patient; 
+  if (!displayPatient) { 
       return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
   }
 
@@ -751,7 +794,7 @@ export default function PacienteDetalhePage() {
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
                     <div className="mt-1">
-                      <TiptapEditor
+                       <TiptapEditor
                         content={newHistoryNote}
                         onChange={setNewHistoryNote}
                       />
@@ -923,7 +966,7 @@ export default function PacienteDetalhePage() {
               Data: {selectedHistoryNote ? formatDate(selectedHistoryNote.date) : ''}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4 max-h-[60vh] overflow-y-auto">
+          <div id="historyNoteContentToExport" className="py-4 max-h-[60vh] overflow-y-auto">
             {selectedHistoryNote && (
               <div
                 className="history-note-content prose prose-sm sm:prose-base max-w-none"
@@ -932,6 +975,9 @@ export default function PacienteDetalhePage() {
             )}
           </div>
           <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleExportPdf}>
+              <FileDown className="mr-2 h-4 w-4" /> Exportar para PDF
+            </Button>
             <DialogClose asChild>
               <Button type="button" variant="outline">Fechar</Button>
             </DialogClose>
