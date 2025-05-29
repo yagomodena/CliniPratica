@@ -31,12 +31,12 @@ import { PlansModal } from '@/components/sections/plans-modal';
 import { parseISO, getMonth, getDate, format } from 'date-fns';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { 
-  collection, 
-  getDoc, 
-  doc, 
-  query, 
-  where, 
+import {
+  collection,
+  getDoc,
+  doc,
+  query,
+  where,
   getDocs,
   addDoc,
   updateDoc,
@@ -71,7 +71,6 @@ type Alert = {
   patientSlug: string;
   reason: string;
   createdAt: Date; // Converted from Firestore Timestamp
-  // status: 'active'; // We'll only fetch active alerts or delete resolved ones
 };
 
 // New Alert Form structure
@@ -80,7 +79,6 @@ type AlertForm = {
   reason: string;
 }
 
-// Placeholder data for charts and appointments
 const weeklyAppointmentsData = [
   { day: "Seg", appointments: 5 },
   { day: "Ter", appointments: 8 },
@@ -135,8 +133,8 @@ export default function DashboardPage() {
           setCurrentUserPlan(data.plano || "Gratuito");
         }
       } else {
-        setFirebasePatients([]); 
-        setAlerts([]); // Clear alerts if user logs out
+        setFirebasePatients([]);
+        setAlerts([]);
         setIsLoadingFirebasePatients(false);
       }
     });
@@ -152,20 +150,46 @@ export default function DashboardPage() {
       const fetchedAlerts: Alert[] = [];
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        let createdAtDate: Date;
+
+        if (data.createdAt && typeof (data.createdAt as Timestamp).toDate === 'function') {
+          createdAtDate = (data.createdAt as Timestamp).toDate();
+        } else if (data.createdAt && (typeof data.createdAt === 'string' || typeof data.createdAt === 'number')) {
+          try {
+            createdAtDate = new Date(data.createdAt);
+            if (isNaN(createdAtDate.getTime())) { // Check if parsing resulted in Invalid Date
+              console.warn(`Invalid createdAt date format for alert ${docSnap.id}:`, data.createdAt);
+              createdAtDate = new Date(); // Fallback to now
+            }
+          } catch (parseError) {
+            console.warn(`Error parsing createdAt for alert ${docSnap.id}:`, data.createdAt, parseError);
+            createdAtDate = new Date(); // Fallback to now
+          }
+        } else {
+          console.warn(`Missing or unhandled createdAt type for alert ${docSnap.id}, defaulting to now.`);
+          createdAtDate = new Date(); // Fallback if createdAt is missing or type not handled
+        }
+
         fetchedAlerts.push({
           id: docSnap.id,
-          uid: data.uid,
-          patientId: data.patientId,
-          patientName: data.patientName,
-          patientSlug: data.patientSlug,
-          reason: data.reason,
-          createdAt: (data.createdAt as Timestamp).toDate(), // Convert Firestore Timestamp to JS Date
+          uid: data.uid as string,
+          patientId: data.patientId as string,
+          patientName: data.patientName as string,
+          patientSlug: data.patientSlug as string,
+          reason: data.reason as string,
+          createdAt: createdAtDate,
         });
       });
       setAlerts(fetchedAlerts);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao buscar alertas:", error);
-      toast({ title: "Erro ao buscar alertas", description: "Não foi possível carregar os alertas.", variant: "destructive" });
+      let description = "Não foi possível carregar os alertas.";
+      if (error.code === 'permission-denied') {
+        description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
+      } else if (error.code === 'failed-precondition') {
+        description = "Falha ao buscar alertas. Provavelmente falta um índice no Firestore. Verifique o console do Firebase para um link para criá-lo (geralmente para 'uid' e 'createdAt' na coleção 'alertas').";
+      }
+      toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
     }
   };
 
@@ -189,7 +213,7 @@ export default function DashboardPage() {
             fetchedPatients.push({
               id: docSnap.id,
               name: data.name as string,
-              slug: data.slug as string, // Ensure slug is fetched
+              slug: data.slug as string,
             });
             if (data.dob) {
               try {
@@ -209,7 +233,7 @@ export default function DashboardPage() {
           });
           setFirebasePatients(fetchedPatients);
           setBirthdayPatients(fetchedBirthdayPatientsData);
-          
+
           // Fetch Alerts
           await fetchAlerts(usuario);
 
@@ -280,10 +304,14 @@ export default function DashboardPage() {
         description: `Alerta adicionado para ${selectedPatient.name}.`,
         variant: "success",
       });
-      await fetchAlerts(usuario); // Re-fetch alerts
-    } catch (error) {
+      await fetchAlerts(usuario);
+    } catch (error: any) {
       console.error("Erro ao adicionar alerta:", error);
-      toast({ title: "Erro", description: "Não foi possível salvar o alerta.", variant: "destructive" });
+      let description = "Não foi possível salvar o alerta.";
+       if (error.code === 'permission-denied') {
+        description = "Permissão negada ao salvar o alerta. Verifique as regras de segurança do Firestore.";
+      }
+      toast({ title: "Erro", description, variant: "destructive" });
     }
   };
 
@@ -320,7 +348,6 @@ export default function DashboardPage() {
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-        // createdAt will not be updated here, keep original timestamp
       });
 
       setEditingAlert(null);
@@ -331,10 +358,14 @@ export default function DashboardPage() {
         description: "Alerta atualizado com sucesso.",
         variant: "success",
       });
-      await fetchAlerts(usuario); // Re-fetch alerts
-    } catch (error) {
+      await fetchAlerts(usuario);
+    } catch (error: any) {
       console.error("Erro ao editar alerta:", error);
-      toast({ title: "Erro", description: "Não foi possível atualizar o alerta.", variant: "destructive" });
+      let description = "Não foi possível atualizar o alerta.";
+       if (error.code === 'permission-denied') {
+        description = "Permissão negada ao atualizar o alerta. Verifique as regras de segurança do Firestore.";
+      }
+      toast({ title: "Erro", description, variant: "destructive" });
     }
   };
 
@@ -348,14 +379,17 @@ export default function DashboardPage() {
         description: "O alerta foi removido.",
         variant: "success"
       });
-      await fetchAlerts(usuario); // Re-fetch alerts
-    } catch (error) {
+      await fetchAlerts(usuario);
+    } catch (error: any) {
       console.error("Erro ao resolver alerta:", error);
-      toast({ title: "Erro", description: "Não foi possível remover o alerta.", variant: "destructive" });
+      let description = "Não foi possível remover o alerta.";
+       if (error.code === 'permission-denied') {
+        description = "Permissão negada ao remover o alerta. Verifique as regras de segurança do Firestore.";
+      }
+      toast({ title: "Erro", description, variant: "destructive" });
     }
   };
 
-  const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-');
 
   const handleSelectPlan = (planName: PlanName) => {
     console.log("Updating plan to:", planName);
@@ -538,7 +572,7 @@ export default function DashboardPage() {
                 <p>Este recurso está disponível apenas para os planos:</p>
                 <strong className="text-primary">Essencial, Profissional ou Clínica</strong>
               </div>
-            ) : alerts.length > 0 ? ( // Use alerts state here
+            ) : alerts.length > 0 ? (
               alerts.map((alert) => (
                 <div key={alert.id} className="flex items-start justify-between text-sm space-x-2 bg-muted/30 p-2 rounded-md">
                   <div className="flex items-start space-x-2 flex-1 min-w-0">
