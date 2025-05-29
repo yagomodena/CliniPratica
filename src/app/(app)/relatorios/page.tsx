@@ -16,17 +16,16 @@ import {
   query,
   where,
   getDocs,
-  // Timestamp, // No longer needed directly here
+  Timestamp, 
 } from 'firebase/firestore';
-import { format, startOfMonth, subMonths, getMonth, getYear, parseISO } from 'date-fns'; // Added parseISO
+import { format, startOfMonth, subMonths, getMonth, getYear, parseISO } from 'date-fns'; 
 import { ptBR } from 'date-fns/locale';
 
-type MonthlyAppointmentData = {
+type MonthlyData = {
   month: string;
   total: number;
 };
 
-// Placeholder data - will be replaced by fetched data
 const initialPatientReturnData = [
   { month: "Jan", rate: 60 }, { month: "Fev", rate: 65 }, { month: "Mar", rate: 70 },
   { month: "Abr", rate: 72 }, { month: "Mai", rate: 68 }, { month: "Jun", rate: 75 },
@@ -39,6 +38,9 @@ const chartConfigAppointments = {
 const chartConfigReturn = {
     rate: { label: "Taxa Retorno (%)", color: "hsl(var(--chart-2))" },
 };
+const chartConfigNewPatients = {
+    total: { label: "Novos Pacientes", color: "hsl(var(--chart-3))" },
+};
 
 type ReportType = 'cancelados' | 'ativosInativos' | 'procedimentos' | 'origem';
 
@@ -47,8 +49,11 @@ export default function RelatoriosPage() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [clientNow, setClientNow] = useState<Date | null>(null);
 
-  const [actualMonthlyAppointmentsData, setActualMonthlyAppointmentsData] = useState<MonthlyAppointmentData[]>([]);
+  const [actualMonthlyAppointmentsData, setActualMonthlyAppointmentsData] = useState<MonthlyData[]>([]);
   const [isLoadingMonthlyAppointments, setIsLoadingMonthlyAppointments] = useState(true);
+
+  const [newPatientsPerMonthData, setNewPatientsPerMonthData] = useState<MonthlyData[]>([]);
+  const [isLoadingNewPatients, setIsLoadingNewPatients] = useState(true);
 
   useEffect(() => {
     setClientNow(new Date());
@@ -59,13 +64,12 @@ export default function RelatoriosPage() {
   }, []);
 
   const fetchMonthlyAppointmentsCounts = useCallback(async (user: FirebaseUser, currentDate: Date) => {
-    if (!user) return;
+    if (!user || !currentDate) return;
     setIsLoadingMonthlyAppointments(true);
 
-    const monthsData: MonthlyAppointmentData[] = [];
+    const monthsData: MonthlyData[] = [];
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     
-    // Initialize last 6 months including current
     for (let i = 5; i >= 0; i--) {
       const targetMonthDate = subMonths(currentDate, i);
       const monthKey = `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`;
@@ -80,24 +84,18 @@ export default function RelatoriosPage() {
         apptsRef,
         where('uid', '==', user.uid),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd'))
-        // No upper date bound in query; we'll process all fetched data from the last 6 months start
       );
       const querySnapshot = await getDocs(q);
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        const apptDateStr = data.date as string; // 'yyyy-MM-dd'
+        const apptDateStr = data.date as string; 
         if (apptDateStr) {
           try {
-            const apptDate = parseISO(apptDateStr); // Use parseISO for robust date string parsing
-            
-            // Determine the month/year key for the appointment
+            const apptDate = parseISO(apptDateStr); 
             const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
-            
-            // Find if this appointment's month is one we are tracking
             const monthEntry = monthsData.find(m => m.month === apptMonthKey);
-
-            if (monthEntry) { // If the appointment's month is within our 6-month window
+            if (monthEntry) {
                 monthEntry.total += 1;
             }
           } catch (e) {
@@ -105,9 +103,7 @@ export default function RelatoriosPage() {
           }
         }
       });
-      
       setActualMonthlyAppointmentsData(monthsData);
-
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos mensais:", error);
       setActualMonthlyAppointmentsData(monthsData); 
@@ -116,20 +112,68 @@ export default function RelatoriosPage() {
     }
   }, []);
 
+  const fetchNewPatientsPerMonth = useCallback(async (user: FirebaseUser, currentDate: Date) => {
+    if (!user || !currentDate) return;
+    setIsLoadingNewPatients(true);
+
+    const monthsData: MonthlyData[] = [];
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+    for (let i = 5; i >= 0; i--) {
+      const targetMonthDate = subMonths(currentDate, i);
+      const monthKey = `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`;
+      monthsData.push({ month: monthKey, total: 0 });
+    }
+
+    const sixMonthsAgoDate = startOfMonth(subMonths(currentDate, 5));
+    const sixMonthsAgoTimestamp = Timestamp.fromDate(sixMonthsAgoDate);
+
+    try {
+      const patientsRef = collection(db, 'pacientes');
+      const q = query(
+        patientsRef,
+        where('uid', '==', user.uid),
+        where('createdAt', '>=', sixMonthsAgoTimestamp)
+      );
+      const querySnapshot = await getDocs(q);
+
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.createdAt && (data.createdAt as Timestamp).toDate) {
+          const patientCreationDate = (data.createdAt as Timestamp).toDate();
+          const patientMonthKey = `${monthNames[getMonth(patientCreationDate)]}/${String(getYear(patientCreationDate)).slice(-2)}`;
+          const monthEntry = monthsData.find(m => m.month === patientMonthKey);
+          if (monthEntry) {
+            monthEntry.total += 1;
+          }
+        }
+      });
+      setNewPatientsPerMonthData(monthsData);
+    } catch (error: any) {
+      console.error("Erro ao buscar novos pacientes por mês:", error);
+      setNewPatientsPerMonthData(monthsData);
+    } finally {
+      setIsLoadingNewPatients(false);
+    }
+  }, []);
+
   useEffect(() => {
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
+        const targetMonthDate = subMonths(clientNow || new Date(), 5 - i);
+        return { month: `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
+    });
+
     if (currentUser && clientNow) {
       fetchMonthlyAppointmentsCounts(currentUser, clientNow);
-    } else if (!currentUser && clientNow) { // Added clientNow check for consistency
+      fetchNewPatientsPerMonth(currentUser, clientNow);
+    } else if (clientNow) { 
         setIsLoadingMonthlyAppointments(false);
-        const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-        setActualMonthlyAppointmentsData(
-            Array.from({ length: 6 }).map((_, i) => {
-                const targetMonthDate = subMonths(clientNow || new Date(), 5 - i);
-                return { month: `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
-            })
-        );
+        setIsLoadingNewPatients(false);
+        setActualMonthlyAppointmentsData(defaultMonths);
+        setNewPatientsPerMonthData(defaultMonths);
     }
-  }, [currentUser, clientNow, fetchMonthlyAppointmentsCounts]);
+  }, [currentUser, clientNow, fetchMonthlyAppointmentsCounts, fetchNewPatientsPerMonth]);
 
 
   const renderSelectedReportContent = () => {
@@ -225,9 +269,22 @@ export default function RelatoriosPage() {
                 <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5"/> Novos Pacientes por Mês</CardTitle>
                 <CardDescription>Quantidade de novos pacientes cadastrados.</CardDescription>
             </CardHeader>
-            <CardContent className="text-center py-16 text-muted-foreground min-h-[200px] flex flex-col items-center justify-center">
-                <LineChartIcon className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                <p>Gráfico de novos pacientes (em breve).</p>
+            <CardContent className="min-h-[200px] flex flex-col items-center justify-center">
+              <ChartContainer config={chartConfigNewPatients} className="w-full aspect-video">
+                {isLoadingNewPatients ? (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsLineChart data={newPatientsPerMonthData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                      <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                      <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
+                      <Line type="monotone" dataKey="total" stroke="var(--color-total)" strokeWidth={2} dot={true} />
+                    </RechartsLineChart>
+                  </ResponsiveContainer>
+                )}
+              </ChartContainer>
             </CardContent>
          </Card>
 
