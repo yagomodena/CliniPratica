@@ -339,15 +339,19 @@ export default function AgendaPage() {
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    if (!clientToday || !clientNow) return true;
+    if (!clientToday || !clientNow) return true; // Should ideally not happen if client dates are set
+    
+    // Check if the date part is before today
     if (isBefore(startOfDay(dateTime), clientToday)) {
       return true;
     }
+    // If it's today, check if the time is before now
     if (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow)) {
       return true;
     }
     return false;
   };
+  
 
   const isTimeSlotOccupied = (dateKey: string, time: string, excludingAppointmentId?: string): boolean => {
     const appointmentsOnDay = appointments[dateKey] || [];
@@ -812,30 +816,15 @@ export default function AgendaPage() {
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-100" title="Excluir Agendamento">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Tem certeza que deseja excluir o agendamento para {appt.patientName} às {appt.time}?
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction 
-                            onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} 
-                            className="bg-destructive hover:bg-destructive/90"
-                          >
-                            Excluir
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-red-500 hover:bg-red-100" 
+                        title="Excluir Agendamento"
+                        onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)}
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
                     <Button asChild variant="ghost" size="sm" className="h-8">
                       <Link href={`/pacientes/${appt.patientSlug}`}>
                         <span className="sm:hidden">Ver</span>
