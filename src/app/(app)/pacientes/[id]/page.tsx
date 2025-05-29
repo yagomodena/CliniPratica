@@ -28,6 +28,7 @@ import {
   serverTimestamp,
   doc,
   getDoc,
+  setDoc,
   getDocs,
   query,
   where,
@@ -68,6 +69,18 @@ type Patient = {
   history: HistoryItem[];
   documents: DocumentItem[];
   slug: string;
+};
+
+interface AppointmentType {
+  id: string;
+  name: string;
+  status: 'active' | 'inactive';
+}
+
+const getAppointmentTypesPath = (user: any) => {
+  const isClinica = user?.plano === 'Clínica';
+  const identifier = isClinica ? user.nomeEmpresa : user.uid;
+  return collection(db, 'appointmentTypes', identifier, 'tipos');
 };
 
 // Structure for appointment types (consistent with AgendaPage)
@@ -112,20 +125,37 @@ export default function PacienteDetalhePage() {
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
 
-  // const [isClient, setIsClient] = useState(false);
-
-  // useEffect(() => {
-  //   setIsClient(true);
-  // }, []);
-
-
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
   }, [appointmentTypes]);
 
+  const fetchAppointmentTypes = useCallback(async () => {
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const user = await fetchCurrentUserData();
+      const tiposRef = getAppointmentTypesPath(user);
+
+      const snapshot = await getDocs(tiposRef);
+
+      const tipos: AppointmentType[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name,
+        status: doc.data().status,
+      }));
+
+      setAppointmentTypes(tipos);
+    } catch (error) {
+      console.error("Erro ao buscar tipos:", error);
+    }
+  }, []);
+
   useEffect(() => {
     setNewHistoryType(getFirstActiveTypeName());
-  }, [appointmentTypes, getFirstActiveTypeName]);
+    fetchAppointmentTypes();
+  }, [appointmentTypes, getFirstActiveTypeName, fetchAppointmentTypes]);
 
 
   useEffect(() => {
@@ -181,6 +211,33 @@ export default function PacienteDetalhePage() {
       router.push('/pacientes');
     }
   }, [params.id, getFirstActiveTypeName, toast, router]);
+
+  const saveAppointmentType = async (name: string, status: 'active' | 'inactive', userData: any) => {
+    const docId = name.toLowerCase().replace(/\s/g, '_');
+  
+    const userKey = userData.plano === 'Clínica' ? userData.nomeEmpresa : userData.uid;
+  
+    const docRef = doc(db, 'appointmentTypes', userKey, 'tipos', docId);
+  
+    await setDoc(docRef, {
+      name,
+      status,
+      updatedAt: new Date(),
+    });
+  };
+
+  const fetchCurrentUserData = async () => {
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Usuário não autenticado");
+
+    const userDoc = await getDoc(doc(db, 'usuarios', currentUser.uid));
+    const userData = userDoc.data();
+
+    if (!userData) throw new Error("Dados do usuário não encontrados");
+
+    return { ...userData, uid: currentUser.uid };
+  };
 
   const handleSaveEditedPatient = async () => {
     if (!editedPatient || !editedPatient.internalId) {
@@ -354,80 +411,86 @@ export default function PacienteDetalhePage() {
     }
   };
 
-  const handleAddCustomType = () => {
-    const trimmedType = newCustomTypeName.trim();
-    if (!trimmedType) {
-      toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
-      return;
-    }
-    if (appointmentTypes.some(type => type.name.toLowerCase() === trimmedType.toLowerCase())) {
-      toast({ title: "Tipo Duplicado", description: `O tipo "${trimmedType}" já existe.`, variant: "destructive" });
-      return;
-    }
-    const newTypeObject: AppointmentTypeObject = { name: trimmedType, status: 'active' };
-    const newTypes = [...appointmentTypes, newTypeObject].sort((a, b) => a.name.localeCompare(b.name));
-    setAppointmentTypes(newTypes);
-    setNewCustomTypeName('');
-    setIsAddTypeDialogOpen(false);
+  const handleAddCustomType = async () => {
+    if (!newCustomTypeName.trim()) return;
 
-    if (newHistoryType === '' || !appointmentTypes.find(t => t.name === newHistoryType && t.status === 'active')) {
-      setNewHistoryType(trimmedType);
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Usuário não autenticado");
+
+      const user = await fetchCurrentUserData();
+      const tiposRef = getAppointmentTypesPath(user);
+
+      await addDoc(tiposRef, {
+        name: newCustomTypeName,
+        status: 'active',
+        createdAt: serverTimestamp(),
+      });
+
+      setNewCustomTypeName('');
+      setIsAddTypeDialogOpen(false);
+      toast({ title: "Sucesso", description: "Tipo de atendimento adicionado com sucesso." });
+      fetchAppointmentTypes(); // atualizar lista
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro", description: "Falha ao adicionar tipo." });
     }
-    toast({ title: "Sucesso", description: `Tipo "${trimmedType}" adicionado.`, variant: "success" });
   };
 
-  const handleSaveEditedTypeName = () => {
+  const handleSaveEditedTypeName = async () => {
     if (!editingTypeInfo) return;
-    const { originalName, currentName } = editingTypeInfo;
-    const newNameTrimmed = currentName.trim();
 
-    if (!newNameTrimmed) {
-      toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
-      return;
-    }
-    if (newNameTrimmed.toLowerCase() !== originalName.toLowerCase() && appointmentTypes.some(type => type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
-      toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
-      return;
-    }
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Usuário não autenticado");
 
-    setAppointmentTypes(prevTypes => prevTypes.map(t => t.name === originalName ? { ...t, name: newNameTrimmed } : t).sort((a, b) => a.name.localeCompare(b.name)));
+      const user = await fetchCurrentUserData();
+      const tiposRef = getAppointmentTypesPath(user);
 
-    if (newHistoryType === originalName) {
-      setNewHistoryType(newNameTrimmed);
+      const snapshot = await getDocs(tiposRef);
+      const docToUpdate = snapshot.docs.find(doc => doc.data().name === editingTypeInfo.originalName);
+
+      if (!docToUpdate) throw new Error("Tipo não encontrado");
+
+      await updateDoc(docToUpdate.ref, { name: editingTypeInfo.currentName });
+
+      setEditingTypeInfo(null);
+      toast({ title: "Sucesso", description: "Nome atualizado." });
+      fetchAppointmentTypes();
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro", description: "Falha ao editar nome." });
     }
-    setEditingTypeInfo(null);
-    toast({ title: "Sucesso", description: `Nome do tipo "${originalName}" atualizado para "${newNameTrimmed}".`, variant: "success" });
   };
 
-  const handleToggleTypeStatus = (typeName: string) => {
-    const typeToToggle = appointmentTypes.find(t => t.name === typeName);
-    if (!typeToToggle) return;
+  const handleToggleTypeStatus = async (typeName: string) => {
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Usuário não autenticado");
 
-    const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
-    if (newStatus === 'inactive') {
-      const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
-      if (activeTypesCount <= 1) {
-        toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
-        return;
-      }
+      const user = await fetchCurrentUserData();
+      const tiposRef = getAppointmentTypesPath(user);
+
+      const snapshot = await getDocs(tiposRef);
+      const docToUpdate = snapshot.docs.find(doc => doc.data().name === typeName);
+
+      if (!docToUpdate) throw new Error("Tipo não encontrado");
+
+      const currentStatus = docToUpdate.data().status;
+      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+
+      await updateDoc(docToUpdate.ref, { status: newStatus });
+
+      setTypeToToggleStatusConfirm(null);
+      toast({ title: "Sucesso", description: "Status atualizado." });
+      fetchAppointmentTypes();
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Erro", description: "Falha ao atualizar status." });
     }
-
-    setAppointmentTypes(prevTypes =>
-      prevTypes.map(t =>
-        t.name === typeName ? { ...t, status: newStatus } : t
-      ).sort((a, b) => a.name.localeCompare(b.name))
-    );
-
-    if (newStatus === 'inactive' && newHistoryType === typeName) {
-      setNewHistoryType(getFirstActiveTypeName());
-    }
-
-    toast({
-      title: "Status Alterado",
-      description: `O tipo "${typeName}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`,
-      variant: "success"
-    });
-    setTypeToToggleStatusConfirm(null);
   };
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
@@ -631,10 +694,10 @@ export default function PacienteDetalhePage() {
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
                     <div className="mt-1">
-                       <TiptapEditor
+                      <TiptapEditor
                         content={newHistoryNote}
                         onChange={setNewHistoryNote}
-                       />
+                      />
                     </div>
                   </div>
                 </CardContent>
@@ -664,7 +727,7 @@ export default function PacienteDetalhePage() {
                       />
                       {item.notes.length > 250 && (
                         <Button variant="link" size="sm" className="p-0 h-auto mt-1 text-primary" onClick={() => handleOpenHistoryModal(item)}>
-                           Ver Detalhes
+                          Ver Detalhes
                         </Button>
                       )}
                     </CardContent>
@@ -824,7 +887,7 @@ export default function PacienteDetalhePage() {
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>Adicionar Novo Tipo de Atendimento</DialogTitle>
+            <DialogTitle> </DialogTitle>
             <DialogDescription>Insira o nome do novo tipo.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
