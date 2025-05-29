@@ -748,15 +748,14 @@ export default function AgendaPage() {
                   </Button>
                 </div>
               </div>
-              {/* Data Row - Using flexbox */}
-              <div className="flex items-center gap-2">
-                <Label htmlFor="newDate" className="text-right whitespace-nowrap">Data*</Label>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
                 <Input 
                   id="newDate" 
                   type="date" 
                   value={newAppointmentForm.date} 
                   onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} 
-                  className="flex-grow min-w-0" 
+                  className="col-span-3" 
                   min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} 
                   required 
                 />
@@ -899,15 +898,14 @@ export default function AgendaPage() {
                 </Button>
               </div>
             </div>
-             {/* Data Row - Using flexbox */}
-            <div className="flex items-center gap-2">
-              <Label htmlFor="editDate" className="text-right whitespace-nowrap">Data*</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="editDate" className="text-right col-span-1">Data*</Label>
               <Input
                 id="editDate"
                 type="date"
                 value={editAppointmentForm.date}
                 onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)}
-                className="flex-grow min-w-0"
+                className="col-span-3"
                 min={clientToday && editingAppointmentInfo && editingAppointmentInfo.appointment.date === format(clientToday, 'yyyy-MM-dd') ? format(clientToday, 'yyyy-MM-dd') : undefined}
                 required
               />
