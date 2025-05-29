@@ -143,6 +143,7 @@ export default function DashboardPage() {
 
   const fetchAlerts = async (currentUsuario: FirebaseUser) => {
     if (!currentUsuario) return;
+    console.log("Fetching alerts for UID:", currentUsuario.uid); // Diagnostic log
     try {
       const alertsRef = collection(db, 'alertas');
       const q = query(alertsRef, where('uid', '==', currentUsuario.uid), orderBy('createdAt', 'desc'));
@@ -157,17 +158,17 @@ export default function DashboardPage() {
         } else if (data.createdAt && (typeof data.createdAt === 'string' || typeof data.createdAt === 'number')) {
           try {
             createdAtDate = new Date(data.createdAt);
-            if (isNaN(createdAtDate.getTime())) { // Check if parsing resulted in Invalid Date
+            if (isNaN(createdAtDate.getTime())) { 
               console.warn(`Invalid createdAt date format for alert ${docSnap.id}:`, data.createdAt);
-              createdAtDate = new Date(); // Fallback to now
+              createdAtDate = new Date(); 
             }
           } catch (parseError) {
             console.warn(`Error parsing createdAt for alert ${docSnap.id}:`, data.createdAt, parseError);
-            createdAtDate = new Date(); // Fallback to now
+            createdAtDate = new Date(); 
           }
         } else {
           console.warn(`Missing or unhandled createdAt type for alert ${docSnap.id}, defaulting to now.`);
-          createdAtDate = new Date(); // Fallback if createdAt is missing or type not handled
+          createdAtDate = new Date(); 
         }
 
         fetchedAlerts.push({
@@ -183,11 +184,11 @@ export default function DashboardPage() {
       setAlerts(fetchedAlerts);
     } catch (error: any) {
       console.error("Erro ao buscar alertas:", error);
-      let description = "Não foi possível carregar os alertas.";
+      let description = "Não foi possível carregar os alertas. Tente recarregar a página.";
       if (error.code === 'permission-denied') {
         description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-        description = "Falha ao buscar alertas. Provavelmente falta um índice no Firestore. Verifique o console do Firebase para um link para criá-lo (geralmente para 'uid' e 'createdAt' na coleção 'alertas').";
+        description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' e 'createdAt' na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ativo.";
       }
       toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
     }
@@ -310,8 +311,10 @@ export default function DashboardPage() {
       let description = "Não foi possível salvar o alerta.";
        if (error.code === 'permission-denied') {
         description = "Permissão negada ao salvar o alerta. Verifique as regras de segurança do Firestore.";
+      } else if (error.code === 'failed-precondition') {
+         description = "Falha ao salvar o alerta: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário. Certifique-se de que o índice foi criado corretamente e está ativo.";
       }
-      toast({ title: "Erro", description, variant: "destructive" });
+      toast({ title: "Erro ao adicionar alerta", description, variant: "destructive" });
     }
   };
 
