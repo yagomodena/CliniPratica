@@ -3,11 +3,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { BarChart2, Users, CalendarClock, TrendingUp, UsersRound, ClipboardList, Share2, Ban, LineChart as LineChartIcon } from "lucide-react";
+import { CalendarClock, TrendingUp, Users, UsersRound, LineChart as LineChartIcon } from "lucide-react"; // Added UsersRound
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as RechartsLineChart, ResponsiveContainer } from "recharts";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from '@/components/ui/label';
 import { auth, db } from '@/firebase';
 import type { User as FirebaseUser } from 'firebase/auth'; // Explicit type import
 import { onAuthStateChanged } from 'firebase/auth';
@@ -16,14 +14,20 @@ import {
   query,
   where,
   getDocs,
-  Timestamp, 
+  Timestamp,
+  getCountFromServer // Import getCountFromServer for efficient counting
 } from 'firebase/firestore';
-import { format, startOfMonth, subMonths, getMonth, getYear, parseISO } from 'date-fns'; 
+import { format, startOfMonth, subMonths, getMonth, getYear, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 type MonthlyData = {
   month: string;
   total: number;
+};
+
+type PatientStatusData = {
+  name: 'Ativos' | 'Inativos';
+  count: number;
 };
 
 const initialPatientReturnData = [
@@ -41,11 +45,12 @@ const chartConfigReturn = {
 const chartConfigNewPatients = {
     total: { label: "Novos Pacientes", color: "hsl(var(--chart-3))" },
 };
+const chartConfigActiveInactive = {
+    count: { label: "Pacientes", color: "hsl(var(--chart-4))" },
+};
 
-type ReportType = 'cancelados' | 'ativosInativos' | 'procedimentos' | 'origem';
 
 export default function RelatoriosPage() {
-  const [selectedReport, setSelectedReport] = useState<ReportType>('cancelados');
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [clientNow, setClientNow] = useState<Date | null>(null);
 
@@ -54,6 +59,10 @@ export default function RelatoriosPage() {
 
   const [newPatientsPerMonthData, setNewPatientsPerMonthData] = useState<MonthlyData[]>([]);
   const [isLoadingNewPatients, setIsLoadingNewPatients] = useState(true);
+
+  const [activeInactivePatientData, setActiveInactivePatientData] = useState<PatientStatusData[]>([]);
+  const [isLoadingActiveInactiveData, setIsLoadingActiveInactiveData] = useState(true);
+
 
   useEffect(() => {
     setClientNow(new Date());
@@ -69,13 +78,13 @@ export default function RelatoriosPage() {
 
     const monthsData: MonthlyData[] = [];
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    
+
     for (let i = 5; i >= 0; i--) {
       const targetMonthDate = subMonths(currentDate, i);
       const monthKey = `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`;
       monthsData.push({ month: monthKey, total: 0 });
     }
-    
+
     const sixMonthsAgo = startOfMonth(subMonths(currentDate, 5));
 
     try {
@@ -89,10 +98,10 @@ export default function RelatoriosPage() {
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        const apptDateStr = data.date as string; 
+        const apptDateStr = data.date as string;
         if (apptDateStr) {
           try {
-            const apptDate = parseISO(apptDateStr); 
+            const apptDate = parseISO(apptDateStr);
             const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
             const monthEntry = monthsData.find(m => m.month === apptMonthKey);
             if (monthEntry) {
@@ -106,7 +115,7 @@ export default function RelatoriosPage() {
       setActualMonthlyAppointmentsData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos mensais:", error);
-      setActualMonthlyAppointmentsData(monthsData); 
+      setActualMonthlyAppointmentsData(monthsData);
     } finally {
       setIsLoadingMonthlyAppointments(false);
     }
@@ -157,63 +166,58 @@ export default function RelatoriosPage() {
     }
   }, []);
 
+  const fetchActiveInactivePatientCounts = useCallback(async (user: FirebaseUser) => {
+    if (!user) return;
+    setIsLoadingActiveInactiveData(true);
+    try {
+      const patientsRef = collection(db, 'pacientes');
+      
+      const activeQuery = query(patientsRef, where('uid', '==', user.uid), where('status', '==', 'Ativo'));
+      const inactiveQuery = query(patientsRef, where('uid', '==', user.uid), where('status', '==', 'Inativo'));
+
+      const activeSnapshot = await getCountFromServer(activeQuery);
+      const inactiveSnapshot = await getCountFromServer(inactiveQuery);
+
+      const activeCount = activeSnapshot.data().count;
+      const inactiveCount = inactiveSnapshot.data().count;
+
+      setActiveInactivePatientData([
+        { name: 'Ativos', count: activeCount },
+        { name: 'Inativos', count: inactiveCount },
+      ]);
+
+    } catch (error: any) {
+      console.error("Erro ao buscar contagem de pacientes ativos/inativos:", error);
+      setActiveInactivePatientData([{ name: 'Ativos', count: 0 }, { name: 'Inativos', count: 0 }]);
+    } finally {
+      setIsLoadingActiveInactiveData(false);
+    }
+  }, []);
+
+
   useEffect(() => {
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
         const targetMonthDate = subMonths(clientNow || new Date(), 5 - i);
         return { month: `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
     });
+    const defaultPatientStatus = [{ name: 'Ativos' as const, count: 0 }, { name: 'Inativos' as const, count: 0 }];
+
 
     if (currentUser && clientNow) {
       fetchMonthlyAppointmentsCounts(currentUser, clientNow);
       fetchNewPatientsPerMonth(currentUser, clientNow);
-    } else if (clientNow) { 
+      fetchActiveInactivePatientCounts(currentUser);
+    } else if (clientNow) {
         setIsLoadingMonthlyAppointments(false);
         setIsLoadingNewPatients(false);
+        setIsLoadingActiveInactiveData(false);
         setActualMonthlyAppointmentsData(defaultMonths);
         setNewPatientsPerMonthData(defaultMonths);
+        setActiveInactivePatientData(defaultPatientStatus);
     }
-  }, [currentUser, clientNow, fetchMonthlyAppointmentsCounts, fetchNewPatientsPerMonth]);
+  }, [currentUser, clientNow, fetchMonthlyAppointmentsCounts, fetchNewPatientsPerMonth, fetchActiveInactivePatientCounts]);
 
-
-  const renderSelectedReportContent = () => {
-    switch (selectedReport) {
-      case 'cancelados':
-        return (
-          <div className="text-center py-16 text-muted-foreground">
-            <Ban className="mx-auto h-12 w-12 mb-4 opacity-50" />
-            <p>Relatório de Agendamentos Cancelados por Mês (em breve).</p>
-            <p className="text-sm">Visualize a quantidade de cancelamentos ao longo do tempo.</p>
-          </div>
-        );
-      case 'ativosInativos':
-        return (
-          <div className="text-center py-16 text-muted-foreground">
-            <UsersRound className="mx-auto h-12 w-12 mb-4 opacity-50" />
-            <p>Relatório de Pacientes Ativos vs. Inativos (em breve).</p>
-            <p className="text-sm">Acompanhe a proporção de pacientes ativos e inativos.</p>
-          </div>
-        );
-      case 'procedimentos':
-        return (
-          <div className="text-center py-16 text-muted-foreground">
-            <ClipboardList className="mx-auto h-12 w-12 mb-4 opacity-50" />
-            <p>Relatório de Procedimentos Mais Realizados (em breve).</p>
-            <p className="text-sm">Identifique os procedimentos mais comuns em seu consultório.</p>
-          </div>
-        );
-      case 'origem':
-        return (
-          <div className="text-center py-16 text-muted-foreground">
-            <Share2 className="mx-auto h-12 w-12 mb-4 opacity-50" />
-            <p>Relatório de Origem dos Pacientes (em breve).</p>
-            <p className="text-sm">Entenda como os pacientes chegam até você (indicação, redes sociais, etc.).</p>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -290,30 +294,28 @@ export default function RelatoriosPage() {
 
         <Card className="shadow-md md:col-span-1">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><BarChart2 className="h-5 w-5"/> Relatórios Adicionais</CardTitle>
-            <CardDescription>Selecione um relatório para visualizar mais detalhes.</CardDescription>
-             <div className="pt-4 space-y-2">
-                 <Label htmlFor="report-select">Selecionar Relatório</Label>
-                <Select value={selectedReport} onValueChange={(value) => setSelectedReport(value as ReportType)}>
-                  <SelectTrigger id="report-select" className="w-full">
-                    <SelectValue placeholder="Selecione um relatório" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cancelados">Agendamentos Cancelados por Mês</SelectItem>
-                    <SelectItem value="ativosInativos">Pacientes Ativos vs. Inativos</SelectItem>
-                    <SelectItem value="procedimentos">Procedimentos Mais Realizados</SelectItem>
-                    <SelectItem value="origem">Origem dos Pacientes</SelectItem>
-                  </SelectContent>
-                </Select>
-             </div>
+            <CardTitle className="flex items-center gap-2"><UsersRound className="h-5 w-5"/> Pacientes Ativos vs. Inativos</CardTitle>
+            <CardDescription>Comparativo entre pacientes ativos e inativos.</CardDescription>
           </CardHeader>
           <CardContent className="min-h-[200px] flex items-center justify-center">
-             {renderSelectedReportContent()}
+             <ChartContainer config={chartConfigActiveInactive} className="w-full aspect-video">
+              {isLoadingActiveInactiveData ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+              ) : (
+                 <ResponsiveContainer width="100%" height="100%">
+                   <RechartsBarChart data={activeInactivePatientData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3"/>
+                    <XAxis type="number" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                    <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />}/>
+                    <Bar dataKey="count" fill="var(--color-count)" radius={4} />
+                   </RechartsBarChart>
+                 </ResponsiveContainer>
+              )}
+            </ChartContainer>
           </CardContent>
         </Card>
       </div>
     </div>
   );
 }
-
-    
