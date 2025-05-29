@@ -143,9 +143,10 @@ export default function DashboardPage() {
 
   const fetchAlerts = async (currentUsuario: FirebaseUser) => {
     if (!currentUsuario) return;
-    console.log("Fetching alerts for UID:", currentUsuario.uid); // Diagnostic log
+    console.log("Buscando alertas para o UID:", currentUsuario.uid); // Diagnostic log
     try {
       const alertsRef = collection(db, 'alertas');
+      // Consulta: filtrar por UID do usuário e ordenar por data de criação (mais recentes primeiro)
       const q = query(alertsRef, where('uid', '==', currentUsuario.uid), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       const fetchedAlerts: Alert[] = [];
@@ -153,21 +154,24 @@ export default function DashboardPage() {
         const data = docSnap.data();
         let createdAtDate: Date;
 
+        // Validação e conversão robusta do timestamp
         if (data.createdAt && typeof (data.createdAt as Timestamp).toDate === 'function') {
           createdAtDate = (data.createdAt as Timestamp).toDate();
         } else if (data.createdAt && (typeof data.createdAt === 'string' || typeof data.createdAt === 'number')) {
+          // Tentativa de parse para datas que podem ter sido salvas como string/number
           try {
             createdAtDate = new Date(data.createdAt);
-            if (isNaN(createdAtDate.getTime())) { 
-              console.warn(`Invalid createdAt date format for alert ${docSnap.id}:`, data.createdAt);
-              createdAtDate = new Date(); 
+            if (isNaN(createdAtDate.getTime())) { // Verifica se a data é válida
+              console.warn(`Formato inválido de createdAt para alerta ${docSnap.id}:`, data.createdAt, "- Usando data atual como fallback.");
+              createdAtDate = new Date(); // Fallback para data atual se inválido
             }
           } catch (parseError) {
-            console.warn(`Error parsing createdAt for alert ${docSnap.id}:`, data.createdAt, parseError);
-            createdAtDate = new Date(); 
+            console.warn(`Erro ao parsear createdAt para alerta ${docSnap.id}:`, data.createdAt, parseError, "- Usando data atual como fallback.");
+            createdAtDate = new Date(); // Fallback em caso de erro no parse
           }
         } else {
-          console.warn(`Missing or unhandled createdAt type for alert ${docSnap.id}, defaulting to now.`);
+          // Fallback se createdAt estiver ausente ou em formato não esperado
+          console.warn(`Tipo de createdAt ausente ou não tratado para alerta ${docSnap.id}, usando data atual como fallback.`);
           createdAtDate = new Date(); 
         }
 
@@ -183,12 +187,14 @@ export default function DashboardPage() {
       });
       setAlerts(fetchedAlerts);
     } catch (error: any) {
-      console.error("Erro ao buscar alertas:", error);
+      console.error("Erro detalhado ao buscar alertas:", error, "Código:", error.code, "Mensagem:", error.message);
       let description = "Não foi possível carregar os alertas. Tente recarregar a página.";
       if (error.code === 'permission-denied') {
         description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-        description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' e 'createdAt' na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ativo.";
+        description = `Falha ao buscar alertas: A consulta requer um índice no Firestore que pode estar ausente, configurado incorretamente ou ainda não ativo. 
+        Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (na coleção 'alertas' para 'uid' ASC e 'createdAt' DESC). 
+        Certifique-se de que o índice foi criado usando o link fornecido e está com o status "Ativado".`;
       }
       toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
     }
@@ -294,7 +300,7 @@ export default function DashboardPage() {
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-        createdAt: serverTimestamp(),
+        createdAt: serverTimestamp(), // Firestore server-side timestamp
       };
       await addDoc(collection(db, 'alertas'), newAlertData);
 
@@ -305,14 +311,14 @@ export default function DashboardPage() {
         description: `Alerta adicionado para ${selectedPatient.name}.`,
         variant: "success",
       });
-      await fetchAlerts(usuario);
+      await fetchAlerts(usuario); // Refresh alerts list
     } catch (error: any) {
       console.error("Erro ao adicionar alerta:", error);
       let description = "Não foi possível salvar o alerta.";
        if (error.code === 'permission-denied') {
         description = "Permissão negada ao salvar o alerta. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-         description = "Falha ao salvar o alerta: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário. Certifique-se de que o índice foi criado corretamente e está ativo.";
+         description = "Falha ao salvar o alerta: A operação pode requerer um índice no Firestore que ainda não está ativo. Verifique o console do Firebase.";
       }
       toast({ title: "Erro ao adicionar alerta", description, variant: "destructive" });
     }
@@ -351,6 +357,7 @@ export default function DashboardPage() {
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
+        // createdAt não é atualizado aqui para manter a data original do alerta
       });
 
       setEditingAlert(null);
@@ -361,7 +368,7 @@ export default function DashboardPage() {
         description: "Alerta atualizado com sucesso.",
         variant: "success",
       });
-      await fetchAlerts(usuario);
+      await fetchAlerts(usuario); // Refresh alerts list
     } catch (error: any) {
       console.error("Erro ao editar alerta:", error);
       let description = "Não foi possível atualizar o alerta.";
@@ -382,7 +389,7 @@ export default function DashboardPage() {
         description: "O alerta foi removido.",
         variant: "success"
       });
-      await fetchAlerts(usuario);
+      await fetchAlerts(usuario); // Refresh alerts list
     } catch (error: any) {
       console.error("Erro ao resolver alerta:", error);
       let description = "Não foi possível remover o alerta.";
@@ -395,6 +402,7 @@ export default function DashboardPage() {
 
 
   const handleSelectPlan = (planName: PlanName) => {
+    // Placeholder for plan change logic
     console.log("Updating plan to:", planName);
     setCurrentUserPlan(planName);
   };
@@ -779,3 +787,5 @@ export default function DashboardPage() {
   );
 }
 
+
+    
