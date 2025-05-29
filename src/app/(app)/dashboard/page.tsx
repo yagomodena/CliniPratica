@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react'; // Added useEffect
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil, X as XIcon, Gift } from "lucide-react"; // Added XIcon, Gift
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, Trash2, CheckCircle, Pencil, X as XIcon, Gift } from "lucide-react";
 import {
   ChartContainer,
   ChartTooltip,
@@ -30,24 +30,28 @@ import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
 import { parseISO, getMonth, getDate } from 'date-fns';
 import { auth, db } from '@/firebase';
-import { User as FirebaseUser, onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, setDoc, getDoc, doc } from "firebase/firestore";
+import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import { collection, getDoc, doc, query, where, getDocs } from "firebase/firestore";
 
-// --- Placeholder Data (Shared between Agenda and Pacientes) ---
-// Reusing patient data for alert selection
-const initialPatients = [
-  { id: 'p001', name: 'Ana Silva', email: 'ana.silva@email.com', phone: '(11) 98765-4321', dob: '1985-03-15', address: 'Rua Exemplo, 123, São Paulo - SP', status: 'Ativo' },
-  { id: 'p002', name: 'Carlos Souza', email: 'carlos@email.com', phone: '(21) 91234-5678', dob: '1990-11-20', address: 'Av. Teste, 456, Rio de Janeiro - RJ', status: 'Ativo' },
-  { id: 'p003', name: 'Beatriz Lima', email: 'bia@email.com', phone: '(31) 99999-8888', dob: new Date().toISOString().slice(0, 10), address: 'Praça Modelo, 789, Belo Horizonte - MG', status: 'Ativo' }, // Beatriz's birthday is today for testing
-  { id: 'p004', name: 'Daniel Costa', email: 'daniel.costa@email.com', phone: '(41) 97777-6666', dob: '2000-09-10', address: 'Alameda Certa, 101, Curitiba - PR', status: 'Inativo' },
-  { id: 'p005', name: 'Fernanda Oliveira', email: 'fe.oliveira@email.com', phone: '(51) 96543-2109', dob: '1995-12-25', address: 'Travessa Central, 111, Porto Alegre - RS', status: 'Ativo' },
-];
-// --- End Placeholder Data ---
+// Type for patients fetched from Firebase, used in select dropdowns for alerts
+type PatientForSelect = {
+  id: string; // Firestore document ID
+  name: string;
+};
+
+// Patient data structure for birthday checks (can be simplified or expanded as needed)
+type PatientForBirthday = {
+  id: string;
+  name: string;
+  dob?: string; // Date of birth as YYYY-MM-DD
+  slug: string; // Slug for linking
+};
+
 
 // Alert data structure
 type Alert = {
   id: string;
-  patientId: string;
+  patientId: string; // Firestore document ID of the patient
   patientName: string;
   reason: string;
   createdAt: Date;
@@ -60,10 +64,10 @@ type AlertForm = {
   reason: string;
 }
 
-// Initial alert data (replace static with state)
+// Initial alert data (these might need to be cleared or migrated if patientIds don't match real ones)
 const initialAlerts: Alert[] = [
-  { id: 'a001', patientId: 'p005', patientName: "Fernanda Oliveira", reason: "Retorno agendado para revisão detalhada dos exames e acompanhamento do plano alimentar. Verificar se há necessidade de ajustes na suplementação.", createdAt: new Date(2024, 7, 1), status: 'active' },
-  { id: 'a002', patientId: 'p002', patientName: "Carlos Souza", reason: "Verificar resultados de exame e discutir próximos passos do tratamento.", createdAt: new Date(2024, 7, 3), status: 'active' }, // Assuming Carlos is in initialPatients
+  { id: 'a001', patientId: 'placeholder_p005', patientName: "Fernanda Oliveira (Exemplo)", reason: "Retorno agendado para revisão detalhada dos exames e acompanhamento do plano alimentar. Verificar se há necessidade de ajustes na suplementação.", createdAt: new Date(2024, 7, 1), status: 'active' },
+  { id: 'a002', patientId: 'placeholder_p002', patientName: "Carlos Souza (Exemplo)", reason: "Verificar resultados de exame e discutir próximos passos do tratamento.", createdAt: new Date(2024, 7, 3), status: 'active' },
 ];
 
 // Placeholder data for charts and appointments
@@ -89,26 +93,25 @@ const todaysAppointments = [
   { time: "16:00", name: "Daniel Costa e Silva", slug: "daniel-costa" },
 ];
 
-// Define plan names (adjust if needed based on your plan data)
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
-
-type PatientForBirthday = typeof initialPatients[0];
 
 export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>(initialAlerts);
   const [isNewAlertDialogOpen, setIsNewAlertDialogOpen] = useState(false);
   const [isEditAlertDialogOpen, setIsEditAlertDialogOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<Alert | null>(null);
-  const [patients] = useState(initialPatients.filter(p => p.status === 'Ativo'));
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
-  const [isPlanWarningVisible, setIsPlanWarningVisible] = useState(true); // State for plan warning visibility
+  const [isPlanWarningVisible, setIsPlanWarningVisible] = useState(true);
   const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
   const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
 
+  const [firebasePatients, setFirebasePatients] = useState<PatientForSelect[]>([]);
+  const [isLoadingFirebasePatients, setIsLoadingFirebasePatients] = useState(true);
+
   const isFreePlan = currentUserPlan === 'Gratuito';
-  const monthlyBilling = isFreePlan ? null : 450.80; // Example value for paid plan
+  const monthlyBilling = isFreePlan ? null : 450.80;
 
 
   useEffect(() => {
@@ -121,33 +124,71 @@ export default function DashboardPage() {
           const data = docSnap.data();
           setCurrentUserPlan(data.plano || "Gratuito");
         }
+      } else {
+        setFirebasePatients([]); // Clear patients if user logs out
+        setIsLoadingFirebasePatients(false);
       }
     });
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (usuario) {
+      const fetchPatientsForUser = async () => {
+        setIsLoadingFirebasePatients(true);
+        try {
+          const patientsRef = collection(db, 'pacientes');
+          const q = query(patientsRef, where('uid', '==', usuario.uid), where('status', '==', 'Ativo'));
+          const querySnapshot = await getDocs(q);
+          const fetchedPatients: PatientForSelect[] = [];
+          const fetchedBirthdayPatients: PatientForBirthday[] = [];
+          const todayDate = new Date();
+          const currentMonth = getMonth(todayDate);
+          const currentDay = getDate(todayDate);
+
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            fetchedPatients.push({
+              id: docSnap.id,
+              name: data.name as string,
+            });
+            // Also populate birthday patients from this fetched data
+            if (data.dob) {
+              try {
+                const dobDate = parseISO(data.dob);
+                if (getMonth(dobDate) === currentMonth && getDate(dobDate) === currentDay) {
+                  fetchedBirthdayPatients.push({
+                    id: docSnap.id,
+                    name: data.name as string,
+                    dob: data.dob as string,
+                    slug: data.slug as string,
+                  });
+                }
+              } catch (e) {
+                console.error("Error parsing DOB for birthday check:", data.dob, e);
+              }
+            }
+          });
+          setFirebasePatients(fetchedPatients);
+          setBirthdayPatients(fetchedBirthdayPatients);
+        } catch (error) {
+          console.error("Erro ao buscar pacientes:", error);
+          toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes.", variant: "destructive" });
+          setFirebasePatients([]);
+          setBirthdayPatients([]);
+        } finally {
+          setIsLoadingFirebasePatients(false);
+        }
+      };
+      fetchPatientsForUser();
+    }
+  }, [usuario, toast]);
+
+
   const [alertForm, setAlertForm] = useState<AlertForm>({
     patientId: '',
     reason: '',
   });
-
-  useEffect(() => {
-    const todayDate = new Date();
-    const currentMonth = getMonth(todayDate); // 0-indexed
-    const currentDay = getDate(todayDate);
-
-    const todaysBirthdays = initialPatients.filter(patient => {
-      if (!patient.dob) return false;
-      try {
-        const dobDate = parseISO(patient.dob); // 'yyyy-MM-dd'
-        return getMonth(dobDate) === currentMonth && getDate(dobDate) === currentDay;
-      } catch (e) {
-        console.error("Error parsing DOB for birthday check:", patient.dob, e);
-        return false;
-      }
-    });
-    setBirthdayPatients(todaysBirthdays);
-  }, []); // Run once on mount
 
   const handleAlertFormInputChange = (field: keyof AlertForm, value: string) => {
     setAlertForm(prev => ({ ...prev, [field]: value }));
@@ -168,31 +209,30 @@ export default function DashboardPage() {
       return;
     }
 
-    const selectedPatient = patients.find(p => p.id === alertForm.patientId);
+    const selectedPatient = firebasePatients.find(p => p.id === alertForm.patientId);
     if (!selectedPatient) {
       toast({ title: "Erro", description: "Paciente selecionado inválido.", variant: "destructive" });
       return;
     }
 
     const newAlertEntry: Alert = {
-      id: `a${Date.now()}`, // Simple unique ID
+      id: `a${Date.now()}`,
       patientId: selectedPatient.id,
-      patientName: selectedPatient.name,
+      patientName: selectedPatient.name, // Use name from fetched Firebase patients
       reason: alertForm.reason.trim(),
       createdAt: new Date(),
       status: 'active',
     };
 
-    setAlerts(prev => [newAlertEntry, ...prev]); // Add new alert to the beginning
+    setAlerts(prev => [newAlertEntry, ...prev]);
 
-    setAlertForm({ patientId: '', reason: '' }); // Reset form
+    setAlertForm({ patientId: '', reason: '' });
     setIsNewAlertDialogOpen(false);
     toast({
       title: "Sucesso!",
       description: `Alerta adicionado para ${selectedPatient.name}.`,
       variant: "success",
     });
-    console.log("New alert added:", newAlertEntry);
   };
 
   const handleOpenEditAlert = (alertToEdit: Alert) => {
@@ -215,7 +255,7 @@ export default function DashboardPage() {
       return;
     }
 
-    const selectedPatient = patients.find(p => p.id === alertForm.patientId);
+    const selectedPatient = firebasePatients.find(p => p.id === alertForm.patientId);
     if (!selectedPatient) {
       toast({ title: "Erro", description: "Paciente selecionado inválido.", variant: "destructive" });
       return;
@@ -235,7 +275,6 @@ export default function DashboardPage() {
       description: "Alerta atualizado com sucesso.",
       variant: "success",
     });
-    console.log("Alert updated:", editingAlert.id);
   };
 
 
@@ -263,7 +302,6 @@ export default function DashboardPage() {
         <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
       </div>
 
-      {/* Plan Warning Card */}
       {isFreePlan && isPlanWarningVisible && (
         <Card className="bg-accent/20 border-accent shadow-md relative">
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
@@ -296,7 +334,6 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Atendimentos da Semana Card */}
       <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -321,7 +358,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Pacientes do Dia Card */}
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pacientes Agendados Hoje</CardTitle>
@@ -346,7 +382,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Alertas Importantes Card */}
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <div className="flex items-center gap-2">
@@ -358,7 +393,7 @@ export default function DashboardPage() {
                 <Button variant="ghost" size="icon" className="h-6 w-6" title="Novo Alerta"
                   onClick={(e) => {
                     if (isFreePlan) {
-                      e.preventDefault(); // impede a abertura do Dialog
+                      e.preventDefault();
                       toast({
                         title: "Plano necessário",
                         description: "Essa funcionalidade está disponível apenas para planos Essencial, Profissional ou Clínica.",
@@ -392,12 +427,17 @@ export default function DashboardPage() {
                           <SelectValue placeholder="Selecione o paciente" />
                         </SelectTrigger>
                         <SelectContent>
-                          {patients.map((patient) => (
-                            <SelectItem key={patient.id} value={patient.id}>
-                              {patient.name}
-                            </SelectItem>
-                          ))}
-                          {patients.length === 0 && <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>}
+                          {isLoadingFirebasePatients ? (
+                            <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
+                          ) : firebasePatients.length === 0 ? (
+                            <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
+                          ) : (
+                            firebasePatients.map((patient) => (
+                              <SelectItem key={patient.id} value={patient.id}>
+                                {patient.name}
+                              </SelectItem>
+                            ))
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -435,11 +475,11 @@ export default function DashboardPage() {
             ) : activeAlerts.length > 0 ? (
               activeAlerts.map((alert) => (
                 <div key={alert.id} className="flex items-start justify-between text-sm space-x-2 bg-muted/30 p-2 rounded-md">
-                  <div className="flex items-start space-x-2 flex-1 min-w-0"> {/* Added min-w-0 here */}
+                  <div className="flex items-start space-x-2 flex-1 min-w-0">
                     <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0"> {/* Added min-w-0 here */}
+                    <div className="flex-1 min-w-0">
                       <span className="font-medium">{alert.patientName}: </span>
-                      <span className="text-muted-foreground break-words">{alert.reason}</span> {/* Added break-words */}
+                      <span className="text-muted-foreground break-words">{alert.reason}</span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-1 flex-shrink-0">
@@ -459,7 +499,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Aniversariantes do Dia Card */}
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-1">
@@ -473,11 +512,13 @@ export default function DashboardPage() {
                 <p>Este recurso está disponível apenas para os planos:</p>
                 <strong className="text-primary">Essencial, Profissional ou Clínica</strong>
               </div>
+            ) : isLoadingFirebasePatients ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Carregando aniversariantes...</p>
             ) : birthdayPatients.length > 0 ? (
               birthdayPatients.map((patient) => (
                 <div key={patient.id} className="flex items-center justify-between text-sm gap-2">
                   <span className="font-medium truncate flex-1 min-w-0" title={patient.name}>{patient.name}</span>
-                  <Link href={`/pacientes/${generateSlug(patient.name)}`} passHref className="shrink-0">
+                  <Link href={`/pacientes/${patient.slug}`} passHref className="shrink-0">
                     <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
                       <ArrowRight className="h-4 w-4" />
                     </Button>
@@ -490,7 +531,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Faturamento mês Card */}
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Faturamento do Mês</CardTitle>
@@ -580,12 +620,17 @@ export default function DashboardPage() {
                     <SelectValue placeholder="Selecione o paciente" />
                   </SelectTrigger>
                   <SelectContent>
-                    {patients.map((patient) => (
-                      <SelectItem key={patient.id} value={patient.id}>
-                        {patient.name}
-                      </SelectItem>
-                    ))}
-                    {patients.length === 0 && <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>}
+                    {isLoadingFirebasePatients ? (
+                        <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
+                    ) : firebasePatients.length === 0 ? (
+                        <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
+                    ) : (
+                        firebasePatients.map((patient) => (
+                        <SelectItem key={patient.id} value={patient.id}>
+                            {patient.name}
+                        </SelectItem>
+                        ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -624,4 +669,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
