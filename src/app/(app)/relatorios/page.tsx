@@ -1,26 +1,36 @@
 
 'use client';
 
-import { useState } from 'react'; // Import useState
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { BarChart2, Users, CalendarClock, TrendingUp, UsersRound, ClipboardList, Share2, Ban, LineChart as LineChartIcon } from "lucide-react"; // Added new icons
+import { BarChart2, Users, CalendarClock, TrendingUp, UsersRound, ClipboardList, Share2, Ban, LineChart as LineChartIcon } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Line, LineChart, ResponsiveContainer } from "recharts";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select component
-import { Label } from '@/components/ui/label'; // Import Label
+import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as RechartsLineChart, ResponsiveContainer } from "recharts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from '@/components/ui/label';
+import { auth, db } from '@/firebase';
+import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  Timestamp,
+} from 'firebase/firestore';
+import { format, startOfMonth, subMonths, getMonth, getYear } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
-// Placeholder data
-const monthlyAppointmentsData = [
-  { month: "Jan", total: 65 }, { month: "Fev", total: 59 }, { month: "Mar", total: 80 },
-  { month: "Abr", total: 81 }, { month: "Mai", total: 56 }, { month: "Jun", total: 75 },
-  { month: "Jul", total: 40 },
-];
+type MonthlyAppointmentData = {
+  month: string;
+  total: number;
+};
 
-const patientReturnData = [
+// Placeholder data - will be replaced by fetched data
+const initialPatientReturnData = [
   { month: "Jan", rate: 60 }, { month: "Fev", rate: 65 }, { month: "Mar", rate: 70 },
   { month: "Abr", rate: 72 }, { month: "Mai", rate: 68 }, { month: "Jun", rate: 75 },
   { month: "Jul", rate: 78 },
-]
+];
 
 const chartConfigAppointments = {
   total: { label: "Atendimentos", color: "hsl(var(--primary))" },
@@ -29,11 +39,99 @@ const chartConfigReturn = {
     rate: { label: "Taxa Retorno (%)", color: "hsl(var(--chart-2))" },
 };
 
-// Define report types
 type ReportType = 'cancelados' | 'ativosInativos' | 'procedimentos' | 'origem';
 
 export default function RelatoriosPage() {
-  const [selectedReport, setSelectedReport] = useState<ReportType>('cancelados'); // Default to one of the new reports
+  const [selectedReport, setSelectedReport] = useState<ReportType>('cancelados');
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [clientNow, setClientNow] = useState<Date | null>(null);
+
+  const [actualMonthlyAppointmentsData, setActualMonthlyAppointmentsData] = useState<MonthlyAppointmentData[]>([]);
+  const [isLoadingMonthlyAppointments, setIsLoadingMonthlyAppointments] = useState(true);
+
+  useEffect(() => {
+    setClientNow(new Date());
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const fetchMonthlyAppointmentsCounts = useCallback(async (user: FirebaseUser, currentDate: Date) => {
+    if (!user) return;
+    setIsLoadingMonthlyAppointments(true);
+
+    const monthsData: MonthlyAppointmentData[] = [];
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    
+    // Initialize last 6 months including current
+    for (let i = 5; i >= 0; i--) {
+      const targetMonthDate = subMonths(currentDate, i);
+      const monthKey = `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`;
+      monthsData.push({ month: monthKey, total: 0 });
+    }
+    
+    const sixMonthsAgo = startOfMonth(subMonths(currentDate, 5));
+
+    try {
+      const apptsRef = collection(db, 'agendamentos');
+      const q = query(
+        apptsRef,
+        where('uid', '==', user.uid),
+        where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd'))
+        // We can't filter by date <= current date effectively without another range query, 
+        // so we'll just process up to current month from the fetched data
+      );
+      const querySnapshot = await getDocs(q);
+
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const apptDateStr = data.date as string; // 'yyyy-MM-dd'
+        if (apptDateStr) {
+          try {
+            const apptDate = new Date(apptDateStr + 'T00:00:00'); // Ensure correct parsing
+             if (apptDate >= sixMonthsAgo && apptDate <= currentDate) {
+                const monthIndex = getMonth(apptDate);
+                const yearSuffix = String(getYear(apptDate)).slice(-2);
+                const monthKey = `${monthNames[monthIndex]}/${yearSuffix}`;
+                
+                const monthEntry = monthsData.find(m => m.month === monthKey);
+                if (monthEntry) {
+                    monthEntry.total += 1;
+                }
+             }
+          } catch (e) {
+            console.error("Error parsing appointment date for monthly chart:", apptDateStr, e);
+          }
+        }
+      });
+      
+      setActualMonthlyAppointmentsData(monthsData);
+
+    } catch (error: any) {
+      console.error("Erro ao buscar agendamentos mensais:", error);
+      // Set to empty array or default placeholder on error
+      setActualMonthlyAppointmentsData(monthsData); // Show initialized months with 0 counts
+    } finally {
+      setIsLoadingMonthlyAppointments(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser && clientNow) {
+      fetchMonthlyAppointmentsCounts(currentUser, clientNow);
+    } else if (!currentUser) {
+        setIsLoadingMonthlyAppointments(false);
+        setActualMonthlyAppointmentsData(
+            Array.from({ length: 6 }).map((_, i) => {
+                const targetMonthDate = subMonths(new Date(), 5 - i);
+                 const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+                return { month: `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
+            })
+        );
+    }
+  }, [currentUser, clientNow, fetchMonthlyAppointmentsCounts]);
+
 
   const renderSelectedReportContent = () => {
     switch (selectedReport) {
@@ -79,62 +177,62 @@ export default function RelatoriosPage() {
       <h1 className="text-3xl font-bold text-foreground">Relatórios</h1>
 
       <div className="grid gap-6 md:grid-cols-2">
-         {/* Atendimentos por Período */}
         <Card className="shadow-md">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5"/> Agendamentos por Mês</CardTitle>
             <CardDescription>Visualização do número de agendamentos mensais.</CardDescription>
           </CardHeader>
           <CardContent>
-             <ChartContainer config={chartConfigAppointments} className="w-full">
+             <ChartContainer config={chartConfigAppointments} className="w-full aspect-video">
+              {isLoadingMonthlyAppointments ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+              ) : (
                  <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={monthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                   <RechartsBarChart data={actualMonthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3"/>
                     <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
+                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false}/>
                     <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />}/>
                     <Bar dataKey="total" fill="var(--color-total)" radius={4} />
-                   </BarChart>
+                   </RechartsBarChart>
                  </ResponsiveContainer>
+              )}
             </ChartContainer>
           </CardContent>
         </Card>
 
-         {/* Taxa de Retorno */}
          <Card className="shadow-md">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5"/> Taxa de Retorno de Pacientes</CardTitle>
             <CardDescription>Percentual de pacientes que retornaram para novas consultas.</CardDescription>
           </CardHeader>
           <CardContent>
-             <ChartContainer config={chartConfigReturn} className="w-full">
+             <ChartContainer config={chartConfigReturn} className="w-full aspect-video">
                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={patientReturnData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <RechartsLineChart data={initialPatientReturnData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                         <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
                         <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
                         <Line type="monotone" dataKey="rate" stroke="var(--color-rate)" strokeWidth={2} dot={true} />
-                    </LineChart>
+                    </RechartsLineChart>
                 </ResponsiveContainer>
              </ChartContainer>
           </CardContent>
         </Card>
 
-         {/* Novos Pacientes (Placeholder) */}
          <Card className="shadow-md">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5"/> Novos Pacientes por Mês</CardTitle>
                 <CardDescription>Quantidade de novos pacientes cadastrados.</CardDescription>
             </CardHeader>
-            <CardContent className="text-center py-16 text-muted-foreground">
-                <LineChartIcon className="mx-auto h-12 w-12 mb-4 opacity-50" /> {/* Changed icon */}
+            <CardContent className="text-center py-16 text-muted-foreground min-h-[200px] flex flex-col items-center justify-center">
+                <LineChartIcon className="mx-auto h-12 w-12 mb-4 opacity-50" />
                 <p>Gráfico de novos pacientes (em breve).</p>
             </CardContent>
          </Card>
 
-        {/* Dynamic Report Section */}
-        <Card className="shadow-md md:col-span-1"> {/* Adjusted span */}
+        <Card className="shadow-md md:col-span-1">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><BarChart2 className="h-5 w-5"/> Relatórios Adicionais</CardTitle>
             <CardDescription>Selecione um relatório para visualizar mais detalhes.</CardDescription>
@@ -154,15 +252,10 @@ export default function RelatoriosPage() {
              </div>
           </CardHeader>
           <CardContent className="min-h-[200px] flex items-center justify-center">
-             {/* Render the selected report's placeholder content */}
              {renderSelectedReportContent()}
           </CardContent>
         </Card>
-
-        {/* Removed the original "Outro Relatório" placeholder card */}
-
       </div>
     </div>
   );
 }
-
