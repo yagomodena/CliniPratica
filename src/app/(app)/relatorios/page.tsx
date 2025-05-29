@@ -9,15 +9,16 @@ import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, L
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from '@/components/ui/label';
 import { auth, db } from '@/firebase';
-import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import type { User as FirebaseUser } from 'firebase/auth'; // Explicit type import
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
   query,
   where,
   getDocs,
-  Timestamp,
+  // Timestamp, // No longer needed directly here
 } from 'firebase/firestore';
-import { format, startOfMonth, subMonths, getMonth, getYear } from 'date-fns';
+import { format, startOfMonth, subMonths, getMonth, getYear, parseISO } from 'date-fns'; // Added parseISO
 import { ptBR } from 'date-fns/locale';
 
 type MonthlyAppointmentData = {
@@ -79,8 +80,7 @@ export default function RelatoriosPage() {
         apptsRef,
         where('uid', '==', user.uid),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd'))
-        // We can't filter by date <= current date effectively without another range query, 
-        // so we'll just process up to current month from the fetched data
+        // No upper date bound in query; we'll process all fetched data from the last 6 months start
       );
       const querySnapshot = await getDocs(q);
 
@@ -89,17 +89,17 @@ export default function RelatoriosPage() {
         const apptDateStr = data.date as string; // 'yyyy-MM-dd'
         if (apptDateStr) {
           try {
-            const apptDate = new Date(apptDateStr + 'T00:00:00'); // Ensure correct parsing
-             if (apptDate >= sixMonthsAgo && apptDate <= currentDate) {
-                const monthIndex = getMonth(apptDate);
-                const yearSuffix = String(getYear(apptDate)).slice(-2);
-                const monthKey = `${monthNames[monthIndex]}/${yearSuffix}`;
-                
-                const monthEntry = monthsData.find(m => m.month === monthKey);
-                if (monthEntry) {
-                    monthEntry.total += 1;
-                }
-             }
+            const apptDate = parseISO(apptDateStr); // Use parseISO for robust date string parsing
+            
+            // Determine the month/year key for the appointment
+            const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
+            
+            // Find if this appointment's month is one we are tracking
+            const monthEntry = monthsData.find(m => m.month === apptMonthKey);
+
+            if (monthEntry) { // If the appointment's month is within our 6-month window
+                monthEntry.total += 1;
+            }
           } catch (e) {
             console.error("Error parsing appointment date for monthly chart:", apptDateStr, e);
           }
@@ -110,8 +110,7 @@ export default function RelatoriosPage() {
 
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos mensais:", error);
-      // Set to empty array or default placeholder on error
-      setActualMonthlyAppointmentsData(monthsData); // Show initialized months with 0 counts
+      setActualMonthlyAppointmentsData(monthsData); 
     } finally {
       setIsLoadingMonthlyAppointments(false);
     }
@@ -120,12 +119,12 @@ export default function RelatoriosPage() {
   useEffect(() => {
     if (currentUser && clientNow) {
       fetchMonthlyAppointmentsCounts(currentUser, clientNow);
-    } else if (!currentUser) {
+    } else if (!currentUser && clientNow) { // Added clientNow check for consistency
         setIsLoadingMonthlyAppointments(false);
+        const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
         setActualMonthlyAppointmentsData(
             Array.from({ length: 6 }).map((_, i) => {
-                const targetMonthDate = subMonths(new Date(), 5 - i);
-                 const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+                const targetMonthDate = subMonths(clientNow || new Date(), 5 - i);
                 return { month: `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
             })
         );
@@ -259,3 +258,5 @@ export default function RelatoriosPage() {
     </div>
   );
 }
+
+    
