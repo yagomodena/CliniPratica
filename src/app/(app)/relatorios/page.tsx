@@ -82,8 +82,8 @@ export default function RelatoriosPage() {
          {/* Atendimentos por Período */}
         <Card className="shadow-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5"/> Atendimentos por Mês</CardTitle>
-            <CardDescription>Visualização do número de atendimentos mensais.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5"/> Agendamentos por Mês</CardTitle>
+            <CardDescription>Visualização do número de agendamentos mensais.</CardDescription>
           </CardHeader>
           <CardContent>
              <ChartContainer config={chartConfigAppointments} className="w-full">
