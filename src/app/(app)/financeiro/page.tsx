@@ -45,8 +45,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -73,6 +79,7 @@ import {
   Coins,
   Wallet,
   ReceiptText,
+  MoreHorizontal, // Icon for dropdown trigger
 } from 'lucide-react';
 import {
   ChartContainer,
@@ -533,6 +540,25 @@ export default function FinanceiroPage() {
         setTransactionToDelete(null);
     }
   };
+
+  const handleQuickStatusChange = async (transactionId: string, newStatus: TransactionStatus) => {
+    if (!currentUser) {
+      toast({ title: 'Erro', description: 'Usuário não autenticado.', variant: 'destructive' });
+      return;
+    }
+    try {
+      const transactionRef = doc(db, 'financialTransactions', transactionId);
+      await updateDoc(transactionRef, {
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: 'Status Atualizado!', description: `Status do lançamento alterado para ${newStatus}.`, variant: 'success'});
+      await fetchFinancialTransactions(currentUser);
+    } catch (error) {
+      console.error("Erro ao atualizar status do lançamento:", error);
+      toast({ title: "Erro ao Atualizar Status", description: "Não foi possível atualizar o status do lançamento.", variant: "destructive"});
+    }
+  };
   
   const handleExportExcel = () => {
     console.log("Exportando dados para Excel (simulado):", filteredTransactions);
@@ -627,12 +653,13 @@ export default function FinanceiroPage() {
                         {transactionForm.date ? format(parseISO(transactionForm.date), "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
+                    <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                         mode="single"
                         selected={transactionForm.date ? parseISO(transactionForm.date) : undefined}
                         onSelect={(date) => handleDateChange(date, 'date')}
                         locale={ptBR}
+                        
                         />
                     </PopoverContent>
                 </Popover>
@@ -724,7 +751,7 @@ export default function FinanceiroPage() {
                             {customDateRange?.from ? format(customDateRange.from, 'PPP', { locale: ptBR }) : <span>Data inicial</span>}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
+                    <PopoverContent className="w-auto p-0" align="start">
                         <Calendar mode="single" selected={customDateRange?.from} onSelect={(date) => setCustomDateRange(prev => ({...prev, from: date }))} locale={ptBR} />
                     </PopoverContent>
                 </Popover>
@@ -738,7 +765,7 @@ export default function FinanceiroPage() {
                             {customDateRange?.to ? format(customDateRange.to, 'PPP', { locale: ptBR }) : <span>Data final</span>}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
+                    <PopoverContent className="w-auto p-0" align="start">
                         <Calendar mode="single" selected={customDateRange?.to} onSelect={(date) => setCustomDateRange(prev => ({...prev, to: date }))} disabled={{ before: customDateRange?.from }} locale={ptBR} />
                     </PopoverContent>
                 </Popover>
@@ -928,18 +955,55 @@ export default function FinanceiroPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleEditTransaction(t)} title="Editar Lançamento">
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => openDeleteTransactionDialog(t)} 
-                        title="Excluir Lançamento" 
-                        className="text-destructive hover:text-destructive/80"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                       <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="sr-only">Mais ações</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleEditTransaction(t)}>
+                            <Edit2 className="mr-2 h-4 w-4" />
+                            Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openDeleteTransactionDialog(t)} className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive-foreground">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Excluir
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {t.status === 'Pendente' && (
+                            <>
+                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Recebido')}>
+                                <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
+                                Marcar como Recebido
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
+                                <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                                Marcar como Cancelado
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {t.status === 'Recebido' && (
+                            <>
+                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
+                                <Clock className="mr-2 h-4 w-4 text-orange-500" />
+                                Marcar como Pendente
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
+                                <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                                Marcar como Cancelado
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {t.status === 'Cancelado' && (
+                            <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
+                              <Clock className="mr-2 h-4 w-4 text-orange-500" />
+                              Marcar como Pendente
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
@@ -976,3 +1040,4 @@ export default function FinanceiroPage() {
     </div>
   );
 }
+
