@@ -36,6 +36,17 @@ import {
   DialogTrigger,
   DialogClose,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -108,14 +119,14 @@ import {
   type PaymentMethod,
   type TransactionStatus,
   type TransactionType,
-  transactionTypes, // Ensure transactionTypes is exported and imported if used for select
+  transactionTypes,
 } from '@/lib/financeiro-data';
 
 
 export interface FinancialTransaction {
-  id: string; // Firestore document ID
-  ownerId: string; // UID of the user or clinic identifier
-  date: Date; // JavaScript Date object (converted from Firestore Timestamp)
+  id: string; 
+  ownerId: string; 
+  date: Date; 
   description: string;
   patientId?: string;
   patientName?: string;
@@ -125,14 +136,14 @@ export interface FinancialTransaction {
   status: TransactionStatus;
   notes?: string;
   type: TransactionType;
-  createdAt?: Date; // Converted from Firestore Timestamp
-  updatedAt?: Date; // Converted from Firestore Timestamp
+  createdAt?: Date; 
+  updatedAt?: Date; 
 }
 
 type PatientForSelect = {
-  id: string; // Firestore document ID
+  id: string; 
   name: string;
-  slug: string; // Potentially useful for linking later
+  slug: string; 
 };
 
 
@@ -184,13 +195,16 @@ export default function FinanceiroPage() {
     status: 'Recebido',
     type: 'manual',
     date: format(new Date(), 'yyyy-MM-dd'),
-    patientId: '', // Initialize patientId
+    patientId: '', 
   });
 
   const [clientNow, setClientNow] = useState<Date | null>(null);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [firebasePatients, setFirebasePatients] = useState<PatientForSelect[]>([]);
   const [isLoadingFirebasePatients, setIsLoadingFirebasePatients] = useState(true);
+
+  const [isDeleteTransactionConfirmOpen, setIsDeleteTransactionConfirmOpen] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState<FinancialTransaction | null>(null);
 
 
   useEffect(() => {
@@ -207,7 +221,6 @@ export default function FinanceiroPage() {
   }, []);
 
   useEffect(() => {
-    // Set clientNow once on mount to avoid hydration mismatches with date-fns
     setClientNow(new Date());
   }, []);
 
@@ -216,7 +229,6 @@ export default function FinanceiroPage() {
     setIsLoadingTransactions(true);
     try {
       const transactionsRef = collection(db, 'financialTransactions');
-      // For now, all users query their own transactions. Clínica sharing logic would change this.
       const q = query(transactionsRef, where('ownerId', '==', user.uid), orderBy('date', 'desc'));
       const querySnapshot = await getDocs(q);
       const fetchedTransactions: FinancialTransaction[] = [];
@@ -319,7 +331,7 @@ export default function FinanceiroPage() {
           start = startOfDay(range.from);
           end = endOfDay(range.from);
         } else {
-          start = startOfMonth(now); // Default for custom if no range
+          start = startOfMonth(now); 
           end = endOfMonth(now);
         }
         break;
@@ -365,13 +377,11 @@ export default function FinanceiroPage() {
       const dayKey = format(t.date, 'dd/MM');
       dataMap.set(dayKey, (dataMap.get(dayKey) || 0) + t.amount);
     });
-    // Sort by date before returning
     return Array.from(dataMap.entries())
       .map(([name, value]) => ({ name, faturamento: value }))
       .sort((a,b) => {
         const [dayA, monthA] = a.name.split('/').map(Number);
         const [dayB, monthB] = b.name.split('/').map(Number);
-        // Assuming current year for sorting, this might need adjustment for cross-year periods
         const dateA = new Date(clientNow?.getFullYear() || new Date().getFullYear(), monthA - 1, dayA);
         const dateB = new Date(clientNow?.getFullYear() || new Date().getFullYear(), monthB - 1, dayB);
         return dateA.getTime() - dateB.getTime();
@@ -457,11 +467,11 @@ export default function FinanceiroPage() {
     const selectedPatient = firebasePatients.find(p => p.id === transactionForm.patientId);
 
     const transactionDataToSave = {
-      ownerId: currentUser.uid, // Or clinic shared ID logic
+      ownerId: currentUser.uid,
       date: Timestamp.fromDate(transactionDate),
       description: transactionForm.description!,
       patientId: transactionForm.patientId || null,
-      patientName: selectedPatient?.name || (transactionForm.type === 'manual' ? null : transactionForm.patientName), // Use selected patient name
+      patientName: selectedPatient?.name || (transactionForm.type === 'manual' ? null : transactionForm.patientName),
       amount: transactionForm.amount!,
       paymentMethod: transactionForm.paymentMethod as PaymentMethod,
       status: transactionForm.status as TransactionStatus,
@@ -486,7 +496,7 @@ export default function FinanceiroPage() {
       setIsAddTransactionDialogOpen(false);
       setEditingTransaction(null);
       setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
-      await fetchFinancialTransactions(currentUser); // Re-fetch
+      await fetchFinancialTransactions(currentUser); 
     } catch (error) {
         console.error("Erro ao salvar lançamento:", error);
         toast({ title: "Erro ao Salvar", description: "Não foi possível salvar o lançamento.", variant: "destructive"});
@@ -497,22 +507,30 @@ export default function FinanceiroPage() {
     setEditingTransaction(transaction);
     setTransactionForm({
       ...transaction,
-      date: format(transaction.date, 'yyyy-MM-dd'), // Convert Date to string for form
+      date: format(transaction.date, 'yyyy-MM-dd'), 
       amount: transaction.amount, 
-      patientId: transaction.patientId || '', // Ensure patientId is handled
+      patientId: transaction.patientId || '', 
     });
     setIsAddTransactionDialogOpen(true);
   };
+  
+  const openDeleteTransactionDialog = (transaction: FinancialTransaction) => {
+    setTransactionToDelete(transaction);
+    setIsDeleteTransactionConfirmOpen(true);
+  };
 
-  const handleDeleteTransaction = async (transactionId: string) => {
-    if (!currentUser) return;
+  const confirmDeleteTransaction = async () => {
+    if (!currentUser || !transactionToDelete) return;
     try {
-        await deleteDoc(doc(db, 'financialTransactions', transactionId));
-        toast({ title: 'Lançamento Excluído', description: 'O lançamento foi removido.', variant: 'destructive' });
-        await fetchFinancialTransactions(currentUser); // Re-fetch
+        await deleteDoc(doc(db, 'financialTransactions', transactionToDelete.id));
+        toast({ title: 'Lançamento Excluído', description: `O lançamento "${transactionToDelete.description}" foi removido.`, variant: 'destructive' });
+        await fetchFinancialTransactions(currentUser); 
     } catch (error) {
         console.error("Erro ao excluir lançamento:", error);
         toast({ title: "Erro ao Excluir", description: "Não foi possível remover o lançamento.", variant: "destructive"});
+    } finally {
+        setIsDeleteTransactionConfirmOpen(false);
+        setTransactionToDelete(null);
     }
   };
   
@@ -598,7 +616,7 @@ export default function FinanceiroPage() {
                 <Input id="amount" name="amount" type="number" value={transactionForm.amount} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required min="0.01" step="0.01" />
               </div>
                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                <Label htmlFor="date" className="sm:text-right">Data*</Label>
+                <Label htmlFor="date" className="sm:text-right col-span-1">Data*</Label>
                 <Popover>
                     <PopoverTrigger asChild>
                         <Button
@@ -913,7 +931,13 @@ export default function FinanceiroPage() {
                       <Button variant="ghost" size="icon" onClick={() => handleEditTransaction(t)} title="Editar Lançamento">
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteTransaction(t.id)} title="Excluir Lançamento" className="text-destructive hover:text-destructive/80">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => openDeleteTransactionDialog(t)} 
+                        title="Excluir Lançamento" 
+                        className="text-destructive hover:text-destructive/80"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -930,8 +954,25 @@ export default function FinanceiroPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Delete Transaction Confirmation Dialog */}
+      <AlertDialog open={isDeleteTransactionConfirmOpen} onOpenChange={setIsDeleteTransactionConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão de Lançamento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o lançamento "<strong>{transactionToDelete?.description}</strong>" no valor de R$ {transactionToDelete?.amount.toFixed(2)}? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setTransactionToDelete(null); setIsDeleteTransactionConfirmOpen(false); }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteTransaction} className="bg-destructive hover:bg-destructive/90">
+              Excluir Lançamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
-
-    
