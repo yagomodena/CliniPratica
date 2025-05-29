@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift } from "lucide-react";
@@ -10,7 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { Bar, CartesianGrid, XAxis, YAxis, BarChart as RechartsBarChart } from "recharts";
+import { Bar, CartesianGrid, XAxis, YAxis, BarChart as RechartsBarChart, Line, LineChart as RechartsLineChart, ResponsiveContainer } from "recharts";
 import Link from "next/link";
 import {
   Dialog,
@@ -28,7 +28,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
-import { parseISO, getMonth, getDate, format, startOfDay } from 'date-fns';
+import { parseISO, getMonth, getDate, format, startOfDay, startOfMonth, endOfMonth, subMonths, getDay, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import {
@@ -86,13 +87,11 @@ type AppointmentForDashboard = {
   patientSlug: string;
 };
 
-const weeklyAppointmentsData = [
-  { day: "Seg", appointments: 5 },
-  { day: "Ter", appointments: 8 },
-  { day: "Qua", appointments: 6 },
-  { day: "Qui", appointments: 9 },
-  { day: "Sex", appointments: 7 },
-];
+type WeeklyAppointmentChartData = {
+  day: string;
+  appointments: number;
+};
+
 
 const chartConfig = {
   appointments: {
@@ -114,6 +113,8 @@ export default function DashboardPage() {
   const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
   const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
+  
+  const [clientNow, setClientNow] = useState<Date | null>(null);
   const [clientTodayString, setClientTodayString] = useState<string>('');
 
   const [firebasePatients, setFirebasePatients] = useState<PatientForSelect[]>([]);
@@ -121,13 +122,20 @@ export default function DashboardPage() {
   const [todaysFirebaseAppointments, setTodaysFirebaseAppointments] = useState<AppointmentForDashboard[]>([]);
   const [isLoadingTodaysAppointments, setIsLoadingTodaysAppointments] = useState(true);
 
+  const [actualWeeklyAppointmentsData, setActualWeeklyAppointmentsData] = useState<WeeklyAppointmentChartData[]>([]);
+  const [isLoadingWeeklyAppointments, setIsLoadingWeeklyAppointments] = useState(true);
+
+  const [monthlyRevenue, setMonthlyRevenue] = useState<number | null>(null);
+  const [revenueComparisonPercentage, setRevenueComparisonPercentage] = useState<number | null>(null);
+  const [isLoadingRevenue, setIsLoadingRevenue] = useState(true);
+
 
   const isFreePlan = currentUserPlan === 'Gratuito';
-  const monthlyBilling = isFreePlan ? null : 450.80;
 
   useEffect(() => {
-    const today = new Date();
-    setClientTodayString(format(startOfDay(today), 'yyyy-MM-dd'));
+    const now = new Date();
+    setClientNow(now);
+    setClientTodayString(format(startOfDay(now), 'yyyy-MM-dd'));
   }, []);
 
 
@@ -147,14 +155,19 @@ export default function DashboardPage() {
         setIsLoadingFirebasePatients(false);
         setTodaysFirebaseAppointments([]);
         setIsLoadingTodaysAppointments(false);
+        setActualWeeklyAppointmentsData([]);
+        setIsLoadingWeeklyAppointments(false);
+        setMonthlyRevenue(null);
+        setRevenueComparisonPercentage(null);
+        setIsLoadingRevenue(false);
       }
     });
     return () => unsubscribe();
   }, []);
 
-  const fetchAlerts = async (currentUsuario: FirebaseUser) => {
+  const fetchAlerts = useCallback(async (currentUsuario: FirebaseUser) => {
     if (!currentUsuario) return;
-    console.log("Buscando alertas para o UID:", currentUsuario.uid); 
+    console.log("Buscando alertas para o UID:", currentUsuario.uid);
     try {
       const alertsRef = collection(db, 'alertas');
       const q = query(alertsRef, where('uid', '==', currentUsuario.uid), orderBy('createdAt', 'desc'));
@@ -169,17 +182,17 @@ export default function DashboardPage() {
         } else if (data.createdAt && (typeof data.createdAt === 'string' || typeof data.createdAt === 'number')) {
           try {
             createdAtDate = new Date(data.createdAt);
-            if (isNaN(createdAtDate.getTime())) { 
+            if (isNaN(createdAtDate.getTime())) {
               console.warn(`Formato inválido de createdAt para alerta ${docSnap.id}:`, data.createdAt, "- Usando data atual como fallback.");
-              createdAtDate = new Date(); 
+              createdAtDate = new Date();
             }
           } catch (parseError) {
             console.warn(`Erro ao parsear createdAt para alerta ${docSnap.id}:`, data.createdAt, parseError, "- Usando data atual como fallback.");
-            createdAtDate = new Date(); 
+            createdAtDate = new Date();
           }
         } else {
           console.warn(`Tipo de createdAt ausente ou não tratado para alerta ${docSnap.id}, usando data atual como fallback.`);
-          createdAtDate = new Date(); 
+          createdAtDate = new Date();
         }
 
         fetchedAlerts.push({
@@ -199,13 +212,13 @@ export default function DashboardPage() {
       if (error.code === 'permission-denied') {
         description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-        description = `Falha ao buscar alertas: A consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' ASC e 'createdAt' DESC na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está com o status "Ativado".`;
+         description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' e 'createdAt' na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ATIVADO.";
       }
       toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
     }
-  };
-  
-  const fetchTodaysAppointments = async (currentUsuario: FirebaseUser, dateString: string) => {
+  }, [toast]);
+
+  const fetchTodaysAppointments = useCallback(async (currentUsuario: FirebaseUser, dateString: string) => {
     if (!currentUsuario || !dateString) return;
     setIsLoadingTodaysAppointments(true);
     try {
@@ -239,13 +252,113 @@ export default function DashboardPage() {
     } finally {
       setIsLoadingTodaysAppointments(false);
     }
-  };
+  }, [toast]);
+
+  const fetchWeeklyAppointments = useCallback(async (currentUsuario: FirebaseUser, now: Date) => {
+    if (!currentUsuario || !now) return;
+    setIsLoadingWeeklyAppointments(true);
+    const weekDaysPt = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const daysOfWeekData: WeeklyAppointmentChartData[] = weekDaysPt.slice(1).concat(weekDaysPt[0]).map(day => ({ day, appointments: 0 })); // Seg-Dom
+
+    try {
+      const startOfCurrentWeek = startOfWeek(now, { weekStartsOn: 1 }); // Monday
+      const endOfCurrentWeek = endOfWeek(now, { weekStartsOn: 1 }); // Sunday
+
+      const apptsRef = collection(db, 'agendamentos');
+      const q = query(
+        apptsRef,
+        where('uid', '==', currentUsuario.uid),
+        where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
+        where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
+      );
+      const querySnapshot = await getDocs(q);
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        try {
+          const apptDate = parseISO(data.date as string);
+          const dayIndex = (getDay(apptDate) + 6) % 7; // 0=Seg, 1=Ter, ..., 6=Dom
+          if (daysOfWeekData[dayIndex]) {
+            daysOfWeekData[dayIndex].appointments += 1;
+          }
+        } catch (e) {
+          console.error("Error parsing appointment date for weekly chart:", data.date, e);
+        }
+      });
+      setActualWeeklyAppointmentsData(daysOfWeekData);
+    } catch (error: any) {
+      console.error("Erro ao buscar agendamentos da semana:", error);
+      toast({ title: "Erro nos agendamentos da semana", description: "Não foi possível carregar os dados do gráfico.", variant: "destructive" });
+      setActualWeeklyAppointmentsData(daysOfWeekData); // Set to default empty week on error
+    } finally {
+      setIsLoadingWeeklyAppointments(false);
+    }
+  }, [toast]);
+
+  const fetchMonthlyRevenueData = useCallback(async (currentUsuario: FirebaseUser, now: Date) => {
+    if (!currentUsuario || !now) return;
+    setIsLoadingRevenue(true);
+    
+    let currentMonthTotal = 0;
+    let previousMonthTotal = 0;
+
+    try {
+      const transactionsRef = collection(db, 'financialTransactions');
+
+      // Current Month
+      const startOfCurrentMonth = startOfMonth(now);
+      const endOfCurrentMonth = endOfMonth(now);
+      const currentMonthQuery = query(
+        transactionsRef,
+        where('ownerId', '==', currentUsuario.uid),
+        where('status', '==', 'Recebido'),
+        where('date', '>=', Timestamp.fromDate(startOfCurrentMonth)),
+        where('date', '<=', Timestamp.fromDate(endOfCurrentMonth))
+      );
+      const currentMonthSnapshot = await getDocs(currentMonthQuery);
+      currentMonthSnapshot.forEach(doc => currentMonthTotal += (doc.data().amount as number || 0));
+      setMonthlyRevenue(currentMonthTotal);
+
+      // Previous Month
+      const startOfPreviousMonth = startOfMonth(subMonths(now, 1));
+      const endOfPreviousMonth = endOfMonth(subMonths(now, 1));
+      const previousMonthQuery = query(
+        transactionsRef,
+        where('ownerId', '==', currentUsuario.uid),
+        where('status', '==', 'Recebido'),
+        where('date', '>=', Timestamp.fromDate(startOfPreviousMonth)),
+        where('date', '<=', Timestamp.fromDate(endOfPreviousMonth))
+      );
+      const previousMonthSnapshot = await getDocs(previousMonthQuery);
+      previousMonthSnapshot.forEach(doc => previousMonthTotal += (doc.data().amount as number || 0));
+
+      if (previousMonthTotal > 0) {
+        const percentage = ((currentMonthTotal - previousMonthTotal) / previousMonthTotal) * 100;
+        setRevenueComparisonPercentage(percentage);
+      } else if (currentMonthTotal > 0) {
+        setRevenueComparisonPercentage(100); // Or handle as "N/A" or "∞"
+      } else {
+        setRevenueComparisonPercentage(0);
+      }
+
+    } catch (error: any) {
+      console.error("Erro ao buscar faturamento do mês:", error);
+      let description = "Não foi possível carregar os dados de faturamento.";
+      if (error.code === 'failed-precondition') {
+        description = "A consulta de faturamento requer um índice no Firestore. Verifique o console do Firebase (para 'ownerId', 'status', e 'date' na coleção 'financialTransactions').";
+      }
+      toast({ title: "Erro no Faturamento", description, variant: "destructive" });
+      setMonthlyRevenue(null);
+      setRevenueComparisonPercentage(null);
+    } finally {
+      setIsLoadingRevenue(false);
+    }
+  }, [toast]);
 
 
   useEffect(() => {
-    if (usuario && clientTodayString) {
+    if (usuario && clientNow && clientTodayString) {
       const fetchAllDashboardData = async () => {
-        setIsLoadingFirebasePatients(true);
+        setIsLoadingFirebasePatients(true); // Start loading patients
         try {
           // Fetch Patients & Birthdays
           const patientsRef = collection(db, 'pacientes');
@@ -253,7 +366,7 @@ export default function DashboardPage() {
           const patientsSnapshot = await getDocs(pq);
           const fetchedPatients: PatientForSelect[] = [];
           const fetchedBirthdayPatientsData: PatientForBirthday[] = [];
-          const todayDate = new Date(); // Use client's current date for birthday check
+          const todayDate = clientNow; // Use client's current date for birthday check
           const currentMonth = getMonth(todayDate);
           const currentDay = getDate(todayDate);
 
@@ -282,12 +395,15 @@ export default function DashboardPage() {
           });
           setFirebasePatients(fetchedPatients);
           setBirthdayPatients(fetchedBirthdayPatientsData);
+          setIsLoadingFirebasePatients(false); // Finish loading patients
 
-          // Fetch Alerts
-          await fetchAlerts(usuario);
-          
-          // Fetch Today's Appointments
-          await fetchTodaysAppointments(usuario, clientTodayString);
+          // Fetch other data concurrently
+          await Promise.all([
+            fetchAlerts(usuario),
+            fetchTodaysAppointments(usuario, clientTodayString),
+            fetchWeeklyAppointments(usuario, clientNow),
+            fetchMonthlyRevenueData(usuario, clientNow)
+          ]);
 
         } catch (error) {
           console.error("Erro ao buscar dados do dashboard:", error);
@@ -296,13 +412,13 @@ export default function DashboardPage() {
           setBirthdayPatients([]);
           setAlerts([]);
           setTodaysFirebaseAppointments([]);
-        } finally {
+          setActualWeeklyAppointmentsData( ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map(day => ({ day, appointments: 0 })));
           setIsLoadingFirebasePatients(false);
         }
       };
       fetchAllDashboardData();
     }
-  }, [usuario, clientTodayString, toast]);
+  }, [usuario, clientNow, clientTodayString, toast, fetchAlerts, fetchTodaysAppointments, fetchWeeklyAppointments, fetchMonthlyRevenueData]);
 
 
   const [alertForm, setAlertForm] = useState<AlertForm>({
@@ -346,7 +462,7 @@ export default function DashboardPage() {
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-        createdAt: serverTimestamp(), 
+        createdAt: serverTimestamp(),
       };
       await addDoc(collection(db, 'alertas'), newAlertData);
 
@@ -357,7 +473,7 @@ export default function DashboardPage() {
         description: `Alerta adicionado para ${selectedPatient.name}.`,
         variant: "success",
       });
-      await fetchAlerts(usuario); 
+      await fetchAlerts(usuario);
     } catch (error: any) {
       console.error("Erro ao adicionar alerta:", error);
       let description = "Não foi possível salvar o alerta.";
@@ -413,7 +529,7 @@ export default function DashboardPage() {
         description: "Alerta atualizado com sucesso.",
         variant: "success",
       });
-      await fetchAlerts(usuario); 
+      await fetchAlerts(usuario);
     } catch (error: any) {
       console.error("Erro ao editar alerta:", error);
       let description = "Não foi possível atualizar o alerta.";
@@ -434,7 +550,7 @@ export default function DashboardPage() {
         description: "O alerta foi removido.",
         variant: "success"
       });
-      await fetchAlerts(usuario); 
+      await fetchAlerts(usuario);
     } catch (error: any) {
       console.error("Erro ao resolver alerta:", error);
       let description = "Não foi possível remover o alerta.";
@@ -497,18 +613,22 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[200px] w-full">
-              <ChartContainer config={chartConfig} className="h-full w-full">
-                <RechartsBarChart data={weeklyAppointmentsData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                  <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent hideLabel />}
-                  />
-                  <Bar dataKey="appointments" fill="var(--color-appointments)" radius={4} />
-                </RechartsBarChart>
-              </ChartContainer>
+              {isLoadingWeeklyAppointments ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Carregando dados...</p>
+              ) : (
+                <ChartContainer config={chartConfig} className="h-full w-full">
+                  <RechartsBarChart data={actualWeeklyAppointmentsData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent hideLabel />}
+                    />
+                    <Bar dataKey="appointments" fill="var(--color-appointments)" radius={4} />
+                  </RechartsBarChart>
+                </ChartContainer>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -693,27 +813,31 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">Faturamento do Mês</CardTitle>
             <span className="text-muted-foreground text-sm">R$</span>
           </CardHeader>
-
           <CardContent>
             {isFreePlan ? (
               <div className="text-sm text-muted-foreground text-center py-8">
                 <p>Este recurso está disponível apenas para os planos:</p>
                 <strong className="text-primary">Essencial, Profissional ou Clínica</strong>
               </div>
-            ) : monthlyBilling !== null ? (
+            ) : isLoadingRevenue ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Carregando dados...</p>
+            ) : monthlyRevenue !== null ? (
               <>
                 <div className="text-2xl font-bold">
-                  {monthlyBilling.toLocaleString('pt-BR', {
+                  {monthlyRevenue.toLocaleString('pt-BR', {
                     style: 'currency',
                     currency: 'BRL',
                   })}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  +5.2% em relação ao mês passado
-                </p>
+                {revenueComparisonPercentage !== null && (
+                   <p className={`text-xs ${revenueComparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {revenueComparisonPercentage >= 0 ? '+' : ''}
+                    {revenueComparisonPercentage.toFixed(1)}% em relação ao mês passado
+                  </p>
+                )}
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">Carregando dados...</p>
+              <p className="text-sm text-muted-foreground">Dados indisponíveis.</p>
             )}
           </CardContent>
         </Card>
@@ -832,3 +956,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
