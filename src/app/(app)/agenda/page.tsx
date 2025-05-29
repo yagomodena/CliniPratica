@@ -748,9 +748,9 @@ export default function AgendaPage() {
                   </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
-                <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
+              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2 sm:gap-y-4">
+                <Label htmlFor="newDate" className="sm:text-right sm:col-span-1">Data*</Label>
+                <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="w-full sm:col-span-3" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newTime" className="text-right col-span-1">Hora*</Label>
@@ -890,14 +890,14 @@ export default function AgendaPage() {
                 </Button>
               </div>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="editDate" className="text-right col-span-1">Data*</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2 sm:gap-y-4">
+              <Label htmlFor="editDate" className="sm:text-right sm:col-span-1">Data*</Label>
               <Input
                 id="editDate"
                 type="date"
                 value={editAppointmentForm.date}
                 onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)}
-                className="col-span-3"
+                className="w-full sm:col-span-3"
                 min={clientToday && editingAppointmentInfo && editingAppointmentInfo.appointment.date === format(clientToday, 'yyyy-MM-dd') ? format(clientToday, 'yyyy-MM-dd') : undefined}
                 required
               />
