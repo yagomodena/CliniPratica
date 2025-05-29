@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye } from "lucide-react"; // Added Eye
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -38,23 +38,8 @@ import {
 import { getAuth } from 'firebase/auth';
 import { TiptapEditor } from '@/components/tiptap-editor';
 
-
-// Dynamically import ReactQuill to ensure it's client-side only
-// const ReactQuill = dynamic(() => import('react-quill').then(mod => mod.default || mod), { ssr: false });
-// import 'react-quill/dist/quill.snow.css'; // Import Quill styles
-
-// Function to update the global store (simulated)
-const updatePatientInStore = (slug: string, updatedData: Patient) => {
-  console.log("Patient store updated for:", slug);
-};
-const deletePatientFromStore = (slug: string) => {
-  console.log("Patient deleted from store:", slug);
-};
-// --- End In-memory Store Simulation ---
-
-
 // Data structure definitions
-type HistoryItem = { id?: string; date: string; type: string; notes: string }; // Added optional id for keying
+type HistoryItem = { id?: string; date: string; type: string; notes: string };
 type DocumentItem = { name: string; uploadDate: string; url: string };
 type Patient = {
   internalId: string;
@@ -71,7 +56,7 @@ type Patient = {
   slug: string;
 };
 
-interface AppointmentType {
+interface AppointmentTypeFirestore { // Renamed to avoid conflict with AppointmentTypeObject local type
   id: string;
   name: string;
   status: 'active' | 'inactive';
@@ -89,7 +74,6 @@ type AppointmentTypeObject = {
   status: 'active' | 'inactive';
 };
 
-// Initial appointment types data (can be shared or fetched in a real app)
 const initialAppointmentTypesData: AppointmentTypeObject[] = [
   { name: 'Consulta', status: 'active' },
   { name: 'Retorno', status: 'active' },
@@ -110,12 +94,12 @@ export default function PacienteDetalhePage() {
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
   const [newHistoryNote, setNewHistoryNote] = useState('');
-  const [newHistoryType, setNewHistoryType] = useState('');
+  const [newHistoryType, setNewHistoryType] = useState(''); // Initialize as empty
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>(initialAppointmentTypesData);
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]); // Initialize as empty
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
@@ -125,53 +109,59 @@ export default function PacienteDetalhePage() {
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
 
+  const fetchCurrentUserData = useCallback(async () => {
+    const authInstance = getAuth(); // Use getAuth() for consistency
+    const currentUser = authInstance.currentUser;
+    if (!currentUser) throw new Error("Usuário não autenticado");
+
+    const userDoc = await getDoc(doc(db, 'usuarios', currentUser.uid));
+    const userData = userDoc.data();
+
+    if (!userData) throw new Error("Dados do usuário não encontrados");
+
+    return { ...userData, uid: currentUser.uid };
+  }, []);
+
+  const fetchAppointmentTypes = useCallback(async () => {
+    try {
+      const authInstance = getAuth();
+      const currentUser = authInstance.currentUser;
+      if (!currentUser) return;
+
+      const user = await fetchCurrentUserData(); // Call inside this useCallback
+      const tiposRef = getAppointmentTypesPath(user);
+      const snapshot = await getDocs(tiposRef);
+
+      const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({ // Ensure it maps to AppointmentTypeObject
+        name: docSnap.data().name,
+        status: docSnap.data().status as 'active' | 'inactive', // Cast status
+      }));
+
+      setAppointmentTypes(tipos.length > 0 ? tipos : initialAppointmentTypesData); // Fallback to initial if none found
+    } catch (error) {
+      console.error("Erro ao buscar tipos:", error);
+      setAppointmentTypes(initialAppointmentTypesData); // Fallback on error
+    }
+  }, [fetchCurrentUserData]); // Dependency on fetchCurrentUserData
+
+
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
   }, [appointmentTypes]);
 
-  const fetchAppointmentTypes = useCallback(async () => {
-    try {
-      const auth = getAuth();
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
-
-      const user = await fetchCurrentUserData();
-      const tiposRef = getAppointmentTypesPath(user);
-
-      const snapshot = await getDocs(tiposRef);
-
-      const tipos: AppointmentType[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name,
-        status: doc.data().status,
-      }));
-
-      setAppointmentTypes(tipos);
-    } catch (error) {
-      console.error("Erro ao buscar tipos:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    setNewHistoryType(getFirstActiveTypeName());
-    fetchAppointmentTypes();
-  }, [appointmentTypes, getFirstActiveTypeName, fetchAppointmentTypes]);
-
-
+  // Effect to fetch patient data
   useEffect(() => {
     const fetchPatient = async () => {
       setIsLoading(true);
       try {
-        const auth = getAuth();
-        const user = auth.currentUser;
+        const authInstance = getAuth();
+        const user = authInstance.currentUser;
 
         if (!user) {
           toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
           setIsLoading(false);
           return;
         }
-
-        const patientSlug = params.id as string;
 
         const patientsRef = collection(db, 'pacientes');
         const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', user.uid));
@@ -184,14 +174,10 @@ export default function PacienteDetalhePage() {
             ...data,
             internalId: docSnap.id,
             slug: patientSlug,
-            // Ensure history items have a unique key if not already present (e.g., from Firebase)
             history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}` })),
           };
           setPatient(fetchedPatient);
           setEditedPatient({ ...fetchedPatient });
-          if (fetchedPatient.history.length === 0) {
-            setNewHistoryType(getFirstActiveTypeName());
-          }
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto.", variant: "destructive" });
         }
@@ -210,34 +196,45 @@ export default function PacienteDetalhePage() {
       setIsLoading(false);
       router.push('/pacientes');
     }
-  }, [params.id, getFirstActiveTypeName, toast, router]);
+  }, [patientSlug, toast, router]);
 
-  const saveAppointmentType = async (name: string, status: 'active' | 'inactive', userData: any) => {
-    const docId = name.toLowerCase().replace(/\s/g, '_');
-  
-    const userKey = userData.plano === 'Clínica' ? userData.nomeEmpresa : userData.uid;
-  
-    const docRef = doc(db, 'appointmentTypes', userKey, 'tipos', docId);
-  
-    await setDoc(docRef, {
-      name,
-      status,
-      updatedAt: new Date(),
-    });
-  };
+  // Effect to fetch appointment types
+  useEffect(() => {
+    fetchAppointmentTypes();
+  }, [fetchAppointmentTypes]);
 
-  const fetchCurrentUserData = async () => {
-    const auth = getAuth();
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error("Usuário não autenticado");
+  // Effect to initialize or update newHistoryType based on patient and appointmentTypes
+  useEffect(() => {
+    if (appointmentTypes.length > 0) {
+      const firstActive = getFirstActiveTypeName();
+      let typeToSet = newHistoryType;
+      let needsUpdate = false;
 
-    const userDoc = await getDoc(doc(db, 'usuarios', currentUser.uid));
-    const userData = userDoc.data();
+      // If patient is loaded, history is empty, and newHistoryType is not set or invalid
+      if (patient && patient.history.length === 0) {
+        const currentTypeIsValidForEmptyHistory = newHistoryType && appointmentTypes.some(t => t.name === newHistoryType && t.status === 'active');
+        if (!currentTypeIsValidForEmptyHistory && firstActive) {
+          typeToSet = firstActive;
+          needsUpdate = true;
+        }
+      }
+      
+      // If newHistoryType is set but no longer valid (not active or doesn't exist)
+      const currentTypeIsValidGeneral = newHistoryType && appointmentTypes.some(t => t.name === newHistoryType && t.status === 'active');
+      if (newHistoryType && !currentTypeIsValidGeneral) {
+        typeToSet = firstActive || '';
+        needsUpdate = true;
+      } else if (!newHistoryType && firstActive) { // If newHistoryType is empty and active types are available
+        typeToSet = firstActive;
+        needsUpdate = true;
+      }
 
-    if (!userData) throw new Error("Dados do usuário não encontrados");
+      if (needsUpdate && newHistoryType !== typeToSet) {
+        setNewHistoryType(typeToSet);
+      }
+    }
+  }, [patient, appointmentTypes, getFirstActiveTypeName, newHistoryType]);
 
-    return { ...userData, uid: currentUser.uid };
-  };
 
   const handleSaveEditedPatient = async () => {
     if (!editedPatient || !editedPatient.internalId) {
@@ -257,7 +254,7 @@ export default function PacienteDetalhePage() {
 
       await updateDoc(patientRef, dataToSave);
 
-      setPatient({ ...editedPatient });
+      setPatient({ ...editedPatient }); // Update main patient state
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -321,7 +318,7 @@ export default function PacienteDetalhePage() {
 
 
   const handleAddHistory = async () => {
-    const isNoteEmpty = !newHistoryNote || newHistoryNote.trim() === '<p></p>';
+    const isNoteEmpty = !newHistoryNote || newHistoryNote.trim() === '<p></p>' || newHistoryNote.trim() === '';
 
     if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim()) {
       toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são necessários.", variant: "destructive" });
@@ -345,9 +342,9 @@ export default function PacienteDetalhePage() {
       const updatedHistory = [newEntry, ...(patient.history || [])];
       await updateDoc(patientRef, { history: updatedHistory });
 
-      const updatedPatient = { ...patient, history: updatedHistory };
-      setPatient(updatedPatient);
-      setEditedPatient(updatedPatient);
+      const updatedPatientData = { ...patient, history: updatedHistory };
+      setPatient(updatedPatientData);
+      if(isEditing) setEditedPatient(updatedPatientData); // Keep editedPatient in sync if editing mode is on
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName());
       toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
@@ -365,14 +362,15 @@ export default function PacienteDetalhePage() {
 
   const handleDocumentUpload = () => {
     if (!newDocument || !patient) return;
+    // Implement actual Firebase Storage upload here in a real app
     const newDocEntry: DocumentItem = {
       name: newDocument.name,
       uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument),
+      url: URL.createObjectURL(newDocument), // Placeholder URL
     };
-    const updatedPatient = { ...patient, documents: [newDocEntry, ...(patient.documents || [])] };
-    setPatient(updatedPatient);
-    setEditedPatient(updatedPatient);
+    const updatedPatientData = { ...patient, documents: [newDocEntry, ...(patient.documents || [])] };
+    setPatient(updatedPatientData);
+     if(isEditing) setEditedPatient(updatedPatientData);
     setNewDocument(null);
     const fileInput = document.getElementById('document-upload') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
@@ -381,10 +379,11 @@ export default function PacienteDetalhePage() {
 
   const handleDeleteDocument = (docName: string) => {
     if (!patient) return;
+    // Implement actual Firebase Storage deletion here in a real app
     const updatedDocs = (patient.documents || []).filter(doc => doc.name !== docName);
-    const updatedPatient = { ...patient, documents: updatedDocs };
-    setPatient(updatedPatient);
-    setEditedPatient(updatedPatient);
+    const updatedPatientData = { ...patient, documents: updatedDocs };
+    setPatient(updatedPatientData);
+    if(isEditing) setEditedPatient(updatedPatientData);
     toast({ title: "Documento Excluído (Simulado)", description: `Documento "${docName}" removido localmente.`, variant: "default" });
   };
 
@@ -397,7 +396,7 @@ export default function PacienteDetalhePage() {
       toast({
         title: 'Paciente excluído',
         description: `O paciente ${patient.name} foi removido com sucesso.`,
-        variant: 'success',
+        variant: 'success', // Or destructive
       });
 
       router.push('/pacientes');
@@ -412,84 +411,107 @@ export default function PacienteDetalhePage() {
   };
 
   const handleAddCustomType = async () => {
-    if (!newCustomTypeName.trim()) return;
-
+    const trimmedName = newCustomTypeName.trim();
+    if (!trimmedName) {
+      toast({ title: "Nome Inválido", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
+      return;
+    }
+    if (appointmentTypes.some(type => type.name.toLowerCase() === trimmedName.toLowerCase())) {
+      toast({ title: "Tipo Duplicado", description: `O tipo "${trimmedName}" já existe.`, variant: "destructive" });
+      return;
+    }
+    
     try {
-      const auth = getAuth();
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("Usuário não autenticado");
-
       const user = await fetchCurrentUserData();
       const tiposRef = getAppointmentTypesPath(user);
-
-      await addDoc(tiposRef, {
-        name: newCustomTypeName,
+      // Firestore document ID can be auto-generated or based on name
+      const docId = trimmedName.toLowerCase().replace(/\s+/g, '_'); // Example ID generation
+      await setDoc(doc(tiposRef, docId), { // Use setDoc with a specific ID or addDoc for auto-ID
+        name: trimmedName,
         status: 'active',
         createdAt: serverTimestamp(),
       });
 
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
-      toast({ title: "Sucesso", description: "Tipo de atendimento adicionado com sucesso." });
-      fetchAppointmentTypes(); // atualizar lista
+      toast({ title: "Sucesso", description: "Tipo de atendimento adicionado." });
+      fetchAppointmentTypes(); // Refresh list
     } catch (error) {
-      console.error(error);
-      toast({ title: "Erro", description: "Falha ao adicionar tipo." });
+      console.error("Erro ao adicionar tipo:", error);
+      toast({ title: "Erro", description: "Falha ao adicionar tipo.", variant: "destructive" });
     }
   };
 
   const handleSaveEditedTypeName = async () => {
     if (!editingTypeInfo) return;
+    const { originalName, currentName } = editingTypeInfo;
+    const newNameTrimmed = currentName.trim();
 
+    if (!newNameTrimmed) {
+      toast({ title: "Nome Inválido", description: "O nome não pode ser vazio.", variant: "destructive" });
+      return;
+    }
+    if (newNameTrimmed.toLowerCase() !== originalName.toLowerCase() && appointmentTypes.some(type => type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
+      toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
+      return;
+    }
+    
     try {
-      const auth = getAuth();
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("Usuário não autenticado");
-
       const user = await fetchCurrentUserData();
       const tiposRef = getAppointmentTypesPath(user);
+      const q = query(tiposRef, where("name", "==", originalName));
+      const querySnapshot = await getDocs(q);
 
-      const snapshot = await getDocs(tiposRef);
-      const docToUpdate = snapshot.docs.find(doc => doc.data().name === editingTypeInfo.originalName);
-
-      if (!docToUpdate) throw new Error("Tipo não encontrado");
-
-      await updateDoc(docToUpdate.ref, { name: editingTypeInfo.currentName });
+      if (querySnapshot.empty) throw new Error("Tipo original não encontrado para editar.");
+      const docToUpdateRef = querySnapshot.docs[0].ref;
+      
+      await updateDoc(docToUpdateRef, { name: newNameTrimmed });
 
       setEditingTypeInfo(null);
-      toast({ title: "Sucesso", description: "Nome atualizado." });
-      fetchAppointmentTypes();
+      toast({ title: "Sucesso", description: "Nome do tipo atualizado." });
+      fetchAppointmentTypes(); // Refresh list
+      // Update newHistoryType if it was the one being edited
+      if (newHistoryType === originalName) setNewHistoryType(newNameTrimmed);
+
     } catch (error) {
-      console.error(error);
-      toast({ title: "Erro", description: "Falha ao editar nome." });
+        console.error("Erro ao editar nome do tipo:", error);
+        toast({ title: "Erro", description: "Falha ao editar nome do tipo.", variant: "destructive" });
     }
   };
 
   const handleToggleTypeStatus = async (typeName: string) => {
+    const typeToToggle = appointmentTypes.find(t => t.name === typeName);
+    if (!typeToToggle) return;
+
+    const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
+    if (newStatus === 'inactive' && activeAppointmentTypes.length <= 1) {
+      toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
+      setTypeToToggleStatusConfirm(null); // Close confirm dialog
+      return;
+    }
+
     try {
-      const auth = getAuth();
-      const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error("Usuário não autenticado");
+        const user = await fetchCurrentUserData();
+        const tiposRef = getAppointmentTypesPath(user);
+        const q = query(tiposRef, where("name", "==", typeName));
+        const querySnapshot = await getDocs(q);
 
-      const user = await fetchCurrentUserData();
-      const tiposRef = getAppointmentTypesPath(user);
+        if (querySnapshot.empty) throw new Error("Tipo não encontrado para alterar status.");
+        const docToUpdateRef = querySnapshot.docs[0].ref;
 
-      const snapshot = await getDocs(tiposRef);
-      const docToUpdate = snapshot.docs.find(doc => doc.data().name === typeName);
+        await updateDoc(docToUpdateRef, { status: newStatus });
 
-      if (!docToUpdate) throw new Error("Tipo não encontrado");
-
-      const currentStatus = docToUpdate.data().status;
-      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-
-      await updateDoc(docToUpdate.ref, { status: newStatus });
-
-      setTypeToToggleStatusConfirm(null);
-      toast({ title: "Sucesso", description: "Status atualizado." });
-      fetchAppointmentTypes();
+        setTypeToToggleStatusConfirm(null);
+        toast({ title: "Status Alterado", description: `Tipo "${typeName}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.` });
+        fetchAppointmentTypes(); // Refresh list
+        // If the currently selected newHistoryType was just deactivated, reset it
+        if (newHistoryType === typeName && newStatus === 'inactive') {
+            setNewHistoryType(getFirstActiveTypeName() || '');
+        }
     } catch (error) {
-      console.error(error);
-      toast({ title: "Erro", description: "Falha ao atualizar status." });
+        console.error("Erro ao alterar status do tipo:", error);
+        toast({ title: "Erro", description: "Falha ao alterar status do tipo.", variant: "destructive" });
+        setTypeToToggleStatusConfirm(null);
     }
   };
 
@@ -509,13 +531,18 @@ export default function PacienteDetalhePage() {
     );
   }
 
-  if (!patient) {
+  if (!patient && !isLoading) { // Ensure not loading before showing not found
     return (
       <div className="text-center py-10">
         <h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1>
         <Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button>
       </div>
     );
+  }
+
+  const displayPatient = isEditing ? editedPatient : patient; // Use patient data for display if not editing
+  if (!displayPatient) { // Fallback if displayPatient is somehow null after loading checks
+      return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
   }
 
   const calculateAge = (dob: string) => {
@@ -546,9 +573,6 @@ export default function PacienteDetalhePage() {
     }
   };
 
-  const displayPatient = isEditing ? editedPatient : patient;
-
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
@@ -572,26 +596,26 @@ export default function PacienteDetalhePage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className={patient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-black' : 'text-green-600 border-green-300 hover:bg-green-50 hover:text-black'}
+                    className={displayPatient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-black' : 'text-green-600 border-green-300 hover:bg-green-50 hover:text-black'}
                   >
-                    {patient.status === 'Ativo' ? <UserX className="mr-2 h-4 w-4" /> : <UserCheck className="mr-2 h-4 w-4" />}
-                    {patient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
+                    {displayPatient.status === 'Ativo' ? <UserX className="mr-2 h-4 w-4" /> : <UserCheck className="mr-2 h-4 w-4" />}
+                    {displayPatient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Tem certeza que deseja {patient.status === 'Ativo' ? 'inativar' : 'ativar'} o paciente <strong>{patient.name}</strong>?
+                      Tem certeza que deseja {displayPatient.status === 'Ativo' ? 'inativar' : 'ativar'} o paciente <strong>{displayPatient.name}</strong>?
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancelar</AlertDialogCancel>
                     <AlertDialogAction
-                      className={patient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
+                      className={displayPatient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
                       onClick={handleToggleStatus}
                     >
-                      {patient.status === 'Ativo' ? 'Inativar' : 'Ativar'}
+                      {displayPatient.status === 'Ativo' ? 'Inativar' : 'Ativar'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -611,7 +635,7 @@ export default function PacienteDetalhePage() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Tem certeza que deseja excluir o paciente <strong>{patient.name}</strong>? Esta ação não pode ser desfeita e removerá todo o histórico associado.
+                      Tem certeza que deseja excluir o paciente <strong>{displayPatient.name}</strong>? Esta ação não pode ser desfeita e removerá todo o histórico associado.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -702,7 +726,7 @@ export default function PacienteDetalhePage() {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button onClick={handleAddHistory} disabled={!newHistoryNote.trim() || newHistoryNote.trim() === '<p></p>'}>
+                  <Button onClick={handleAddHistory} disabled={(!newHistoryNote || newHistoryNote.trim() === '<p></p>' || newHistoryNote.trim() === '') || !newHistoryType.trim()}>
                     <PlusCircle className="mr-2 h-4 w-4" /> Adicionar ao Histórico
                   </Button>
                 </CardFooter>
@@ -887,7 +911,7 @@ export default function PacienteDetalhePage() {
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle> </DialogTitle>
+            <DialogTitle>Adicionar Novo Tipo de Atendimento</DialogTitle>
             <DialogDescription>Insira o nome do novo tipo.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
