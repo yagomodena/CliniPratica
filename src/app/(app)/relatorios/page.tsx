@@ -3,11 +3,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { CalendarClock, TrendingUp, Users, UsersRound, LineChart as LineChartIcon } from "lucide-react"; // Added UsersRound
+import { CalendarClock, TrendingUp, Users, UsersRound, LineChart as LineChartIcon, Ban } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as RechartsLineChart, ResponsiveContainer } from "recharts";
+import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as RechartsLineChart, ResponsiveContainer, Cell } from "recharts"; // Imported Cell
 import { auth, db } from '@/firebase';
-import type { User as FirebaseUser } from 'firebase/auth'; // Explicit type import
+import type { User as FirebaseUser } from 'firebase/auth'; 
 import { onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
@@ -15,7 +15,7 @@ import {
   where,
   getDocs,
   Timestamp,
-  getCountFromServer // Import getCountFromServer for efficient counting
+  getCountFromServer
 } from 'firebase/firestore';
 import { format, startOfMonth, subMonths, getMonth, getYear, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -45,8 +45,12 @@ const chartConfigReturn = {
 const chartConfigNewPatients = {
     total: { label: "Novos Pacientes", color: "hsl(var(--chart-3))" },
 };
+
+// Updated config for distinct colors
 const chartConfigActiveInactive = {
-    count: { label: "Pacientes", color: "hsl(var(--chart-4))" },
+    ativos: { label: "Ativos", color: "hsl(var(--chart-2))" }, // Using a green-ish color from theme
+    inativos: { label: "Inativos", color: "hsl(var(--muted-foreground))" }, // Using a muted color for inactive
+    // 'count' is still the dataKey for the bar values.
 };
 
 
@@ -93,6 +97,7 @@ export default function RelatoriosPage() {
         apptsRef,
         where('uid', '==', user.uid),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd'))
+        // Removed status filter to count all non-cancelled by default based on previous revert
       );
       const querySnapshot = await getDocs(q);
 
@@ -102,6 +107,7 @@ export default function RelatoriosPage() {
         if (apptDateStr) {
           try {
             const apptDate = parseISO(apptDateStr);
+            // Ensure we are comparing against the correct month and year for aggregation
             const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
             const monthEntry = monthsData.find(m => m.month === apptMonthKey);
             if (monthEntry) {
@@ -208,7 +214,7 @@ export default function RelatoriosPage() {
       fetchMonthlyAppointmentsCounts(currentUser, clientNow);
       fetchNewPatientsPerMonth(currentUser, clientNow);
       fetchActiveInactivePatientCounts(currentUser);
-    } else if (clientNow) {
+    } else if (clientNow) { // Ensure clientNow is available before setting defaults
         setIsLoadingMonthlyAppointments(false);
         setIsLoadingNewPatients(false);
         setIsLoadingActiveInactiveData(false);
@@ -306,13 +312,37 @@ export default function RelatoriosPage() {
                    <RechartsBarChart data={activeInactivePatientData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                     <CartesianGrid horizontal={false} strokeDasharray="3 3"/>
                     <XAxis type="number" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
-                    <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />}/>
-                    <Bar dataKey="count" fill="var(--color-count)" radius={4} />
+                    <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} width={60} />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                    <Bar dataKey="count" radius={4}>
+                      {activeInactivePatientData.map((entry, index) => {
+                        const colorKey = entry.name.toLowerCase() as keyof typeof chartConfigActiveInactive;
+                        const color = chartConfigActiveInactive[colorKey]?.color || 'hsl(var(--primary))';
+                        return <Cell key={`cell-${index}`} fill={color} />;
+                      })}
+                    </Bar>
                    </RechartsBarChart>
                  </ResponsiveContainer>
               )}
             </ChartContainer>
+          </CardContent>
+        </Card>
+
+        {/* Placeholder for more reports - to be expanded */}
+        <Card className="shadow-md md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><LineChartIcon className="h-5 w-5"/> Mais Relatórios (Em Breve)</CardTitle>
+            <CardDescription>Visualizações detalhadas sobre cancelamentos, procedimentos e origem dos pacientes estarão disponíveis aqui.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
+            <Ban className="h-10 w-10 mb-2 opacity-50" />
+            <p>Relatórios detalhados de:</p>
+            <ul className="list-disc list-inside text-sm mt-1">
+                <li>Agendamentos Cancelados por Mês</li>
+                <li>Procedimentos Mais Realizados</li>
+                <li>Origem dos Pacientes</li>
+            </ul>
+            <p className="mt-2 text-xs">Funcionalidades em desenvolvimento.</p>
           </CardContent>
         </Card>
       </div>
