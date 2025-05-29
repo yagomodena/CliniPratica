@@ -1,12 +1,12 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, ChangeEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -21,7 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
-import { db } from '@/firebase';
+import { db, storage, auth } from '@/firebase'; // Import auth
 import {
   addDoc,
   collection,
@@ -33,17 +33,22 @@ import {
   query,
   where,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
-import { TiptapEditor } from '@/components/tiptap-editor';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+// Dynamically import TiptapEditor to ensure it's client-side only
+const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod => mod.TiptapEditor), {
+  ssr: false,
+  loading: () => <p>Carregando editor...</p>,
+});
+
 
 // Data structure definitions
 type HistoryItem = { id?: string; date: string; type: string; notes: string };
-type DocumentItem = { name: string; uploadDate: string; url: string };
+type DocumentItem = { name: string; uploadDate: string; url: string; storagePath: string; }; // Added storagePath
 type Patient = {
   internalId: string;
   id: string;
@@ -62,11 +67,16 @@ type Patient = {
 const getAppointmentTypesPath = (user: any) => {
   const isClinica = user?.plano === 'Clínica';
   const identifier = isClinica ? user.nomeEmpresa : user.uid;
+  if (!identifier) {
+    console.error("Identificador do usuário ou empresa não encontrado para tipos de atendimento.");
+    // Fallback or handle error appropriately
+    return collection(db, 'appointmentTypes', 'default_fallback', 'tipos'); 
+  }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
 };
 
-// Structure for appointment types (consistent with AgendaPage)
 type AppointmentTypeObject = {
+  id?: string; // Firestore document ID for the type itself
   name: string;
   status: 'active' | 'inactive';
 };
@@ -94,13 +104,15 @@ export default function PacienteDetalhePage() {
   const [newHistoryType, setNewHistoryType] = useState(''); 
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isClient, setIsClient] = useState(false);
 
   const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]); 
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
-  const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
+  const [editingTypeInfo, setEditingTypeInfo] = useState<{ type: AppointmentTypeObject, currentName: string } | null>(null);
   const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
   const [isDeleteTypeConfirmOpen, setIsDeleteTypeConfirmOpen] = useState(false);
   const [typeToDelete, setTypeToDelete] = useState<AppointmentTypeObject | null>(null);
@@ -108,9 +120,12 @@ export default function PacienteDetalhePage() {
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
 
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   const fetchCurrentUserData = useCallback(async () => {
-    const authInstance = getAuth(); 
-    const currentUser = authInstance.currentUser;
+    const currentUser = auth.currentUser;
     if (!currentUser) throw new Error("Usuário não autenticado");
 
     const userDoc = await getDoc(doc(db, 'usuarios', currentUser.uid));
@@ -123,23 +138,22 @@ export default function PacienteDetalhePage() {
 
   const fetchAppointmentTypes = useCallback(async () => {
     try {
-      const authInstance = getAuth();
-      const currentUser = authInstance.currentUser;
-      if (!currentUser) return;
-
-      const user = await fetchCurrentUserData(); 
-      const tiposRef = getAppointmentTypesPath(user);
-      const snapshot = await getDocs(tiposRef);
+      const userProfile = await fetchCurrentUserData();
+      const tiposRef = getAppointmentTypesPath(userProfile);
+      const snapshot = await getDocs(query(tiposRef, where("status", "==", "active"), where("status", "!=", "inactive"), where("status", "!=", null) )); 
 
       const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({ 
+        id: docSnap.id,
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive', 
       })).sort((a, b) => a.name.localeCompare(b.name));
-
-      setAppointmentTypes(tipos.length > 0 ? tipos : initialAppointmentTypesData); 
+      
+      const fallbackWithIds = initialAppointmentTypesData.map(ft => ({...ft, id: `fallback-${ft.name.toLowerCase()}`}));
+      setAppointmentTypes(tipos.length > 0 ? tipos : fallbackWithIds);
     } catch (error) {
       console.error("Erro ao buscar tipos:", error);
-      setAppointmentTypes(initialAppointmentTypesData); 
+      const fallbackWithIds = initialAppointmentTypesData.map(ft => ({...ft, id: `fallback-${ft.name.toLowerCase()}`}));
+      setAppointmentTypes(fallbackWithIds); 
     }
   }, [fetchCurrentUserData]); 
 
@@ -159,33 +173,34 @@ export default function PacienteDetalhePage() {
 
       setIsLoading(true);
       try {
-        const authInstance = getAuth();
-        const user = authInstance.currentUser;
+        const currentUser = auth.currentUser;
 
-        if (!user) {
+        if (!currentUser) {
           toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
           setIsLoading(false);
+          router.push('/login');
           return;
         }
 
         const patientsRef = collection(db, 'pacientes');
-        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', user.uid));
+        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUser.uid));
         const querySnapshot = await getDocs(q);
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const data = docSnap.data() as Omit<Patient, 'internalId'>;
+          const data = docSnap.data() as Omit<Patient, 'internalId'>; // Assume data matches Patient structure from DB
           const fetchedPatient = {
             ...data,
             internalId: docSnap.id,
-            slug: patientSlug, // Ensure slug is consistent
+            slug: patientSlug, 
             history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}` })),
+            documents: (data.documents || []).map((doc, index) => ({ ...doc, id: doc.id || `doc-${index}`})) as DocumentItem[],
           };
           setPatient(fetchedPatient);
-          setEditedPatient({ ...fetchedPatient }); // Initialize editedPatient
+          setEditedPatient({ ...fetchedPatient }); 
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
-          setPatient(undefined); // Clear patient if not found
+          setPatient(undefined); 
           setEditedPatient(undefined);
         }
       } catch (error) {
@@ -195,7 +210,10 @@ export default function PacienteDetalhePage() {
         setIsLoading(false);
       }
     };
-    fetchPatientData();
+
+    if (patientSlug) {
+      fetchPatientData();
+    }
   }, [patientSlug, router, toast]);
 
 
@@ -204,11 +222,9 @@ export default function PacienteDetalhePage() {
   }, [fetchAppointmentTypes]);
 
   useEffect(() => {
-    if (appointmentTypes.length > 0) {
+    if (appointmentTypes.length > 0 && !newHistoryType) {
       const firstActive = getFirstActiveTypeName();
-      // Only update newHistoryType if it's currently empty or invalid
-      const currentTypeIsValid = newHistoryType && appointmentTypes.some(t => t.name === newHistoryType && t.status === 'active');
-      if (!currentTypeIsValid && firstActive) {
+      if (firstActive) {
         setNewHistoryType(firstActive);
       }
     }
@@ -333,41 +349,100 @@ export default function PacienteDetalhePage() {
     }
   };
 
-  const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocumentChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setNewDocument(e.target.files[0]);
     }
   };
 
-  const handleDocumentUpload = () => {
-    if (!newDocument || !patient) return;
-    const newDocEntry: DocumentItem = {
-      name: newDocument.name,
-      uploadDate: new Date().toISOString().split('T')[0],
-      url: URL.createObjectURL(newDocument), 
-    };
-    const updatedPatientData = { ...patient, documents: [newDocEntry, ...(patient.documents || [])] };
-    setPatient(updatedPatientData);
-     if(isEditing) setEditedPatient(updatedPatientData);
-    setNewDocument(null);
-    const fileInput = document.getElementById('document-upload') as HTMLInputElement;
-    if (fileInput) fileInput.value = '';
-    toast({ title: "Documento Anexado (Simulado)", description: `Documento "${newDocEntry.name}" adicionado localmente. Upload real não implementado.`, variant: "success" });
+  const handleDocumentUpload = async () => {
+    if (!newDocument || !patient || !patient.internalId) {
+      toast({ title: "Erro", description: "Selecione um arquivo e certifique-se de que o paciente está carregado.", variant: "destructive" });
+      return;
+    }
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploadingDocument(true);
+    try {
+      const timestamp = Date.now();
+      const uniqueFileName = `${timestamp}-${newDocument.name}`;
+      const storagePath = `users/${currentUser.uid}/patients/${patient.internalId}/documents/${uniqueFileName}`;
+      const fileRef = storageRef(storage, storagePath);
+
+      await uploadBytes(fileRef, newDocument);
+      const downloadURL = await getDownloadURL(fileRef);
+
+      const newDocEntry: DocumentItem = {
+        name: newDocument.name,
+        uploadDate: new Date().toISOString().split('T')[0],
+        url: downloadURL,
+        storagePath: storagePath,
+      };
+
+      const patientRef = doc(db, 'pacientes', patient.internalId);
+      await updateDoc(patientRef, {
+        documents: arrayUnion(newDocEntry)
+      });
+
+      setPatient(prev => prev ? ({ ...prev, documents: [newDocEntry, ...(prev.documents || [])] }) : undefined);
+      if(isEditing) setEditedPatient(prev => prev ? ({ ...prev, documents: [newDocEntry, ...(prev.documents || [])] }) : undefined);
+      
+      setNewDocument(null);
+      const fileInput = document.getElementById('document-upload') as HTMLInputElement;
+      if (fileInput) fileInput.value = ''; // Reset file input
+
+      toast({ title: "Sucesso!", description: `Documento "${newDocEntry.name}" enviado.`, variant: "success" });
+    } catch (error) {
+      console.error("Erro ao fazer upload do documento:", error);
+      toast({ title: "Erro no Upload", description: "Não foi possível enviar o documento.", variant: "destructive" });
+    } finally {
+      setIsUploadingDocument(false);
+    }
   };
 
-  const handleDeleteDocument = (docName: string) => {
-    if (!patient) return;
-    const updatedDocs = (patient.documents || []).filter(doc => doc.name !== docName);
-    const updatedPatientData = { ...patient, documents: updatedDocs };
-    setPatient(updatedPatientData);
-    if(isEditing) setEditedPatient(updatedPatientData);
-    toast({ title: "Documento Excluído (Simulado)", description: `Documento "${docName}" removido localmente.`, variant: "default" });
+  const handleDeleteDocument = async (docToDelete: DocumentItem) => {
+    if (!patient || !patient.internalId || !docToDelete.storagePath) {
+      toast({ title: "Erro", description: "Não foi possível identificar o documento para exclusão.", variant: "destructive" });
+      return;
+    }
+    const currentUser = auth.currentUser;
+     if (!currentUser) {
+      toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      // Delete from Firebase Storage
+      const fileRef = storageRef(storage, docToDelete.storagePath);
+      await deleteObject(fileRef);
+
+      // Remove from Firestore
+      const patientRef = doc(db, 'pacientes', patient.internalId);
+      await updateDoc(patientRef, {
+        documents: arrayRemove(docToDelete) 
+      });
+      
+      setPatient(prev => prev ? ({ ...prev, documents: (prev.documents || []).filter(d => d.storagePath !== docToDelete.storagePath) }) : undefined);
+      if(isEditing) setEditedPatient(prev => prev ? ({ ...prev, documents: (prev.documents || []).filter(d => d.storagePath !== docToDelete.storagePath) }) : undefined);
+
+      toast({ title: "Documento Excluído", description: `Documento "${docToDelete.name}" removido com sucesso.`, variant: "default" });
+    } catch (error) {
+      console.error("Erro ao excluir documento:", error);
+      toast({ title: "Erro ao Excluir", description: "Não foi possível remover o documento.", variant: "destructive" });
+    }
   };
+
 
   const handleDeletePatient = async () => {
     if (!patient || !patient.internalId) return;
 
     try {
+      // TODO: Add logic to delete associated documents from Firebase Storage if needed
+      // For now, just deleting the Firestore document
       await deleteDoc(doc(db, 'pacientes', patient.internalId));
 
       toast({
@@ -399,13 +474,14 @@ export default function PacienteDetalhePage() {
     }
     
     try {
-      const user = await fetchCurrentUserData();
-      const tiposRef = getAppointmentTypesPath(user);
-      const docRef = await addDoc(tiposRef, {
+      const userProfile = await fetchCurrentUserData();
+      const tiposRef = getAppointmentTypesPath(userProfile);
+      const newTypeDoc = {
         name: trimmedName,
         status: 'active',
         createdAt: serverTimestamp(),
-      });
+      };
+      await addDoc(tiposRef, newTypeDoc);
 
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
@@ -418,44 +494,39 @@ export default function PacienteDetalhePage() {
   };
 
   const handleSaveEditedTypeName = async () => {
-    if (!editingTypeInfo) return;
-    const { originalName, currentName } = editingTypeInfo;
+    if (!editingTypeInfo || !editingTypeInfo.type.id) return; // Ensure type.id is present
+    const { type: originalType, currentName } = editingTypeInfo;
     const newNameTrimmed = currentName.trim();
-
+  
     if (!newNameTrimmed) {
       toast({ title: "Nome Inválido", description: "O nome não pode ser vazio.", variant: "destructive" });
       return;
     }
-    if (newNameTrimmed.toLowerCase() !== originalName.toLowerCase() && appointmentTypes.some(type => type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
+    if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() && appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
     
     try {
-      const user = await fetchCurrentUserData();
-      const tiposRef = getAppointmentTypesPath(user);
-      const q = query(tiposRef, where("name", "==", originalName));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) throw new Error("Tipo original não encontrado para editar.");
-      const docToUpdateRef = querySnapshot.docs[0].ref;
+      const userProfile = await fetchCurrentUserData();
+      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+      const docToUpdateRef = doc(tiposCollectionRef, originalType.id); // Use the stored ID
       
       await updateDoc(docToUpdateRef, { name: newNameTrimmed });
-
+  
       setEditingTypeInfo(null);
       toast({ title: "Sucesso", description: "Nome do tipo atualizado." });
       await fetchAppointmentTypes(); 
-      if (newHistoryType === originalName) setNewHistoryType(newNameTrimmed);
-
+      if (newHistoryType === originalType.name) setNewHistoryType(newNameTrimmed);
+  
     } catch (error) {
         console.error("Erro ao editar nome do tipo:", error);
         toast({ title: "Erro", description: "Falha ao editar nome do tipo.", variant: "destructive" });
     }
   };
 
-  const handleToggleTypeStatus = async (typeName: string) => {
-    const typeToToggle = appointmentTypes.find(t => t.name === typeName);
-    if (!typeToToggle) return;
+  const handleToggleTypeStatus = async (typeToToggle: AppointmentTypeObject) => {
+    if (!typeToToggle || !typeToToggle.id) return;
 
     const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
     const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
@@ -466,21 +537,17 @@ export default function PacienteDetalhePage() {
     }
 
     try {
-        const user = await fetchCurrentUserData();
-        const tiposRef = getAppointmentTypesPath(user);
-        const q = query(tiposRef, where("name", "==", typeName));
-        const querySnapshot = await getDocs(q);
-
-        if (querySnapshot.empty) throw new Error("Tipo não encontrado para alterar status.");
-        const docToUpdateRef = querySnapshot.docs[0].ref;
+        const userProfile = await fetchCurrentUserData();
+        const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+        const docToUpdateRef = doc(tiposCollectionRef, typeToToggle.id);
 
         await updateDoc(docToUpdateRef, { status: newStatus });
 
         setTypeToToggleStatusConfirm(null);
-        toast({ title: "Status Alterado", description: `Tipo "${typeName}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.` });
+        toast({ title: "Status Alterado", description: `Tipo "${typeToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.` });
         await fetchAppointmentTypes(); 
         
-        if (newHistoryType === typeName && newStatus === 'inactive') {
+        if (newHistoryType === typeToToggle.name && newStatus === 'inactive') {
             setNewHistoryType(getFirstActiveTypeName() || '');
         }
     } catch (error) {
@@ -496,19 +563,13 @@ export default function PacienteDetalhePage() {
   };
 
   const handleConfirmDeleteType = async () => {
-    if (!typeToDelete) return;
+    if (!typeToDelete || !typeToDelete.id) return;
     try {
       const userProfile = await fetchCurrentUserData();
-      const tiposRef = getAppointmentTypesPath(userProfile);
-      const q = query(tiposRef, where("name", "==", typeToDelete.name));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        toast({ title: "Erro", description: "Tipo não encontrado para excluir.", variant: "destructive" });
-        return;
-      }
-      const docToDeleteRef = querySnapshot.docs[0].ref;
+      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+      const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id);
       await deleteDoc(docToDeleteRef);
+
       toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
       await fetchAppointmentTypes(); 
 
@@ -546,9 +607,9 @@ export default function PacienteDetalhePage() {
 
     try {
       const canvas = await html2canvas(contentElement, {
-        scale: 2, // Increase scale for better quality
-        useCORS: true, // If there are external images, though unlikely for Tiptap content
-        logging: true,
+        scale: 2, 
+        useCORS: true, 
+        logging: false,
       });
       const imgData = canvas.toDataURL('image/png');
       
@@ -564,28 +625,28 @@ export default function PacienteDetalhePage() {
       const imgWidth = imgProps.width;
       const imgHeight = imgProps.height;
 
-      // Calculate image aspect ratio
+      
       const ratio = imgWidth / imgHeight;
-      let newImgWidth = pdfWidth - 20; // Page width - margins
+      let newImgWidth = pdfWidth - 20; 
       let newImgHeight = newImgWidth / ratio;
 
-      // Check if image height exceeds page height, if so, scale by height
-      if (newImgHeight > pdfHeight - 20) {
-        newImgHeight = pdfHeight - 20; // Page height - margins
+      
+      if (newImgHeight > pdfHeight - 30) { // Adjusted margin for header
+        newImgHeight = pdfHeight - 30; 
         newImgWidth = newImgHeight * ratio;
       }
       
-      // Add patient name and note date to PDF
+      
       pdf.setFontSize(16);
       pdf.text(`Paciente: ${patient.name}`, 10, 10);
       pdf.setFontSize(12);
       pdf.text(`Data do Atendimento: ${formatDate(selectedHistoryNote.date)} (${selectedHistoryNote.type})`, 10, 20);
       
-      // Add a line separator
+      
       pdf.setLineWidth(0.5);
       pdf.line(10, 25, pdfWidth - 10, 25);
 
-      pdf.addImage(imgData, 'PNG', 10, 30, newImgWidth, newImgHeight); // Position image after header
+      pdf.addImage(imgData, 'PNG', 10, 30, newImgWidth, newImgHeight); 
 
       const fileName = `evolucao-${patient.slug}-${selectedHistoryNote.date}.pdf`;
       pdf.save(fileName);
@@ -672,7 +733,7 @@ export default function PacienteDetalhePage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className={displayPatient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-black' : 'text-green-600 border-green-300 hover:bg-green-50 hover:text-black'}
+                    className={`hover:text-black ${displayPatient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50' : 'text-green-600 border-green-300 hover:bg-green-50'}`}
                   >
                     {displayPatient.status === 'Ativo' ? <UserX className="mr-2 h-4 w-4" /> : <UserCheck className="mr-2 h-4 w-4" />}
                     {displayPatient.status === 'Ativo' ? 'Inativar Paciente' : 'Ativar Paciente'}
@@ -779,7 +840,7 @@ export default function PacienteDetalhePage() {
                           <SelectValue placeholder="Selecione o tipo" />
                         </SelectTrigger>
                         <SelectContent>
-                          {activeAppointmentTypes.map((type) => <SelectItem key={type.name} value={type.name}>{type.name}</SelectItem>)}
+                          {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
                           {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
                         </SelectContent>
                       </Select>
@@ -793,11 +854,17 @@ export default function PacienteDetalhePage() {
                   </div>
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
-                    <div className="mt-1">
-                       <TiptapEditor
-                        content={newHistoryNote}
-                        onChange={setNewHistoryNote}
-                      />
+                     <div className="mt-1">
+                      {isClient && TiptapEditor ? (
+                        <TiptapEditor
+                          content={newHistoryNote}
+                          onChange={setNewHistoryNote}
+                        />
+                      ) : (
+                        <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center">
+                          <p className="text-muted-foreground">Carregando editor...</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -854,8 +921,13 @@ export default function PacienteDetalhePage() {
                       <Input id="document-upload" type="file" className="hidden" onChange={handleDocumentChange} accept=".pdf,.jpg,.jpeg,.png" />
                     </div>
                   </div>
-                  <Button onClick={handleDocumentUpload} disabled={!newDocument}>
-                    <Upload className="mr-2 h-4 w-4" /> Enviar Documento Selecionado
+                  <Button onClick={handleDocumentUpload} disabled={!newDocument || isUploadingDocument}>
+                    {isUploadingDocument ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-4 w-4" />
+                    )}
+                    {isUploadingDocument ? 'Enviando...' : 'Enviar Documento Selecionado'}
                   </Button>
                 </CardContent>
               </Card>
@@ -864,7 +936,7 @@ export default function PacienteDetalhePage() {
               {displayPatient?.documents && displayPatient.documents.length > 0 ? (
                 <ul className="space-y-3">
                   {[...displayPatient.documents].sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()).map((doc, index) => (
-                    <li key={index} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
+                    <li key={doc.storagePath || index} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
                       <div className="flex items-center gap-3">
                         <FileText className="h-5 w-5 text-primary flex-shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -882,12 +954,12 @@ export default function PacienteDetalhePage() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Tem certeza que deseja excluir o documento "{doc.name}"?
+                              Tem certeza que deseja excluir o documento "{doc.name}"? Esta ação é irreversível.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteDocument(doc.name)}>Excluir</AlertDialogAction>
+                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteDocument(doc)}>Excluir</AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
@@ -957,7 +1029,6 @@ export default function PacienteDetalhePage() {
         </CardContent>
       </Card>
 
-      {/* History Note Detail Modal */}
       <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}>
         <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
           <DialogHeader>
@@ -986,7 +1057,6 @@ export default function PacienteDetalhePage() {
       </Dialog>
 
 
-      {/* Add New Appointment Type Dialog */}
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -1009,7 +1079,6 @@ export default function PacienteDetalhePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Manage Appointment Types Dialog */}
       <Dialog open={isManageTypesDialogOpen} onOpenChange={setIsManageTypesDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1018,8 +1087,8 @@ export default function PacienteDetalhePage() {
           </DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
-              <div key={type.name} className="flex items-center justify-between p-2 border rounded-md">
-                {editingTypeInfo?.originalName === type.name ? (
+              <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
+                {editingTypeInfo?.type.id === type.id ? (
                   <div className="flex-grow flex items-center gap-2 mr-2">
                     <Input
                       value={editingTypeInfo.currentName}
@@ -1033,9 +1102,9 @@ export default function PacienteDetalhePage() {
                   <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
-                  {editingTypeInfo?.originalName !== type.name && (
+                  {editingTypeInfo?.type.id !== type.id && (
                     <>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ originalName: type.name, currentName: type.name })} title="Editar Nome">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentName: type.name })} title="Editar Nome">
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir Tipo">
@@ -1067,7 +1136,6 @@ export default function PacienteDetalhePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirm Toggle Appointment Type Status Dialog */}
       <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1081,7 +1149,7 @@ export default function PacienteDetalhePage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm.name)}
+              onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm)}
               className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}
             >
               {typeToToggleStatusConfirm?.status === 'active' ? 'Desativar Tipo' : 'Ativar Tipo'}
@@ -1090,7 +1158,6 @@ export default function PacienteDetalhePage() {
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* Confirm Delete Appointment Type Dialog */}
       <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if(!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen);}}>
         <AlertDialogContent>
           <AlertDialogHeader>
