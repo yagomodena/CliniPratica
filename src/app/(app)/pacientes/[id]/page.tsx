@@ -56,12 +56,6 @@ type Patient = {
   slug: string;
 };
 
-interface AppointmentTypeFirestore { // Renamed to avoid conflict with AppointmentTypeObject local type
-  id: string;
-  name: string;
-  status: 'active' | 'inactive';
-}
-
 const getAppointmentTypesPath = (user: any) => {
   const isClinica = user?.plano === 'Clínica';
   const identifier = isClinica ? user.nomeEmpresa : user.uid;
@@ -105,6 +99,8 @@ export default function PacienteDetalhePage() {
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
   const [editingTypeInfo, setEditingTypeInfo] = useState<{ originalName: string, currentName: string } | null>(null);
   const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
+  const [isDeleteTypeConfirmOpen, setIsDeleteTypeConfirmOpen] = useState(false);
+  const [typeToDelete, setTypeToDelete] = useState<AppointmentTypeObject | null>(null);
 
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
@@ -484,11 +480,13 @@ export default function PacienteDetalhePage() {
     if (!typeToToggle) return;
 
     const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
-    if (newStatus === 'inactive' && activeAppointmentTypes.length <= 1) {
-      toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
-      setTypeToToggleStatusConfirm(null); // Close confirm dialog
-      return;
+    const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
+    if (newStatus === 'inactive' && activeTypesCount <= 1 && appointmentTypes.length > 1) {
+        toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo quando outros tipos inativos existem.", variant: "warning" });
+        setTypeToToggleStatusConfirm(null);
+        return;
     }
+
 
     try {
         const user = await fetchCurrentUserData();
@@ -512,6 +510,41 @@ export default function PacienteDetalhePage() {
         console.error("Erro ao alterar status do tipo:", error);
         toast({ title: "Erro", description: "Falha ao alterar status do tipo.", variant: "destructive" });
         setTypeToToggleStatusConfirm(null);
+    }
+  };
+
+  const handleOpenDeleteTypeDialog = (type: AppointmentTypeObject) => {
+    setTypeToDelete(type);
+    setIsDeleteTypeConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteType = async () => {
+    if (!typeToDelete) return;
+    try {
+      const userProfile = await fetchCurrentUserData();
+      const tiposRef = getAppointmentTypesPath(userProfile);
+      const q = query(tiposRef, where("name", "==", typeToDelete.name));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        toast({ title: "Erro", description: "Tipo não encontrado para excluir.", variant: "destructive" });
+        return;
+      }
+      const docToDeleteRef = querySnapshot.docs[0].ref;
+      await deleteDoc(docToDeleteRef);
+      toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
+      await fetchAppointmentTypes(); // Refresh list
+
+      if (newHistoryType === typeToDelete.name) {
+        setNewHistoryType(getFirstActiveTypeName() || '');
+      }
+
+    } catch (error) {
+      console.error("Erro ao excluir tipo:", error);
+      toast({ title: "Erro", description: "Falha ao excluir o tipo.", variant: "destructive" });
+    } finally {
+      setIsDeleteTypeConfirmOpen(false);
+      setTypeToDelete(null);
     }
   };
 
@@ -935,7 +968,7 @@ export default function PacienteDetalhePage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle>
-            <DialogDescription>Edite ou altere o status dos tipos de atendimento.</DialogDescription>
+            <DialogDescription>Edite, altere o status ou exclua os tipos de atendimento.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
@@ -955,16 +988,21 @@ export default function PacienteDetalhePage() {
                 )}
                 <div className="flex gap-1 items-center ml-auto">
                   {editingTypeInfo?.originalName !== type.name && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ originalName: type.name, currentName: type.name })} title="Editar Nome">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    <>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ originalName: type.name, currentName: type.name })} title="Editar Nome">
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir Tipo">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
                   )}
                   <Switch
                     checked={type.status === 'active'}
                     onCheckedChange={() => {
                       const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
-                      if (type.status === 'active' && activeTypesCount <= 1) {
-                        toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo.", variant: "warning" });
+                      if (type.status === 'active' && activeTypesCount <= 1 && appointmentTypes.length > 1) {
+                        toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo quando outros tipos inativos existem.", variant: "warning" });
                         return;
                       }
                       setTypeToToggleStatusConfirm(type);
@@ -1001,6 +1039,28 @@ export default function PacienteDetalhePage() {
               className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}
             >
               {typeToToggleStatusConfirm?.status === 'active' ? 'Desativar Tipo' : 'Ativar Tipo'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Confirm Delete Appointment Type Dialog */}
+      <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if(!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen);}}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão de Tipo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o tipo de atendimento "<strong>{typeToDelete?.name}</strong>"? Esta ação não pode ser desfeita.
+              Registros de histórico existentes com este tipo não serão alterados, mas o tipo não estará mais disponível para seleção.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteType}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Excluir Tipo
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
