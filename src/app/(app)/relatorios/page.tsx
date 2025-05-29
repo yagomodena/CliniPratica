@@ -47,9 +47,9 @@ const chartConfigNewPatients = {
 };
 
 const chartConfigActiveInactive = {
-    count: { label: "Quantidade" }, // Added for tooltip translation
-    ativos: { label: "Ativos", color: "hsl(var(--chart-2))" }, // Using a green-ish color
-    inativos: { label: "Inativos", color: "hsl(var(--destructive))" }, // Using destructive color (red)
+    count: { label: "Quantidade" },
+    ativos: { label: "Ativos", color: "hsl(var(--chart-2))" },
+    inativos: { label: "Inativos", color: "hsl(0, 80%, 70%)" }, // Lighter red
 };
 
 
@@ -96,6 +96,7 @@ export default function RelatoriosPage() {
         apptsRef,
         where('uid', '==', user.uid),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd'))
+        // No status filter here, counting all non-deleted appointments as per previous revert.
       );
       const querySnapshot = await getDocs(q);
 
@@ -104,7 +105,7 @@ export default function RelatoriosPage() {
         const apptDateStr = data.date as string;
         if (apptDateStr) {
           try {
-            const apptDate = parseISO(apptDateStr);
+            const apptDate = parseISO(apptDateStr); // Use parseISO for robust date parsing
             const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
             const monthEntry = monthsData.find(m => m.month === apptMonthKey);
             if (monthEntry) {
@@ -118,7 +119,7 @@ export default function RelatoriosPage() {
       setActualMonthlyAppointmentsData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos mensais:", error);
-      setActualMonthlyAppointmentsData(monthsData);
+      setActualMonthlyAppointmentsData(monthsData); // Set to default empty months on error
     } finally {
       setIsLoadingMonthlyAppointments(false);
     }
@@ -153,17 +154,20 @@ export default function RelatoriosPage() {
         const data = docSnap.data();
         if (data.createdAt && (data.createdAt as Timestamp).toDate) {
           const patientCreationDate = (data.createdAt as Timestamp).toDate();
-          const patientMonthKey = `${monthNames[getMonth(patientCreationDate)]}/${String(getYear(patientCreationDate)).slice(-2)}`;
-          const monthEntry = monthsData.find(m => m.month === patientMonthKey);
-          if (monthEntry) {
-            monthEntry.total += 1;
+          // Ensure creation date is within the 6-month window (Firestore query might be slightly broader)
+          if (patientCreationDate >= sixMonthsAgoDate && patientCreationDate <= currentDate) {
+            const patientMonthKey = `${monthNames[getMonth(patientCreationDate)]}/${String(getYear(patientCreationDate)).slice(-2)}`;
+            const monthEntry = monthsData.find(m => m.month === patientMonthKey);
+            if (monthEntry) {
+              monthEntry.total += 1;
+            }
           }
         }
       });
       setNewPatientsPerMonthData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar novos pacientes por mês:", error);
-      setNewPatientsPerMonthData(monthsData);
+      setNewPatientsPerMonthData(monthsData); // Set to default empty months on error
     } finally {
       setIsLoadingNewPatients(false);
     }
