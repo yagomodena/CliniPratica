@@ -614,7 +614,6 @@ export default function FinanceiroPage() {
                         mode="single"
                         selected={transactionForm.date ? parseISO(transactionForm.date) : undefined}
                         onSelect={(date) => handleDateChange(date, 'date')}
-                        
                         locale={ptBR}
                         />
                     </PopoverContent>
@@ -876,6 +875,7 @@ export default function FinanceiroPage() {
               <TableRow>
                 <TableHead>Data</TableHead>
                 <TableHead>Descrição</TableHead>
+                <TableHead>Paciente</TableHead>
                 <TableHead>Valor (R$)</TableHead>
                 <TableHead>Forma Pgto.</TableHead>
                 <TableHead>Status</TableHead>
@@ -891,6 +891,7 @@ export default function FinanceiroPage() {
                       {t.description}
                       {t.notes && <p className="text-xs text-muted-foreground italic mt-1">"{t.notes}"</p>}
                     </TableCell>
+                    <TableCell>{t.patientName || '-'}</TableCell>
                     <TableCell className={`font-medium ${t.status === 'Cancelado' ? 'text-muted-foreground line-through' : (t.status === 'Pendente' ? 'text-orange-600' : 'text-green-600')}`}>
                       {t.amount.toFixed(2)}
                     </TableCell>
@@ -920,7 +921,7 @@ export default function FinanceiroPage() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center h-24">
+                  <TableCell colSpan={7} className="text-center h-24">
                     {isLoadingTransactions ? "Carregando lançamentos..." : "Nenhum lançamento encontrado para o período selecionado."}
                   </TableCell>
                 </TableRow>
