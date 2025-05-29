@@ -35,7 +35,8 @@ import {
   updateDoc,
   deleteDoc,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  orderBy // Import orderBy
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import jsPDF from 'jspdf';
@@ -72,7 +73,8 @@ const getAppointmentTypesPath = (user: any) => {
   const identifier = isClinica ? user.nomeEmpresa : user.uid;
   if (!identifier) {
     console.error("Identificador do usuário ou empresa não encontrado para tipos de atendimento.");
-    return collection(db, 'appointmentTypes', 'default_fallback', 'tipos');
+    // Fallback to a generic path or handle error, maybe return a default collection ref for initialAppointmentTypesData
+    return collection(db, 'appointmentTypes', 'default_fallback', 'tipos'); 
   }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
 };
@@ -144,22 +146,40 @@ export default function PacienteDetalhePage() {
     try {
       const userProfile = await fetchCurrentUserData();
       const tiposRef = getAppointmentTypesPath(userProfile);
-      const snapshot = await getDocs(query(tiposRef, where("status", "==", "active"), where("status", "!=", "inactive"), where("status", "!=", null) ));
+      // Corrected query: Fetch only active types and order them by name.
+      // This query requires an index on 'status' (ASC) and 'name' (ASC or DESC) in Firestore.
+      const snapshot = await getDocs(query(tiposRef, where("status", "==", "active"), orderBy("name")));
 
       const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         name: docSnap.data().name as string,
-        status: docSnap.data().status as 'active' | 'inactive',
-      })).sort((a, b) => a.name.localeCompare(b.name));
+        status: docSnap.data().status as 'active' | 'inactive', // Should be 'active' due to query
+      }));
+      // Client-side sort is still fine as a fallback or if orderBy has issues with specific character sets
+      // tipos.sort((a, b) => a.name.localeCompare(b.name)); 
 
-      const fallbackWithIds = initialAppointmentTypesData.map(ft => ({...ft, id: `fallback-${ft.name.toLowerCase()}`}));
-      setAppointmentTypes(tipos.length > 0 ? tipos : fallbackWithIds);
-    } catch (error) {
-      console.error("Erro ao buscar tipos:", error);
-      const fallbackWithIds = initialAppointmentTypesData.map(ft => ({...ft, id: `fallback-${ft.name.toLowerCase()}`}));
-      setAppointmentTypes(fallbackWithIds);
+      const activeFallbackTypes = initialAppointmentTypesData
+        .filter(ft => ft.status === 'active')
+        .map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase()}` }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      
+      setAppointmentTypes(tipos.length > 0 ? tipos : activeFallbackTypes);
+
+    } catch (error: any) { // Catch any error
+      console.error("Erro ao buscar tipos de atendimento:", error);
+      toast({
+        title: "Erro ao Carregar Tipos",
+        description: `Não foi possível carregar os tipos de atendimento. Usando opções padrão. Detalhe: ${error.message}`,
+        variant: "warning",
+        duration: 7000,
+      });
+      const activeFallbackTypes = initialAppointmentTypesData
+        .filter(ft => ft.status === 'active')
+        .map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase()}` }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setAppointmentTypes(activeFallbackTypes);
     }
-  }, [fetchCurrentUserData]);
+  }, [fetchCurrentUserData, toast]);
 
 
   const getFirstActiveTypeName = useCallback(() => {
