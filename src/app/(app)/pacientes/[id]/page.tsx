@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2 } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -38,11 +38,14 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
 
 // Dynamically import TiptapEditor to ensure it's client-side only
 const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod => mod.TiptapEditor), {
   ssr: false,
-  loading: () => <p>Carregando editor...</p>,
+  loading: () => <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><p className="text-muted-foreground">Carregando editor...</p></div>,
 });
 
 
@@ -69,14 +72,13 @@ const getAppointmentTypesPath = (user: any) => {
   const identifier = isClinica ? user.nomeEmpresa : user.uid;
   if (!identifier) {
     console.error("Identificador do usuário ou empresa não encontrado para tipos de atendimento.");
-    // Fallback or handle error appropriately
-    return collection(db, 'appointmentTypes', 'default_fallback', 'tipos'); 
+    return collection(db, 'appointmentTypes', 'default_fallback', 'tipos');
   }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
 };
 
 type AppointmentTypeObject = {
-  id?: string; // Firestore document ID for the type itself
+  id?: string;
   name: string;
   status: 'active' | 'inactive';
 };
@@ -101,14 +103,14 @@ export default function PacienteDetalhePage() {
   const [editedPatient, setEditedPatient] = useState<Patient | undefined>(undefined);
 
   const [newHistoryNote, setNewHistoryNote] = useState('');
-  const [newHistoryType, setNewHistoryType] = useState(''); 
+  const [newHistoryType, setNewHistoryType] = useState('');
 
   const [newDocument, setNewDocument] = useState<File | null>(null);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isClient, setIsClient] = useState(false);
 
-  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]); 
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]);
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
@@ -119,6 +121,8 @@ export default function PacienteDetalhePage() {
 
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
+  const [activeTab, setActiveTab] = useState("historico");
+
 
   useEffect(() => {
     setIsClient(true);
@@ -140,29 +144,30 @@ export default function PacienteDetalhePage() {
     try {
       const userProfile = await fetchCurrentUserData();
       const tiposRef = getAppointmentTypesPath(userProfile);
-      const snapshot = await getDocs(query(tiposRef, where("status", "==", "active"), where("status", "!=", "inactive"), where("status", "!=", null) )); 
+      const snapshot = await getDocs(query(tiposRef, where("status", "==", "active"), where("status", "!=", "inactive"), where("status", "!=", null) ));
 
-      const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({ 
+      const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         name: docSnap.data().name as string,
-        status: docSnap.data().status as 'active' | 'inactive', 
+        status: docSnap.data().status as 'active' | 'inactive',
       })).sort((a, b) => a.name.localeCompare(b.name));
-      
+
       const fallbackWithIds = initialAppointmentTypesData.map(ft => ({...ft, id: `fallback-${ft.name.toLowerCase()}`}));
       setAppointmentTypes(tipos.length > 0 ? tipos : fallbackWithIds);
     } catch (error) {
       console.error("Erro ao buscar tipos:", error);
       const fallbackWithIds = initialAppointmentTypesData.map(ft => ({...ft, id: `fallback-${ft.name.toLowerCase()}`}));
-      setAppointmentTypes(fallbackWithIds); 
+      setAppointmentTypes(fallbackWithIds);
     }
-  }, [fetchCurrentUserData]); 
+  }, [fetchCurrentUserData]);
 
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
   }, [appointmentTypes]);
 
-  useEffect(() => {
+
+   useEffect(() => {
     const fetchPatientData = async () => {
       if (!patientSlug) {
         toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
@@ -178,7 +183,7 @@ export default function PacienteDetalhePage() {
         if (!currentUser) {
           toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
           setIsLoading(false);
-          router.push('/login');
+          router.push('/login'); // Or your appropriate login route
           return;
         }
 
@@ -188,19 +193,19 @@ export default function PacienteDetalhePage() {
 
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const data = docSnap.data() as Omit<Patient, 'internalId'>; // Assume data matches Patient structure from DB
+          const data = docSnap.data() as Omit<Patient, 'internalId'>;
           const fetchedPatient = {
             ...data,
             internalId: docSnap.id,
-            slug: patientSlug, 
+            slug: patientSlug,
             history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}` })),
             documents: (data.documents || []).map((doc, index) => ({ ...doc, id: doc.id || `doc-${index}`})) as DocumentItem[],
           };
           setPatient(fetchedPatient);
-          setEditedPatient({ ...fetchedPatient }); 
+          setEditedPatient({ ...fetchedPatient }); // Initialize editedPatient
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
-          setPatient(undefined); 
+          setPatient(undefined);
           setEditedPatient(undefined);
         }
       } catch (error) {
@@ -249,7 +254,7 @@ export default function PacienteDetalhePage() {
 
       await updateDoc(patientRef, dataToSave);
 
-      setPatient({ ...editedPatient }); 
+      setPatient({ ...editedPatient });
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -326,7 +331,7 @@ export default function PacienteDetalhePage() {
     }
 
     const newEntry: HistoryItem = {
-      id: `hist-${Date.now()}`, 
+      id: `hist-${Date.now()}`,
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
       notes: newHistoryNote,
@@ -339,7 +344,7 @@ export default function PacienteDetalhePage() {
 
       const updatedPatientData = { ...patient, history: updatedHistory };
       setPatient(updatedPatientData);
-      if(isEditing) setEditedPatient(updatedPatientData); 
+      if(isEditing) setEditedPatient(updatedPatientData);
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName());
       toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
@@ -361,7 +366,7 @@ export default function PacienteDetalhePage() {
       return;
     }
     const currentUser = auth.currentUser;
-    if (!currentUser) {
+     if (!currentUser) {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
     }
@@ -390,7 +395,7 @@ export default function PacienteDetalhePage() {
 
       setPatient(prev => prev ? ({ ...prev, documents: [newDocEntry, ...(prev.documents || [])] }) : undefined);
       if(isEditing) setEditedPatient(prev => prev ? ({ ...prev, documents: [newDocEntry, ...(prev.documents || [])] }) : undefined);
-      
+
       setNewDocument(null);
       const fileInput = document.getElementById('document-upload') as HTMLInputElement;
       if (fileInput) fileInput.value = ''; // Reset file input
@@ -416,16 +421,14 @@ export default function PacienteDetalhePage() {
     }
 
     try {
-      // Delete from Firebase Storage
       const fileRef = storageRef(storage, docToDelete.storagePath);
       await deleteObject(fileRef);
 
-      // Remove from Firestore
       const patientRef = doc(db, 'pacientes', patient.internalId);
       await updateDoc(patientRef, {
-        documents: arrayRemove(docToDelete) 
+        documents: arrayRemove(docToDelete)
       });
-      
+
       setPatient(prev => prev ? ({ ...prev, documents: (prev.documents || []).filter(d => d.storagePath !== docToDelete.storagePath) }) : undefined);
       if(isEditing) setEditedPatient(prev => prev ? ({ ...prev, documents: (prev.documents || []).filter(d => d.storagePath !== docToDelete.storagePath) }) : undefined);
 
@@ -441,14 +444,12 @@ export default function PacienteDetalhePage() {
     if (!patient || !patient.internalId) return;
 
     try {
-      // TODO: Add logic to delete associated documents from Firebase Storage if needed
-      // For now, just deleting the Firestore document
       await deleteDoc(doc(db, 'pacientes', patient.internalId));
 
       toast({
         title: 'Paciente excluído',
         description: `O paciente ${patient.name} foi removido com sucesso.`,
-        variant: 'success', 
+        variant: 'success',
       });
 
       router.push('/pacientes');
@@ -472,7 +473,7 @@ export default function PacienteDetalhePage() {
       toast({ title: "Tipo Duplicado", description: `O tipo "${trimmedName}" já existe.`, variant: "destructive" });
       return;
     }
-    
+
     try {
       const userProfile = await fetchCurrentUserData();
       const tiposRef = getAppointmentTypesPath(userProfile);
@@ -486,7 +487,7 @@ export default function PacienteDetalhePage() {
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
       toast({ title: "Sucesso", description: "Tipo de atendimento adicionado." });
-      await fetchAppointmentTypes(); 
+      await fetchAppointmentTypes();
     } catch (error) {
       console.error("Erro ao adicionar tipo:", error);
       toast({ title: "Erro", description: "Falha ao adicionar tipo.", variant: "destructive" });
@@ -497,7 +498,7 @@ export default function PacienteDetalhePage() {
     if (!editingTypeInfo || !editingTypeInfo.type.id) return; // Ensure type.id is present
     const { type: originalType, currentName } = editingTypeInfo;
     const newNameTrimmed = currentName.trim();
-  
+
     if (!newNameTrimmed) {
       toast({ title: "Nome Inválido", description: "O nome não pode ser vazio.", variant: "destructive" });
       return;
@@ -506,19 +507,19 @@ export default function PacienteDetalhePage() {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
-    
+
     try {
       const userProfile = await fetchCurrentUserData();
       const tiposCollectionRef = getAppointmentTypesPath(userProfile);
       const docToUpdateRef = doc(tiposCollectionRef, originalType.id); // Use the stored ID
-      
+
       await updateDoc(docToUpdateRef, { name: newNameTrimmed });
-  
+
       setEditingTypeInfo(null);
       toast({ title: "Sucesso", description: "Nome do tipo atualizado." });
-      await fetchAppointmentTypes(); 
+      await fetchAppointmentTypes();
       if (newHistoryType === originalType.name) setNewHistoryType(newNameTrimmed);
-  
+
     } catch (error) {
         console.error("Erro ao editar nome do tipo:", error);
         toast({ title: "Erro", description: "Falha ao editar nome do tipo.", variant: "destructive" });
@@ -545,8 +546,8 @@ export default function PacienteDetalhePage() {
 
         setTypeToToggleStatusConfirm(null);
         toast({ title: "Status Alterado", description: `Tipo "${typeToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.` });
-        await fetchAppointmentTypes(); 
-        
+        await fetchAppointmentTypes();
+
         if (newHistoryType === typeToToggle.name && newStatus === 'inactive') {
             setNewHistoryType(getFirstActiveTypeName() || '');
         }
@@ -571,7 +572,7 @@ export default function PacienteDetalhePage() {
       await deleteDoc(docToDeleteRef);
 
       toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
-      await fetchAppointmentTypes(); 
+      await fetchAppointmentTypes();
 
       if (newHistoryType === typeToDelete.name) {
         setNewHistoryType(getFirstActiveTypeName() || '');
@@ -592,7 +593,7 @@ export default function PacienteDetalhePage() {
     setSelectedHistoryNote(note);
     setIsHistoryNoteModalOpen(true);
   };
-  
+
   const handleExportPdf = async () => {
     if (!selectedHistoryNote || !patient) {
       toast({ title: "Erro", description: "Nenhuma nota selecionada para exportar.", variant: "destructive" });
@@ -607,12 +608,12 @@ export default function PacienteDetalhePage() {
 
     try {
       const canvas = await html2canvas(contentElement, {
-        scale: 2, 
-        useCORS: true, 
+        scale: 2,
+        useCORS: true,
         logging: false,
       });
       const imgData = canvas.toDataURL('image/png');
-      
+
       const pdf = new jsPDF({
         orientation: 'p',
         unit: 'mm',
@@ -625,28 +626,28 @@ export default function PacienteDetalhePage() {
       const imgWidth = imgProps.width;
       const imgHeight = imgProps.height;
 
-      
+
       const ratio = imgWidth / imgHeight;
-      let newImgWidth = pdfWidth - 20; 
+      let newImgWidth = pdfWidth - 20;
       let newImgHeight = newImgWidth / ratio;
 
-      
+
       if (newImgHeight > pdfHeight - 30) { // Adjusted margin for header
-        newImgHeight = pdfHeight - 30; 
+        newImgHeight = pdfHeight - 30;
         newImgWidth = newImgHeight * ratio;
       }
-      
-      
+
+
       pdf.setFontSize(16);
       pdf.text(`Paciente: ${patient.name}`, 10, 10);
       pdf.setFontSize(12);
       pdf.text(`Data do Atendimento: ${formatDate(selectedHistoryNote.date)} (${selectedHistoryNote.type})`, 10, 20);
-      
-      
+
+
       pdf.setLineWidth(0.5);
       pdf.line(10, 25, pdfWidth - 10, 25);
 
-      pdf.addImage(imgData, 'PNG', 10, 30, newImgWidth, newImgHeight); 
+      pdf.addImage(imgData, 'PNG', 10, 30, newImgWidth, newImgHeight);
 
       const fileName = `evolucao-${patient.slug}-${selectedHistoryNote.date}.pdf`;
       pdf.save(fileName);
@@ -659,6 +660,18 @@ export default function PacienteDetalhePage() {
     }
   };
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (value === "documentos") {
+      toast({
+        title: "Funcionalidade Indisponível",
+        description: "A funcionalidade de Documentos está em desenvolvimento e estará disponível em breve!",
+        variant: "default",
+        duration: 5000,
+      });
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -668,7 +681,7 @@ export default function PacienteDetalhePage() {
     );
   }
 
-  if (!patient && !isLoading) { 
+  if (!patient && !isLoading) {
     return (
       <div className="text-center py-10">
         <h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1>
@@ -677,8 +690,8 @@ export default function PacienteDetalhePage() {
     );
   }
 
-  const displayPatient = isEditing ? editedPatient : patient; 
-  if (!displayPatient) { 
+  const displayPatient = isEditing ? editedPatient : patient;
+  if (!displayPatient) {
       return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
   }
 
@@ -816,7 +829,7 @@ export default function PacienteDetalhePage() {
         </CardHeader>
 
         <CardContent className="p-0">
-          <Tabs defaultValue="historico" className="w-full">
+          <Tabs defaultValue="historico" value={activeTab} onValueChange={handleTabChange} className="w-full">
             <TabsList className="flex flex-wrap w-full items-center justify-start rounded-none border-b bg-transparent px-2 py-0 sm:px-4">
               <TabsTrigger value="historico" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Histórico</TabsTrigger>
               <TabsTrigger value="documentos" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Documentos</TabsTrigger>
@@ -908,69 +921,16 @@ export default function PacienteDetalhePage() {
             <TabsContent value="documentos" className="p-6 space-y-6 mt-0">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Adicionar Documento</CardTitle>
+                  <CardTitle className="text-lg font-semibold">Documentos do Paciente</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-4 p-4 border rounded-md border-dashed">
-                    <Upload className="h-8 w-8 text-muted-foreground" />
-                    <div>
-                      <Label htmlFor="document-upload" className={`font-medium cursor-pointer hover:underline ${newDocument ? 'text-green-600' : 'text-primary'}`}>
-                        {newDocument ? `Arquivo selecionado: ${newDocument.name}` : 'Clique para fazer upload'}
-                      </Label>
-                      <p className="text-xs text-muted-foreground">ou arraste e solte o arquivo aqui (PDF, JPG, PNG)</p>
-                      <Input id="document-upload" type="file" className="hidden" onChange={handleDocumentChange} accept=".pdf,.jpg,.jpeg,.png" />
-                    </div>
-                  </div>
-                  <Button onClick={handleDocumentUpload} disabled={!newDocument || isUploadingDocument}>
-                    {isUploadingDocument ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Upload className="mr-2 h-4 w-4" />
-                    )}
-                    {isUploadingDocument ? 'Enviando...' : 'Enviar Documento Selecionado'}
-                  </Button>
+                <CardContent className="text-center py-16 text-muted-foreground">
+                  <Info className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                  <p>Funcionalidade de Documentos em desenvolvimento.</p>
+                  <p className="text-sm">Estará disponível em breve para você anexar e gerenciar arquivos!</p>
                 </CardContent>
               </Card>
-
-              <h3 className="text-lg font-semibold pt-6 border-t">Documentos Anexados</h3>
-              {displayPatient?.documents && displayPatient.documents.length > 0 ? (
-                <ul className="space-y-3">
-                  {[...displayPatient.documents].sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()).map((doc, index) => (
-                    <li key={doc.storagePath || index} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-5 w-5 text-primary flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <a href={doc.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline block truncate" title={doc.name}>{doc.name}</a>
-                          <p className="text-xs text-muted-foreground">Upload em: {formatDate(doc.uploadDate)}</p>
-                        </div>
-                      </div>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive flex-shrink-0" title="Excluir documento">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Tem certeza que deseja excluir o documento "{doc.name}"? Esta ação é irreversível.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction variant="destructive" onClick={() => handleDeleteDocument(doc)}>Excluir</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-muted-foreground text-center py-4">Nenhum documento anexado.</p>
-              )}
-
             </TabsContent>
+
 
             <TabsContent value="dados" className="p-6 space-y-4 mt-0">
               <h3 className="text-lg font-semibold">Informações Pessoais</h3>
@@ -1157,7 +1117,7 @@ export default function PacienteDetalhePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
+
       <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if(!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen);}}>
         <AlertDialogContent>
           <AlertDialogHeader>
