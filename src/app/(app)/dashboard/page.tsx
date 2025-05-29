@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
-import { parseISO, getMonth, getDate, format } from 'date-fns';
+import { parseISO, getMonth, getDate, format, startOfDay } from 'date-fns';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import {
@@ -79,6 +79,13 @@ type AlertForm = {
   reason: string;
 }
 
+type AppointmentForDashboard = {
+  id: string;
+  time: string;
+  patientName: string;
+  patientSlug: string;
+};
+
 const weeklyAppointmentsData = [
   { day: "Seg", appointments: 5 },
   { day: "Ter", appointments: 8 },
@@ -94,13 +101,6 @@ const chartConfig = {
   },
 };
 
-const todaysAppointments = [
-  { time: "09:00", name: "Ana Silva Pereira de Andrade", slug: "ana-silva" },
-  { time: "10:30", name: "Carlos Alberto Souza Junior", slug: "carlos-souza" },
-  { time: "14:00", name: "Beatriz Lima", slug: "beatriz-lima" },
-  { time: "16:00", name: "Daniel Costa e Silva", slug: "daniel-costa" },
-];
-
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
 export default function DashboardPage() {
@@ -114,12 +114,21 @@ export default function DashboardPage() {
   const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
   const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
+  const [clientTodayString, setClientTodayString] = useState<string>('');
 
   const [firebasePatients, setFirebasePatients] = useState<PatientForSelect[]>([]);
   const [isLoadingFirebasePatients, setIsLoadingFirebasePatients] = useState(true);
+  const [todaysFirebaseAppointments, setTodaysFirebaseAppointments] = useState<AppointmentForDashboard[]>([]);
+  const [isLoadingTodaysAppointments, setIsLoadingTodaysAppointments] = useState(true);
+
 
   const isFreePlan = currentUserPlan === 'Gratuito';
   const monthlyBilling = isFreePlan ? null : 450.80;
+
+  useEffect(() => {
+    const today = new Date();
+    setClientTodayString(format(startOfDay(today), 'yyyy-MM-dd'));
+  }, []);
 
 
   useEffect(() => {
@@ -136,6 +145,8 @@ export default function DashboardPage() {
         setFirebasePatients([]);
         setAlerts([]);
         setIsLoadingFirebasePatients(false);
+        setTodaysFirebaseAppointments([]);
+        setIsLoadingTodaysAppointments(false);
       }
     });
     return () => unsubscribe();
@@ -143,10 +154,9 @@ export default function DashboardPage() {
 
   const fetchAlerts = async (currentUsuario: FirebaseUser) => {
     if (!currentUsuario) return;
-    console.log("Buscando alertas para o UID:", currentUsuario.uid); // Diagnostic log
+    console.log("Buscando alertas para o UID:", currentUsuario.uid); 
     try {
       const alertsRef = collection(db, 'alertas');
-      // Consulta: filtrar por UID do usuário e ordenar por data de criação (mais recentes primeiro)
       const q = query(alertsRef, where('uid', '==', currentUsuario.uid), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       const fetchedAlerts: Alert[] = [];
@@ -154,23 +164,20 @@ export default function DashboardPage() {
         const data = docSnap.data();
         let createdAtDate: Date;
 
-        // Validação e conversão robusta do timestamp
         if (data.createdAt && typeof (data.createdAt as Timestamp).toDate === 'function') {
           createdAtDate = (data.createdAt as Timestamp).toDate();
         } else if (data.createdAt && (typeof data.createdAt === 'string' || typeof data.createdAt === 'number')) {
-          // Tentativa de parse para datas que podem ter sido salvas como string/number
           try {
             createdAtDate = new Date(data.createdAt);
-            if (isNaN(createdAtDate.getTime())) { // Verifica se a data é válida
+            if (isNaN(createdAtDate.getTime())) { 
               console.warn(`Formato inválido de createdAt para alerta ${docSnap.id}:`, data.createdAt, "- Usando data atual como fallback.");
-              createdAtDate = new Date(); // Fallback para data atual se inválido
+              createdAtDate = new Date(); 
             }
           } catch (parseError) {
             console.warn(`Erro ao parsear createdAt para alerta ${docSnap.id}:`, data.createdAt, parseError, "- Usando data atual como fallback.");
-            createdAtDate = new Date(); // Fallback em caso de erro no parse
+            createdAtDate = new Date(); 
           }
         } else {
-          // Fallback se createdAt estiver ausente ou em formato não esperado
           console.warn(`Tipo de createdAt ausente ou não tratado para alerta ${docSnap.id}, usando data atual como fallback.`);
           createdAtDate = new Date(); 
         }
@@ -187,31 +194,66 @@ export default function DashboardPage() {
       });
       setAlerts(fetchedAlerts);
     } catch (error: any) {
-      console.error("Erro detalhado ao buscar alertas:", error, "Código:", error.code, "Mensagem:", error.message);
+      console.error("Erro detalhado ao buscar alertas:", error);
       let description = "Não foi possível carregar os alertas. Tente recarregar a página.";
       if (error.code === 'permission-denied') {
         description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-        description = `Falha ao buscar alertas: A consulta requer um índice no Firestore que pode estar ausente, configurado incorretamente ou ainda não ativo. 
-        Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (na coleção 'alertas' para 'uid' ASC e 'createdAt' DESC). 
-        Certifique-se de que o índice foi criado usando o link fornecido e está com o status "Ativado".`;
+        description = `Falha ao buscar alertas: A consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' ASC e 'createdAt' DESC na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está com o status "Ativado".`;
       }
       toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
     }
   };
+  
+  const fetchTodaysAppointments = async (currentUsuario: FirebaseUser, dateString: string) => {
+    if (!currentUsuario || !dateString) return;
+    setIsLoadingTodaysAppointments(true);
+    try {
+      const apptsRef = collection(db, 'agendamentos');
+      const q = query(
+        apptsRef,
+        where('uid', '==', currentUsuario.uid),
+        where('date', '==', dateString),
+        orderBy('time')
+      );
+      const querySnapshot = await getDocs(q);
+      const fetchedAppointments: AppointmentForDashboard[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        fetchedAppointments.push({
+          id: docSnap.id,
+          time: data.time as string,
+          patientName: data.patientName as string,
+          patientSlug: data.patientSlug as string,
+        });
+      });
+      setTodaysFirebaseAppointments(fetchedAppointments);
+    } catch (error: any) {
+      console.error("Erro ao buscar agendamentos de hoje:", error);
+      let description = "Não foi possível carregar os agendamentos de hoje.";
+      if (error.code === 'failed-precondition') {
+        description = "Falha ao buscar agendamentos de hoje: consulta requer um índice no Firestore (geralmente para 'uid', 'date' e 'time' na coleção 'agendamentos'). Verifique o console do Firebase.";
+      }
+      toast({ title: "Erro nos agendamentos", description, variant: "destructive" });
+      setTodaysFirebaseAppointments([]);
+    } finally {
+      setIsLoadingTodaysAppointments(false);
+    }
+  };
+
 
   useEffect(() => {
-    if (usuario) {
-      const fetchPatientsAndAlerts = async () => {
+    if (usuario && clientTodayString) {
+      const fetchAllDashboardData = async () => {
         setIsLoadingFirebasePatients(true);
         try {
-          // Fetch Patients
+          // Fetch Patients & Birthdays
           const patientsRef = collection(db, 'pacientes');
           const pq = query(patientsRef, where('uid', '==', usuario.uid), where('status', '==', 'Ativo'));
           const patientsSnapshot = await getDocs(pq);
           const fetchedPatients: PatientForSelect[] = [];
           const fetchedBirthdayPatientsData: PatientForBirthday[] = [];
-          const todayDate = new Date();
+          const todayDate = new Date(); // Use client's current date for birthday check
           const currentMonth = getMonth(todayDate);
           const currentDay = getDate(todayDate);
 
@@ -243,20 +285,24 @@ export default function DashboardPage() {
 
           // Fetch Alerts
           await fetchAlerts(usuario);
+          
+          // Fetch Today's Appointments
+          await fetchTodaysAppointments(usuario, clientTodayString);
 
         } catch (error) {
           console.error("Erro ao buscar dados do dashboard:", error);
-          toast({ title: "Erro ao carregar dados", description: "Não foi possível carregar informações.", variant: "destructive" });
+          toast({ title: "Erro ao carregar dados", description: "Não foi possível carregar informações do dashboard.", variant: "destructive" });
           setFirebasePatients([]);
           setBirthdayPatients([]);
           setAlerts([]);
+          setTodaysFirebaseAppointments([]);
         } finally {
           setIsLoadingFirebasePatients(false);
         }
       };
-      fetchPatientsAndAlerts();
+      fetchAllDashboardData();
     }
-  }, [usuario, toast]);
+  }, [usuario, clientTodayString, toast]);
 
 
   const [alertForm, setAlertForm] = useState<AlertForm>({
@@ -300,7 +346,7 @@ export default function DashboardPage() {
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-        createdAt: serverTimestamp(), // Firestore server-side timestamp
+        createdAt: serverTimestamp(), 
       };
       await addDoc(collection(db, 'alertas'), newAlertData);
 
@@ -311,7 +357,7 @@ export default function DashboardPage() {
         description: `Alerta adicionado para ${selectedPatient.name}.`,
         variant: "success",
       });
-      await fetchAlerts(usuario); // Refresh alerts list
+      await fetchAlerts(usuario); 
     } catch (error: any) {
       console.error("Erro ao adicionar alerta:", error);
       let description = "Não foi possível salvar o alerta.";
@@ -357,7 +403,6 @@ export default function DashboardPage() {
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-        // createdAt não é atualizado aqui para manter a data original do alerta
       });
 
       setEditingAlert(null);
@@ -368,7 +413,7 @@ export default function DashboardPage() {
         description: "Alerta atualizado com sucesso.",
         variant: "success",
       });
-      await fetchAlerts(usuario); // Refresh alerts list
+      await fetchAlerts(usuario); 
     } catch (error: any) {
       console.error("Erro ao editar alerta:", error);
       let description = "Não foi possível atualizar o alerta.";
@@ -389,7 +434,7 @@ export default function DashboardPage() {
         description: "O alerta foi removido.",
         variant: "success"
       });
-      await fetchAlerts(usuario); // Refresh alerts list
+      await fetchAlerts(usuario); 
     } catch (error: any) {
       console.error("Erro ao resolver alerta:", error);
       let description = "Não foi possível remover o alerta.";
@@ -402,7 +447,6 @@ export default function DashboardPage() {
 
 
   const handleSelectPlan = (planName: PlanName) => {
-    // Placeholder for plan change logic
     console.log("Updating plan to:", planName);
     setCurrentUserPlan(planName);
   };
@@ -475,12 +519,14 @@ export default function DashboardPage() {
             <CalendarCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
-            {todaysAppointments.length > 0 ? (
-              todaysAppointments.map((appt, index) => (
-                <div key={index} className="flex items-center justify-between text-sm gap-2">
+             {isLoadingTodaysAppointments ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Carregando agendamentos...</p>
+             ) : todaysFirebaseAppointments.length > 0 ? (
+              todaysFirebaseAppointments.map((appt) => (
+                <div key={appt.id} className="flex items-center justify-between text-sm gap-2">
                   <span className="font-medium shrink-0">{appt.time}</span>
-                  <span className="text-muted-foreground truncate flex-1 min-w-0 text-left sm:text-right" title={appt.name}>{appt.name}</span>
-                  <Link href={`/pacientes/${appt.slug}`} passHref className="shrink-0">
+                  <span className="text-muted-foreground truncate flex-1 min-w-0 text-left sm:text-right" title={appt.patientName}>{appt.patientName}</span>
+                  <Link href={`/pacientes/${appt.patientSlug}`} passHref className="shrink-0">
                     <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
                       <ArrowRight className="h-4 w-4" />
                     </Button>
@@ -786,6 +832,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-
-    
