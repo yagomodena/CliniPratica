@@ -65,10 +65,7 @@ type AlertForm = {
 }
 
 // Initial alert data (these might need to be cleared or migrated if patientIds don't match real ones)
-const initialAlerts: Alert[] = [
-  { id: 'a001', patientId: 'placeholder_p005', patientName: "Fernanda Oliveira (Exemplo)", reason: "Retorno agendado para revisão detalhada dos exames e acompanhamento do plano alimentar. Verificar se há necessidade de ajustes na suplementação.", createdAt: new Date(2024, 7, 1), status: 'active' },
-  { id: 'a002', patientId: 'placeholder_p002', patientName: "Carlos Souza (Exemplo)", reason: "Verificar resultados de exame e discutir próximos passos do tratamento.", createdAt: new Date(2024, 7, 3), status: 'active' },
-];
+const initialAlerts: Alert[] = [];
 
 // Placeholder data for charts and appointments
 const weeklyAppointmentsData = [
