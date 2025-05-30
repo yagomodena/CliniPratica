@@ -22,7 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
 import { db, storage, auth } from '@/firebase';
-import { User as FirebaseUser } from 'firebase/auth';
+import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -103,7 +103,6 @@ const initialPatientObjectivesData: PatientObjectiveObject[] = [
 
 const getAppointmentTypesPath = (userData: any) => {
   if (!userData) {
-    console.warn("getAppointmentTypesPath called without userData");
     return collection(db, 'appointmentTypes', 'default_fallback', 'tipos');
   }
   const isClinica = userData.plano === 'Clínica';
@@ -116,7 +115,6 @@ const getAppointmentTypesPath = (userData: any) => {
 
 const getPatientObjectivesPath = (userData: any) => {
   if (!userData) {
-    console.warn("getPatientObjectivesPath called without userData");
     return collection(db, 'patientObjectives', 'default_fallback_objectives', 'objetivos');
   }
   const isClinica = userData.plano === 'Clínica';
@@ -168,42 +166,53 @@ export default function PacienteDetalhePage() {
 
   const [isDeleteHistoryConfirmOpen, setIsDeleteHistoryConfirmOpen] = useState(false);
   const [historyItemToDelete, setHistoryItemToDelete] = useState<HistoryItem | null>(null);
+  
   const [currentUserData, setCurrentUserData] = useState<any>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
 
   useEffect(() => {
     setIsClient(true);
-  }, []);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      if (!user) {
+        setIsLoading(false);
+        router.push('/login');
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
 
-  const fetchCurrentUserData = useCallback(async (user: FirebaseUser) => {
+
+  const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null) => {
     if (!user) {
-        console.warn("fetchCurrentUserData called without a user.");
-        setCurrentUserData(null);
-        return null;
+      console.warn("fetchCurrentUserData: No user provided.");
+      setCurrentUserData(null);
+      return null;
     }
     try {
       const userDocRef = doc(db, 'usuarios', user.uid);
       const userDocSnap = await getDoc(userDocRef);
       if (userDocSnap.exists()) {
         const data = { ...userDocSnap.data(), uid: user.uid };
-        setCurrentUserData(data); // Set state
-        return data; // Return for immediate use
+        setCurrentUserData(data);
+        return data;
       }
-      console.warn("fetchCurrentUserData: Dados do usuário não encontrados no Firestore para UID:", user.uid);
+      console.warn("fetchCurrentUserData: User data not found in Firestore for UID:", user.uid);
       setCurrentUserData(null);
+      toast({ title: "Erro de Autenticação", description: "Dados do usuário não encontrados.", variant: "destructive" });
     } catch (error) {
-      console.error("Erro ao buscar dados do usuário:", error);
-      toast({ title: "Erro de Autenticação", description: "Não foi possível carregar dados do usuário.", variant: "destructive" });
+      console.error("Error fetching user data:", error);
       setCurrentUserData(null);
+      toast({ title: "Erro de Autenticação", description: "Não foi possível carregar dados do usuário.", variant: "destructive" });
     }
     return null;
-  }, [toast]); // Removed setCurrentUserData, as it's stable
+  }, [toast]);
 
   const fetchAppointmentTypes = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
-        // console.warn("fetchAppointmentTypes: userDataForPath is null, using fallback.");
-        const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
-        setAppointmentTypes(fallbackTypes);
-        return;
+      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
+      setAppointmentTypes(fallbackTypes);
+      return;
     }
     try {
       const tiposRef = getAppointmentTypesPath(userDataForPath);
@@ -217,18 +226,17 @@ export default function PacienteDetalhePage() {
       setAppointmentTypes(allFetchedTypes.length > 0 ? allFetchedTypes : fallbackTypes);
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos.`, variant: "warning", duration: 4000 });
+      toast({ title: "Erro ao Carregar Tipos", description: "Não foi possível carregar os tipos de atendimento.", variant: "warning", duration: 4000 });
       const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
     }
-  }, [toast]); // Removed setAppointmentTypes
+  }, [toast]);
 
   const fetchPatientObjectives = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
-        // console.warn("fetchPatientObjectives: userDataForPath is null, using fallback.");
-        const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}`})).sort((a,b) => a.name.localeCompare(b.name));
-        setPatientObjectives(fallback);
-        return;
+      const fallback = initialPatientObjectivesData.map(o => ({ ...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
+      setPatientObjectives(fallback);
+      return;
     }
     try {
       const objectivesRef = getPatientObjectivesPath(userDataForPath);
@@ -238,54 +246,40 @@ export default function PacienteDetalhePage() {
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
-      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}`})).sort((a,b) => a.name.localeCompare(b.name));
+      const fallback = initialPatientObjectivesData.map(o => ({ ...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setPatientObjectives(fetchedObjectives.length > 0 ? fetchedObjectives : fallback);
     } catch (error: any) {
       console.error("Erro ao buscar objetivos do paciente:", error);
-      toast({ title: "Erro ao Carregar Objetivos", description: `Não foi possível carregar os objetivos.`, variant: "warning" });
-      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}`})).sort((a,b) => a.name.localeCompare(b.name));
+      toast({ title: "Erro ao Carregar Objetivos", description: "Não foi possível carregar os objetivos do paciente.", variant: "warning" });
+      const fallback = initialPatientObjectivesData.map(o => ({ ...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
     }
-  }, [toast]); // Removed setPatientObjectives
-
-  // Main Data Loading Orchestrator
+  }, [toast]);
+  
+  // Centralized data loading effect
   useEffect(() => {
     const loadAllPageData = async () => {
-      setIsLoading(true); // Master loading state for the page
-
-      if (!patientSlug) {
-        toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
-        setIsLoading(false);
-        router.push('/pacientes');
+      if (!firebaseUser || !patientSlug) {
+        // User not yet authenticated or slug not available, isLoading will be true
         return;
       }
-
-      const currentUserAuth = auth.currentUser;
-      if (!currentUserAuth) {
-        // Wait for auth state to be ready. This effect will re-run when auth.currentUser changes.
-        // setIsLoading(true) is already set.
-        return;
-      }
+      
+      setIsLoading(true);
 
       try {
-        // 1. Fetch current user's profile data
-        const uData = await fetchCurrentUserData(currentUserAuth);
-        if (!uData) {
-          // fetchCurrentUserData already shows a toast and sets its state
-          setIsLoading(false); // Stop loading if user data fails
+        const uData = await fetchCurrentUserData(firebaseUser);
+        if (!uData) { // fetchCurrentUserData handles its own toasts for failure
+          setIsLoading(false);
           return;
         }
 
-        // 2. Fetch types and objectives in parallel, using the fetched uData
         await Promise.all([
           fetchAppointmentTypes(uData),
           fetchPatientObjectives(uData)
         ]);
-        // These functions above will set their respective states (appointmentTypes, patientObjectives)
 
-        // 3. Fetch patient-specific document
         const patientsRef = collection(db, 'pacientes');
-        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUserAuth.uid));
+        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', firebaseUser.uid));
         const querySnapshot = await getDocs(q);
         
         if (!querySnapshot.empty) {
@@ -294,8 +288,8 @@ export default function PacienteDetalhePage() {
           const fetchedPatient = {
             ...data,
             internalId: docSnap.id,
-            slug: patientSlug, // Use the slug from params as it's the source of truth for the URL
-            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}-${Date.now()}` })),
+            slug: patientSlug, 
+            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}-${Date.now()}-${Math.random().toString(36).substring(2,9)}` })),
             documents: (data.documents || []).map((doc, index) => ({ ...doc, id: `doc-${index}`})) as DocumentItem[],
             objetivoPaciente: data.objetivoPaciente || '',
           };
@@ -303,20 +297,19 @@ export default function PacienteDetalhePage() {
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
           setPatient(undefined);
+          router.push('/pacientes');
         }
       } catch (error: any) {
         console.error("Erro ao carregar dados da página do paciente:", error);
-        if (error.message !== "Usuário não autenticado para buscar dados de perfil." && error.message !== "Dados do usuário não encontrados") {
-            toast({ title: "Erro", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
-        }
+        toast({ title: "Erro", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
         setPatient(undefined);
       } finally {
-        setIsLoading(false); // Set master loading to false after all attempts
+        setIsLoading(false);
       }
     };
 
     loadAllPageData();
-  }, [patientSlug, auth.currentUser, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
+  }, [patientSlug, firebaseUser, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
 
 
   const getFirstActiveTypeName = useCallback(() => {
@@ -327,35 +320,33 @@ export default function PacienteDetalhePage() {
     return patientObjectives.find(o => o.status === 'active')?.name || '';
   }, [patientObjectives]);
 
-  // Effect to initialize/update editedPatient when patient data or objectives change
   useEffect(() => {
-    if (patient && patientObjectives.length > 0) {
-      const firstActiveObjective = getFirstActiveObjectiveName();
-      const currentPatientObjective = patient.objetivoPaciente;
-      let finalObjective = currentPatientObjective;
+    if (patient && (appointmentTypes.length > 0 || patientObjectives.length > 0)) {
+        const firstActiveObjective = getFirstActiveObjectiveName();
+        const currentPatientObjective = patient.objetivoPaciente;
+        let finalObjective = currentPatientObjective;
 
-      if (!currentPatientObjective || !patientObjectives.some(po => po.name === currentPatientObjective && po.status === 'active')) {
-        finalObjective = firstActiveObjective || '';
-      }
+        if (!currentPatientObjective || !patientObjectives.some(po => po.name === currentPatientObjective && po.status === 'active')) {
+            finalObjective = firstActiveObjective || '';
+        }
       
-      setEditedPatient(prev => ({
-        ...patient,
-        objetivoPaciente: finalObjective,
-        ...(isEditing && prev && prev.internalId === patient.internalId ? {
-           name: prev.name, email: prev.email, phone: prev.phone, dob: prev.dob, address: prev.address, status: prev.status,
-        } : {})
-      }));
-    } else if (patient) { // Objectives might not be loaded yet, or there are none
-      setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || '' });
-    }
-  }, [patient, patientObjectives, getFirstActiveObjectiveName, isEditing]); 
+        setEditedPatient(prev => ({
+            ...patient,
+            objetivoPaciente: finalObjective,
+            ...(isEditing && prev && prev.internalId === patient.internalId ? {
+               name: prev.name, email: prev.email, phone: prev.phone, dob: prev.dob, address: prev.address, status: prev.status,
+            } : {})
+        }));
 
-  // Effect to initialize newHistoryType when appointment types change
-  useEffect(() => {
-    if (appointmentTypes.length > 0 && (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active'))) {
-        setNewHistoryType(getFirstActiveTypeName() || '');
+        const firstActiveType = getFirstActiveTypeName();
+        if (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active')) {
+            setNewHistoryType(firstActiveType || '');
+        }
+    } else if (patient) { // Data might not be loaded yet, or there are none
+        setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || '' });
+        if (!newHistoryType) setNewHistoryType('');
     }
-  }, [appointmentTypes, newHistoryType, getFirstActiveTypeName]);
+  }, [patient, appointmentTypes, patientObjectives, getFirstActiveTypeName, getFirstActiveObjectiveName, isEditing, newHistoryType]); 
 
 
   const handleSaveEditedPatient = async () => {
@@ -375,7 +366,7 @@ export default function PacienteDetalhePage() {
         objetivoPaciente: editedPatient.objetivoPaciente || '',
       };
       await updateDoc(patientRef, dataToSave);
-      setPatient({ ...editedPatient }); // Update main patient state
+      setPatient({ ...editedPatient }); 
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -444,19 +435,18 @@ export default function PacienteDetalhePage() {
     }
     const newEntry: HistoryItem = {
       id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      date: new Date().toISOString().split('T')[0], // Store as YYYY-MM-DD
+      date: new Date().toISOString().split('T')[0], 
       type: newHistoryType,
       notes: newHistoryNote,
     };
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
       
-      // Fetch the current patient document to get the latest history array
       const currentPatientDoc = await getDoc(patientRef);
       const currentPatientData = currentPatientDoc.data() as Patient | undefined;
       const currentHistory = currentPatientData?.history || [];
       
-      const updatedHistory = [newEntry, ...currentHistory]; // Prepend new entry
+      const updatedHistory = [newEntry, ...currentHistory]; 
 
       await updateDoc(patientRef, { history: updatedHistory });
 
@@ -500,12 +490,12 @@ export default function PacienteDetalhePage() {
       return;
     }
     try {
-      const tiposRef = getAppointmentTypesPath(currentUserData); // Use currentUserData directly
+      const tiposRef = getAppointmentTypesPath(currentUserData); 
       await addDoc(tiposRef, { name: trimmedName, status: 'active', createdAt: serverTimestamp() });
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
-      await fetchAppointmentTypes(currentUserData); // Pass currentUserData
+      await fetchAppointmentTypes(currentUserData); 
     } catch (error) {
       console.error("Erro ao adicionar tipo:", error);
       toast({ title: 'Erro', description: 'Não foi possível adicionar o tipo de atendimento.', variant: 'destructive' });
@@ -555,7 +545,7 @@ export default function PacienteDetalhePage() {
     const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
 
     if (newStatus === 'inactive') {
-      if (activeTypesCount <= 1 && appointmentTypes.length > 1) {
+      if (activeTypesCount <= 1 && appointmentTypes.length > 1 && appointmentTypes.some(t => t.status === 'inactive' && t.id !== typeToToggle.id)) {
           toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo quando outros tipos inativos existem.", variant: "warning" });
           setTypeToToggleStatusConfirm(null);
           return;
@@ -683,7 +673,7 @@ export default function PacienteDetalhePage() {
     const activeObjectivesCount = patientObjectives.filter(o => o.status === 'active').length;
 
     if (newStatus === 'inactive') {
-        if (activeObjectivesCount <= 1 && patientObjectives.length > 1) {
+        if (activeObjectivesCount <= 1 && patientObjectives.length > 1 && patientObjectives.some(o => o.status === 'inactive' && o.id !== objectiveToToggle.id)) {
             toast({ title: "Atenção", description: "Não é possível desativar o último objetivo ativo quando outros inativos existem.", variant: "warning" });
             setObjectiveToToggleStatusConfirm(null);
             return;
@@ -797,7 +787,6 @@ export default function PacienteDetalhePage() {
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
       
-      // Fetch the current patient document to get the latest history array
       const currentPatientDoc = await getDoc(patientRef);
       const currentPatientData = currentPatientDoc.data() as Patient | undefined;
       const currentHistory = currentPatientData?.history || [];
@@ -820,8 +809,8 @@ export default function PacienteDetalhePage() {
   };
 
 
-  if (isLoading || isLoadingUserData) return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando dados do paciente...</p></div>;
-  if (!patient && !isLoading && !isLoadingUserData) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button></div>;
+  if (isLoading) return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando dados do paciente...</p></div>;
+  if (!patient && !isLoading) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button></div>;
   
   const displayPatient = isEditing ? editedPatient : patient;
   if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
@@ -1027,7 +1016,7 @@ export default function PacienteDetalhePage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleOpenDeleteHistoryDialog(item)}
-                            className="text-destructive focus:!bg-destructive/10 focus:!text-destructive-foreground hover:!bg-destructive/10 hover:!text-black"
+                            className="text-destructive focus:!bg-destructive/10 focus:!text-black hover:!bg-destructive/10 hover:!text-black"
                           >
                             <Trash2 className="mr-2 h-4 w-4" /> Excluir Registro
                           </DropdownMenuItem>
