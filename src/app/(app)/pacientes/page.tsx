@@ -28,6 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Added AlertDialogTrigger
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -150,7 +151,7 @@ export default function PacientesPage() {
   const fetchPatientObjectives = useCallback(async () => {
     if (!currentUserData) {
       console.log("Dados do usuário atual não carregados para buscar objetivos.");
-      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
+      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
       return;
     }
@@ -162,12 +163,12 @@ export default function PacientesPage() {
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
-      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
+      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fetchedObjectives.length > 0 ? fetchedObjectives : fallback);
     } catch (error: any) {
       console.error("Erro ao buscar objetivos do paciente:", error);
       toast({ title: "Erro ao Carregar Objetivos", description: `Não foi possível carregar os objetivos. Usando opções padrão. Detalhe: ${error.message}`, variant: "warning" });
-      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
+      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
     }
   }, [currentUserData, toast]);
@@ -186,7 +187,7 @@ export default function PacientesPage() {
       } else {
         setPatients([]);
         setCurrentUserData(null);
-        setPatientObjectives(initialPatientObjectivesData.map(o => ({...o, id: `fallback-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name)));
+        setPatientObjectives(initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name)));
       }
     });
     return () => unsubscribe();
@@ -261,6 +262,11 @@ export default function PacientesPage() {
         toast({ title: "Objetivo Inválido", description: "O objetivo selecionado não está ativo ou não existe.", variant: "destructive" });
         return;
     }
+     if (newPatient.dob && isFuture(parseISO(newPatient.dob))) {
+      toast({ title: "Data de Nascimento Inválida", description: "A data de nascimento não pode ser futura.", variant: "destructive" });
+      return;
+    }
+
 
     const slug = generateSlug(newPatient.name);
 
@@ -794,3 +800,4 @@ export default function PacientesPage() {
     </div>
   );
 }
+
