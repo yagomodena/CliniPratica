@@ -4,9 +4,9 @@
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye } from "lucide-react";
+import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
-import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay, parseISO } from 'date-fns';
+import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Dialog,
@@ -27,8 +27,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,6 +42,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
 
 import { getAuth, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -59,6 +68,7 @@ type PatientFromFirebase = {
   name: string;
   status: string;
   slug: string;
+  phone?: string; // Added phone
 };
 
 type Appointment = {
@@ -69,8 +79,8 @@ type Appointment = {
   patientSlug: string; 
   type: string; 
   notes?: string;
-  date: string; // 'yyyy-MM-dd', added for easier access within the object
-  status?: 'agendado' | 'cancelado' | 'realizado'; // New status field
+  date: string; // 'yyyy-MM-dd'
+  status: 'agendado' | 'cancelado' | 'realizado'; // Ensure status is always one of these
 };
 
 type AppointmentsData = {
@@ -101,10 +111,6 @@ const getAppointmentTypesPath = (userData: any) => {
   const identifier = isClinica ? userData.nomeEmpresa : userData.uid;
   if (!identifier) {
     console.error("Identificador do usuário ou empresa não encontrado para tipos de atendimento.", userData);
-    // Fallback to a path that implies a default set of types, perhaps within a 'system' or 'defaults' collection
-    // This part is crucial: it needs a valid path even if the identifier is missing.
-    // For now, let's point to a hypothetical default collection structure.
-    // Consider if this default path should actually exist in Firestore or if it's just for local fallback.
     return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos'); 
   }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
@@ -121,7 +127,7 @@ export default function AgendaPage() {
   const { toast } = useToast();
 
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null); // Store user profile data
+  const [currentUserData, setCurrentUserData] = useState<any>(null); 
   const [firebasePatients, setFirebasePatients] = useState<PatientFromFirebase[]>([]);
   const [isLoadingPatients, setIsLoadingPatients] = useState(true);
 
@@ -145,13 +151,21 @@ export default function AgendaPage() {
   const [isCancelApptConfirmOpen, setIsCancelApptConfirmOpen] = useState(false);
   const [appointmentToCancelInfo, setAppointmentToCancelInfo] = useState<{ appointmentId: string; dateKey: string, patientName: string, time: string } | null>(null);
 
+  // State for WhatsApp Confirmation Message Dialog
+  const [isConfirmWhatsAppDialogOpen, setIsConfirmWhatsAppDialogOpen] = useState(false);
+  const [selectedApptForWhatsApp, setSelectedApptForWhatsApp] = useState<Appointment | null>(null);
+  const [whatsAppMsgType, setWhatsAppMsgType] = useState<'predefined' | 'custom'>('predefined');
+  const [customWhatsAppMsg, setCustomWhatsAppMsg] = useState('');
+  const [whatsAppPatientDetails, setWhatsAppPatientDetails] = useState<{name: string; phone: string | null}>({name: '', phone: null});
+  const [isFetchingPatientPhone, setIsFetchingPatientPhone] = useState(false);
+
 
   const fetchCurrentUserData = useCallback(async (user: FirebaseUser) => {
     if (!user) return null;
     const userDocRef = doc(db, 'usuarios', user.uid);
     const userDocSnap = await getDoc(userDocRef);
     if (userDocSnap.exists()) {
-      return { ...userDocSnap.data(), uid: user.uid }; // Add uid to the returned object
+      return { ...userDocSnap.data(), uid: user.uid }; 
     }
     console.warn("User data not found in Firestore for UID:", user.uid);
     return null;
@@ -199,21 +213,20 @@ export default function AgendaPage() {
     setIsLoadingAppointments(true);
     try {
       const apptsRef = collection(db, 'agendamentos');
-      // Query for appointments that are not 'cancelado' OR where the status field doesn't exist (for older data)
       const q = query(apptsRef, where('uid', '==', user.uid));
       const querySnapshot = await getDocs(q);
       const fetchedAppointmentsData: AppointmentsData = {};
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        const apptStatus = data.status as Appointment['status'];
+        const apptStatus = (data.status as Appointment['status']) || 'agendado'; // Default to 'agendado'
 
-        // Only include if not cancelled
+        // Only include if not cancelled for the main view
         if (apptStatus === 'cancelado') {
           return; 
         }
 
-        const apptDateKey = data.date; // 'yyyy-MM-dd' string from Firestore
+        const apptDateKey = data.date; 
 
         const appointmentItem: Appointment = {
           id: docSnap.id,
@@ -224,7 +237,7 @@ export default function AgendaPage() {
           type: data.type,
           notes: data.notes,
           date: apptDateKey,
-          status: apptStatus || 'agendado', // Default to 'agendado' if status is missing
+          status: apptStatus,
         };
         
         if (!fetchedAppointmentsData[apptDateKey]) {
@@ -233,7 +246,6 @@ export default function AgendaPage() {
         fetchedAppointmentsData[apptDateKey].push(appointmentItem);
       });
 
-      // Sort appointments within each day
       for (const dateKey in fetchedAppointmentsData) {
         fetchedAppointmentsData[dateKey].sort((a, b) => a.time.localeCompare(b.time));
       }
@@ -253,8 +265,7 @@ export default function AgendaPage() {
       setCurrentUser(user);
       if (user) {
         const uData = await fetchCurrentUserData(user);
-        setCurrentUserData(uData); // Set currentUserData here
-        // fetchAppointmentTypes will be called in the useEffect that depends on currentUserData
+        setCurrentUserData(uData); 
         fetchAppointments(user);
       } else {
         setFirebasePatients([]);
@@ -262,15 +273,15 @@ export default function AgendaPage() {
         setAppointments({});
         setIsLoadingAppointments(false);
         setCurrentUserData(null);
-        setAppointmentTypes(fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }))); // Reset types on logout
+        setAppointmentTypes(fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })));
         setIsLoadingTypes(false);
       }
     });
     return () => unsubscribe();
-  }, [fetchCurrentUserData, fetchAppointments]); // fetchCurrentUserData is stable
+  }, [fetchCurrentUserData, fetchAppointments]); 
   
   useEffect(() => {
-    if (currentUserData) { // Now fetch types when currentUserData is available
+    if (currentUserData) { 
       fetchAppointmentTypes();
     }
   }, [currentUserData, fetchAppointmentTypes]);
@@ -292,6 +303,7 @@ export default function AgendaPage() {
               name: data.name as string,
               status: data.status as string,
               slug: data.slug as string, 
+              phone: data.phone as string | undefined,
             });
           });
           setFirebasePatients(fetchedPatientsData);
@@ -319,7 +331,7 @@ export default function AgendaPage() {
     const now = new Date();
     const todayForClient = startOfDay(now);
 
-    setSelectedDate(now); // Set selected date
+    setSelectedDate(now); 
     setClientToday(todayForClient);
     setClientNow(now);
 
@@ -380,7 +392,7 @@ export default function AgendaPage() {
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    if (!clientToday || !clientNow) return true; // Should ideally not happen if client dates are set
+    if (!clientToday || !clientNow) return true; 
     
     if (isBefore(startOfDay(dateTime), clientToday)) {
       return true;
@@ -391,6 +403,16 @@ export default function AgendaPage() {
     return false;
   };
   
+  const isAppointmentDateInFuture = (appointmentDate: string): boolean => {
+    if (!clientToday) return true;
+    try {
+        const apptDateObj = parse(appointmentDate, 'yyyy-MM-dd', new Date());
+        return isFuture(startOfDay(apptDateObj));
+    } catch {
+        return true; // Treat parse errors as future to be safe
+    }
+  };
+
 
   const isTimeSlotOccupied = (dateKey: string, time: string, excludingAppointmentId?: string): boolean => {
     const appointmentsOnDay = appointments[dateKey] || [];
@@ -444,7 +466,7 @@ export default function AgendaPage() {
         patientSlug: selectedPatient.slug,
         type,
         notes,
-        status: 'agendado', // Default status
+        status: 'agendado', 
         createdAt: serverTimestamp(),
       });
 
@@ -521,7 +543,7 @@ export default function AgendaPage() {
         patientSlug: selectedPatient.slug,
         type,
         notes,
-        // status remains unchanged on edit unless specifically handled
+        // status remains originalAppointment.status unless specifically changed
       });
 
       setIsEditAppointmentDialogOpen(false);
@@ -534,6 +556,23 @@ export default function AgendaPage() {
     }
   };
 
+  const updateAppointmentStatus = async (appointmentId: string, newStatus: Appointment['status']) => {
+    if(!currentUser) return;
+    try {
+      const apptRef = doc(db, 'agendamentos', appointmentId);
+      await updateDoc(apptRef, {
+        status: newStatus,
+        updatedAt: serverTimestamp() 
+      });
+      toast({ title: "Status Atualizado", description: `Agendamento marcado como ${newStatus}.`, variant: "success" });
+      await fetchAppointments(currentUser); // Refresh to reflect change
+    } catch (error) {
+       console.error(`Erro ao marcar agendamento como ${newStatus}:`, error);
+       toast({ title: "Erro", description: `Não foi possível marcar como ${newStatus}.`, variant: "destructive" });
+    }
+  };
+
+
   const handleOpenCancelApptDialog = (appointmentId: string, dateKey: string, patientName: string, time: string) => {
     setAppointmentToCancelInfo({ appointmentId, dateKey, patientName, time });
     setIsCancelApptConfirmOpen(true);
@@ -541,23 +580,10 @@ export default function AgendaPage() {
 
   const handleConfirmCancelAppt = async () => {
     if (!appointmentToCancelInfo || !currentUser) return;
-    const { appointmentId } = appointmentToCancelInfo;
-
-    try {
-      const apptRef = doc(db, 'agendamentos', appointmentId);
-      await updateDoc(apptRef, {
-        status: 'cancelado',
-        cancelledAt: serverTimestamp() 
-      });
-      
-      setIsCancelApptConfirmOpen(false);
-      setAppointmentToCancelInfo(null);
-      toast({ title: "Agendamento Cancelado", description: "O agendamento foi marcado como cancelado.", variant: "success" });
-      await fetchAppointments(currentUser); // Refresh to remove from view
-    } catch (error) {
-       console.error("Erro ao cancelar agendamento:", error);
-       toast({ title: "Erro", description: "Não foi possível cancelar o agendamento.", variant: "destructive" });
-    }
+    await updateAppointmentStatus(appointmentToCancelInfo.appointmentId, 'cancelado');
+    setIsCancelApptConfirmOpen(false);
+    setAppointmentToCancelInfo(null);
+    // Toast and fetchAppointments is handled by updateAppointmentStatus
   };
 
   const goToPreviousDay = () => setSelectedDate(prev => prev ? subDays(prev, 1) : (clientToday ? subDays(clientToday, 1) : undefined));
@@ -584,7 +610,7 @@ export default function AgendaPage() {
       await addDoc(tiposRef, {
         name: trimmedName,
         status: 'active',
-        createdAt: serverTimestamp(), // Optional: track creation time
+        createdAt: serverTimestamp(), 
       });
 
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
@@ -609,7 +635,6 @@ export default function AgendaPage() {
       toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
       return;
     }
-    // Check if new name duplicates another existing type's name (excluding itself)
     if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() && 
         appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
@@ -624,9 +649,8 @@ export default function AgendaPage() {
   
       setEditingTypeInfo(null);
       toast({ title: "Sucesso", description: `Nome do tipo "${originalType.name}" atualizado para "${newNameTrimmed}".`, variant: "success" });
-      await fetchAppointmentTypes(); // Refresh from Firestore
+      await fetchAppointmentTypes(); 
   
-      // Update forms if they were using the old type name
       if (newAppointmentForm.type === originalType.name) {
         setNewAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
       }
@@ -649,7 +673,6 @@ export default function AgendaPage() {
 
     const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
 
-    // Prevent deactivating the last active type if other inactive types exist
     const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
     if (newStatus === 'inactive' && activeTypesCount <= 1 && appointmentTypes.some(t => t.status === 'inactive' && t.id !== typeToToggle.id)) {
       toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo se existirem outros tipos inativos.", variant: "warning" });
@@ -677,9 +700,8 @@ export default function AgendaPage() {
       setTypeToToggleStatusConfirm(null);
       await fetchAppointmentTypes(); 
 
-      // If the currently toggled type was selected in a form and became inactive, update the form
       if (newStatus === 'inactive') {
-        const firstActive = getFirstActiveTypeName(); // This will re-evaluate based on the new state of appointmentTypes
+        const firstActive = getFirstActiveTypeName(); 
         if (newAppointmentForm.type === typeToToggle.name) {
           setNewAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
         }
@@ -733,6 +755,59 @@ export default function AgendaPage() {
     }
   };
 
+  const openConfirmWhatsAppDialog = async (appointment: Appointment) => {
+    if (!currentUser) return;
+    setIsFetchingPatientPhone(true);
+    setSelectedApptForWhatsApp(appointment);
+    setWhatsAppMsgType('predefined');
+    setCustomWhatsAppMsg('');
+    try {
+      const patientDocRef = doc(db, 'pacientes', appointment.patientId);
+      const patientDocSnap = await getDoc(patientDocRef);
+      if (patientDocSnap.exists()) {
+        const patientData = patientDocSnap.data() as PatientFromFirebase;
+        setWhatsAppPatientDetails({ name: patientData.name, phone: patientData.phone || null });
+      } else {
+        setWhatsAppPatientDetails({ name: appointment.patientName, phone: null });
+        toast({ title: "Erro", description: "Dados do paciente não encontrados.", variant: "warning" });
+      }
+    } catch (error) {
+      console.error("Erro ao buscar dados do paciente para WhatsApp:", error);
+      setWhatsAppPatientDetails({ name: appointment.patientName, phone: null });
+      toast({ title: "Erro", description: "Não foi possível carregar os dados do paciente.", variant: "destructive" });
+    } finally {
+      setIsFetchingPatientPhone(false);
+      setIsConfirmWhatsAppDialogOpen(true);
+    }
+  };
+
+  const handleSendWhatsAppConfirmation = () => {
+    if (!selectedApptForWhatsApp || !whatsAppPatientDetails.phone) {
+      toast({ title: "Erro", description: "Informações do agendamento ou telefone do paciente não disponíveis.", variant: "destructive"});
+      return;
+    }
+    let message = '';
+    const apptDateFormatted = format(parse(selectedApptForWhatsApp.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy', { locale: ptBR });
+    
+    if (whatsAppMsgType === 'predefined') {
+      message = `Olá ${selectedApptForWhatsApp.patientName}, tudo bem? Confirmando seu agendamento para ${selectedApptForWhatsApp.type} no dia ${apptDateFormatted} às ${selectedApptForWhatsApp.time}. Em caso de imprevisto, por favor, nos avise com antecedência. Até breve!`;
+    } else {
+      if (!customWhatsAppMsg.trim()) {
+        toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning"});
+        return;
+      }
+      message = customWhatsAppMsg;
+    }
+
+    const cleanPhone = whatsAppPatientDetails.phone.replace(/\D/g, '');
+    // Assuming Brazilian numbers, add country code 55 if not present
+    const whatsappLink = `https://wa.me/${cleanPhone.startsWith('55') ? cleanPhone : '55' + cleanPhone}?text=${encodeURIComponent(message)}`;
+    
+    window.open(whatsappLink, '_blank');
+    toast({ title: "Mensagem Pronta", description: `Abrindo WhatsApp para enviar mensagem para ${selectedApptForWhatsApp.patientName}.`, variant: "success"});
+    setIsConfirmWhatsAppDialogOpen(false);
+  };
+
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
 
@@ -748,21 +823,16 @@ export default function AgendaPage() {
   const todaysAppointments: Appointment[] = appointments[formattedDateKey] || [];
   const isSelectedDatePast = selectedDate && clientToday ? isBefore(startOfDay(selectedDate), clientToday) : false;
 
-  const apptDateTimeForEditButton = (apptTime: string) => formattedDateKey ? parse(`${formattedDateKey} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date()) : null;
-  const disableEditButton = (apptTime: string, apptStatus?: Appointment['status']) => {
-    if (apptStatus === 'cancelado') return true;
-    const apptDT = apptDateTimeForEditButton(apptTime);
-    return !clientNow || !apptDT || isBefore(apptDT, clientNow);
+  const apptDateTimeForActionButtons = (apptDate: string, apptTime: string) => parse(`${apptDate} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date());
+  
+  const getStatusBadgeVariant = (status: Appointment['status']) => {
+    switch (status) {
+      case 'agendado': return 'default'; // Blue or theme default
+      case 'realizado': return 'success'; // Green
+      case 'cancelado': return 'destructive'; // Red (though cancelled are filtered out)
+      default: return 'secondary';
+    }
   };
-  const disableCancelButton = (apptTime: string, apptStatus?: Appointment['status']) => {
-      if (apptStatus === 'cancelado') return true; // Already cancelled
-      // Optionally, allow cancelling past appointments that weren't marked (e.g. no-shows)
-      // For now, same logic as edit: disable if appointment time is in the past
-      // const apptDT = apptDateTimeForEditButton(apptTime);
-      // return !clientNow || !apptDT || isBefore(apptDT, clientNow);
-      return false; // Allow cancelling anytime until explicitly marked 'realizado'
-  };
-
 
   return (
     <div className="space-y-6">
@@ -824,7 +894,7 @@ export default function AgendaPage() {
                   </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
+               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
                 <Input 
                   id="newDate" 
@@ -866,7 +936,7 @@ export default function AgendaPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Compromissos para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'Data Selecionada'}</CardTitle>
-                <CardDescription>Compromissos do dia.</CardDescription>
+                <CardDescription>Compromissos do dia ({todaysAppointments.filter(a => a.status !== 'cancelado').length}).</CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={goToPreviousDay} aria-label="Dia anterior"><ChevronLeft className="h-4 w-4" /></Button>
@@ -887,6 +957,7 @@ export default function AgendaPage() {
                       <p className="font-medium flex items-center gap-1"><User className="h-4 w-4 text-muted-foreground" /> {appt.patientName}</p>
                       <p className="text-sm text-muted-foreground flex items-center gap-1"><ClipboardList className="h-4 w-4 text-muted-foreground" /> {appt.type}</p>
                       {appt.notes && <p className="text-xs text-muted-foreground mt-1 italic">"{appt.notes}"</p>}
+                       <Badge variant={getStatusBadgeVariant(appt.status)} className="mt-1.5 text-xs capitalize">{appt.status}</Badge>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -896,20 +967,42 @@ export default function AgendaPage() {
                       className="h-8 w-8 text-blue-500 hover:bg-blue-100"
                       onClick={() => handleOpenEditDialog(appt, formattedDateKey)}
                       title="Editar Agendamento"
-                      disabled={disableEditButton(appt.time, appt.status)}
+                      disabled={appt.status === 'cancelado' || appt.status === 'realizado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-red-500 hover:bg-red-100" 
-                        title="Cancelar Agendamento"
-                        onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)}
-                        disabled={disableCancelButton(appt.time, appt.status)}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-green-600 hover:bg-green-100"
+                      onClick={() => openConfirmWhatsAppDialog(appt)}
+                      title="Enviar Mensagem de Confirmação"
+                      disabled={appt.status !== 'agendado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}
                     >
-                        <Trash2 className="h-4 w-4" />
+                      <MessageSquare className="h-4 w-4" />
                     </Button>
+                     <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4"/></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            {appt.status === 'agendado' && !(clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow)) && (
+                                <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}>
+                                    <CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Marcar como Realizado
+                                </DropdownMenuItem>
+                            )}
+                            {appt.status === 'realizado' && (
+                                <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}>
+                                <RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Marcar como Agendado
+                                </DropdownMenuItem>
+                            )}
+                            {(appt.status === 'agendado' || appt.status === 'realizado') && (
+                                <DropdownMenuItem onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!text-destructive-foreground focus:!bg-destructive/10">
+                                 <XCircle className="mr-2 h-4 w-4"/> Cancelar Agendamento
+                                </DropdownMenuItem>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button asChild variant="ghost" size="sm" className="h-8">
                       <Link href={`/pacientes/${appt.patientSlug}`}>
                         <span className="sm:hidden">Ver</span>
@@ -1048,7 +1141,7 @@ export default function AgendaPage() {
                   <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
-                  {(!editingTypeInfo || !editingTypeInfo.type || editingTypeInfo.type.id !== type.id) && (
+                  {(!editingTypeInfo || !(editingTypeInfo.type && editingTypeInfo.type.id === type.id)) && (
                     <>
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentName: type.name })} title="Editar Nome">
                         <Pencil className="h-4 w-4" />
@@ -1115,7 +1208,6 @@ export default function AgendaPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-
       <AlertDialog open={isCancelApptConfirmOpen} onOpenChange={(isOpen) => {
         if (!isOpen) {
           setAppointmentToCancelInfo(null);
@@ -1135,9 +1227,57 @@ export default function AgendaPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* WhatsApp Confirmation Message Dialog */}
+      <Dialog open={isConfirmWhatsAppDialogOpen} onOpenChange={setIsConfirmWhatsAppDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mensagem de Confirmação</DialogTitle>
+            <DialogDescription>
+              Enviar mensagem para {selectedApptForWhatsApp?.patientName}.
+              Telefone: {isFetchingPatientPhone ? "Carregando..." : (whatsAppPatientDetails.phone || "Não cadastrado")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <RadioGroup value={whatsAppMsgType} onValueChange={(value) => setWhatsAppMsgType(value as 'predefined' | 'custom')}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="predefined" id="rb-predefined-confirm" />
+                <Label htmlFor="rb-predefined-confirm">Usar mensagem padrão</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="custom" id="rb-custom-confirm" />
+                <Label htmlFor="rb-custom-confirm">Escrever mensagem personalizada</Label>
+              </div>
+            </RadioGroup>
+
+            {whatsAppMsgType === 'predefined' && selectedApptForWhatsApp && (
+              <Card className="bg-muted/50">
+                <CardContent className="p-3 text-sm text-muted-foreground">
+                  <p>Olá {selectedApptForWhatsApp.patientName}, tudo bem? Confirmando seu agendamento para {selectedApptForWhatsApp.type} no dia {format(parse(selectedApptForWhatsApp.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy', { locale: ptBR })} às {selectedApptForWhatsApp.time}. Em caso de imprevisto, por favor, nos avise com antecedência. Até breve!</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {whatsAppMsgType === 'custom' && (
+              <Textarea
+                value={customWhatsAppMsg}
+                onChange={(e) => setCustomWhatsAppMsg(e.target.value)}
+                placeholder={`Escreva sua mensagem para ${selectedApptForWhatsApp?.patientName}...`}
+                rows={4}
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancelar</Button>
+            </DialogClose>
+            <Button onClick={handleSendWhatsAppConfirmation} disabled={!whatsAppPatientDetails.phone || isFetchingPatientPhone}>
+              <Send className="mr-2 h-4 w-4" /> Enviar via WhatsApp
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
-
-
-    
