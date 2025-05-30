@@ -15,7 +15,7 @@ import dynamic from 'next/dynamic';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +37,8 @@ import {
   deleteDoc,
   arrayUnion,
   arrayRemove,
-  orderBy
+  orderBy,
+  Timestamp
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import jsPDF from 'jspdf';
@@ -56,10 +57,11 @@ const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod
 });
 
 type HistoryItem = { id: string; date: string; type: string; notes: string };
-type DocumentItem = { name: string; uploadDate: string; url: string; storagePath: string; };
+type DocumentItem = { id: string; name: string; uploadDate: string; url: string; storagePath: string; };
+
 type Patient = {
   internalId: string;
-  id: string;
+  id: string; // slug or Firestore ID. For this context, mostly Firestore ID (internalId).
   name: string;
   email: string;
   phone: string;
@@ -71,6 +73,8 @@ type Patient = {
   documents: DocumentItem[];
   slug: string;
   objetivoPaciente?: string;
+  lastVisit?: string; // Added from pacientes/page.tsx for consistency
+  nextVisit?: string; // Added from pacientes/page.tsx for consistency
 };
 
 type AppointmentTypeObject = {
@@ -103,12 +107,12 @@ const initialPatientObjectivesData: PatientObjectiveObject[] = [
 
 const getAppointmentTypesPath = (userData: any) => {
   if (!userData) {
-    return collection(db, 'appointmentTypes', 'default_fallback', 'tipos');
+    return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos');
   }
   const isClinica = userData.plano === 'Clínica';
   const identifier = isClinica ? userData.nomeEmpresa : userData.uid;
   if (!identifier) {
-    return collection(db, 'appointmentTypes', 'default_fallback', 'tipos');
+    return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos');
   }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
 };
@@ -167,23 +171,23 @@ export default function PacienteDetalhePage() {
   const [isDeleteHistoryConfirmOpen, setIsDeleteHistoryConfirmOpen] = useState(false);
   const [historyItemToDelete, setHistoryItemToDelete] = useState<HistoryItem | null>(null);
   
-  const [currentUserData, setCurrentUserData] = useState<any>(null);
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<any>(null); 
+  const [firebaseUserAuth, setFirebaseUserAuth] = useState<FirebaseUser | null>(null);
+
 
   useEffect(() => {
     setIsClient(true);
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setFirebaseUser(user);
-      if (!user) {
-        setIsLoading(false);
+      setFirebaseUserAuth(user);
+      if (!user && !isLoading) { // Ensure isLoading check to prevent premature redirect
         router.push('/login');
       }
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [router, isLoading]);
 
 
-  const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null) => {
+  const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null): Promise<any | null> => {
     if (!user) {
       console.warn("fetchCurrentUserData: No user provided.");
       setCurrentUserData(null);
@@ -194,23 +198,25 @@ export default function PacienteDetalhePage() {
       const userDocSnap = await getDoc(userDocRef);
       if (userDocSnap.exists()) {
         const data = { ...userDocSnap.data(), uid: user.uid };
-        setCurrentUserData(data);
-        return data;
+        setCurrentUserData(data); // Set state
+        return data; // Return data for immediate use
       }
       console.warn("fetchCurrentUserData: User data not found in Firestore for UID:", user.uid);
-      setCurrentUserData(null);
       toast({ title: "Erro de Autenticação", description: "Dados do usuário não encontrados.", variant: "destructive" });
+      setCurrentUserData(null);
     } catch (error) {
       console.error("Error fetching user data:", error);
-      setCurrentUserData(null);
       toast({ title: "Erro de Autenticação", description: "Não foi possível carregar dados do usuário.", variant: "destructive" });
+      setCurrentUserData(null);
     }
     return null;
   }, [toast]);
 
+
   const fetchAppointmentTypes = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
-      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
+      console.warn("fetchAppointmentTypes: User data not available. Using fallback.");
+      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
       return;
     }
@@ -222,18 +228,19 @@ export default function PacienteDetalhePage() {
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
-      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
+      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(allFetchedTypes.length > 0 ? allFetchedTypes : fallbackTypes);
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      toast({ title: "Erro ao Carregar Tipos", description: "Não foi possível carregar os tipos de atendimento.", variant: "warning", duration: 4000 });
-      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
+      toast({ title: "Erro ao Carregar Tipos", description: "Não foi possível carregar os tipos de atendimento. Usando padrões.", variant: "warning", duration: 4000 });
+      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
     }
   }, [toast]);
 
   const fetchPatientObjectives = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
+      console.warn("fetchPatientObjectives: User data not available. Using fallback.");
       const fallback = initialPatientObjectivesData.map(o => ({ ...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
       return;
@@ -250,48 +257,63 @@ export default function PacienteDetalhePage() {
       setPatientObjectives(fetchedObjectives.length > 0 ? fetchedObjectives : fallback);
     } catch (error: any) {
       console.error("Erro ao buscar objetivos do paciente:", error);
-      toast({ title: "Erro ao Carregar Objetivos", description: "Não foi possível carregar os objetivos do paciente.", variant: "warning" });
+      toast({ title: "Erro ao Carregar Objetivos", description: "Não foi possível carregar os objetivos. Usando padrões.", variant: "warning" });
       const fallback = initialPatientObjectivesData.map(o => ({ ...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
     }
   }, [toast]);
   
-  // Centralized data loading effect
   useEffect(() => {
-    const loadAllPageData = async () => {
-      if (!firebaseUser || !patientSlug) {
-        // User not yet authenticated or slug not available, isLoading will be true
+    const loadPageData = async () => {
+      if (!patientSlug || !firebaseUserAuth) {
+        setIsLoading(!!patientSlug); // Only set loading if slug is present but user is not
         return;
       }
-      
       setIsLoading(true);
-
       try {
-        const uData = await fetchCurrentUserData(firebaseUser);
-        if (!uData) { // fetchCurrentUserData handles its own toasts for failure
+        const uData = await fetchCurrentUserData(firebaseUserAuth); // Fetch and set currentUserData
+        if (!uData) {
           setIsLoading(false);
-          return;
+          return; 
         }
-
+        
+        // Fetch types and objectives after user data is confirmed
         await Promise.all([
           fetchAppointmentTypes(uData),
           fetchPatientObjectives(uData)
         ]);
 
+        // Fetch patient details
         const patientsRef = collection(db, 'pacientes');
-        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', firebaseUser.uid));
+        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', firebaseUserAuth.uid));
         const querySnapshot = await getDocs(q);
         
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
-          const data = docSnap.data() as Omit<Patient, 'internalId'>;
-          const fetchedPatient = {
+          const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>; // Ensure type matches Firestore structure initially
+          
+          let uniqueIdCounter = 0;
+          const processedHistory = (data.history || []).map((histItem, index) => ({
+            ...histItem,
+            id: histItem.id || `hist-load-${docSnap.id}-${index}-${uniqueIdCounter++}`
+          }));
+
+          const fetchedPatient: Patient = {
             ...data,
             internalId: docSnap.id,
-            slug: patientSlug, 
-            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}-${Date.now()}-${Math.random().toString(36).substring(2,9)}` })),
-            documents: (data.documents || []).map((doc, index) => ({ ...doc, id: `doc-${index}`})) as DocumentItem[],
+            slug: patientSlug,
+            history: processedHistory,
+            documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
             objetivoPaciente: data.objetivoPaciente || '',
+            name: data.name || '',
+            email: data.email || '',
+            phone: data.phone || '',
+            dob: data.dob || '',
+            address: data.address || '',
+            status: data.status || 'Ativo',
+            avatar: data.avatar || `https://placehold.co/100x100.png`,
+            lastVisit: data.lastVisit || '',
+            nextVisit: data.nextVisit || '',
           };
           setPatient(fetchedPatient);
         } else {
@@ -308,8 +330,8 @@ export default function PacienteDetalhePage() {
       }
     };
 
-    loadAllPageData();
-  }, [patientSlug, firebaseUser, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
+    loadPageData();
+  }, [patientSlug, firebaseUserAuth, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
 
 
   const getFirstActiveTypeName = useCallback(() => {
@@ -342,9 +364,9 @@ export default function PacienteDetalhePage() {
         if (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active')) {
             setNewHistoryType(firstActiveType || '');
         }
-    } else if (patient) { // Data might not be loaded yet, or there are none
+    } else if (patient) { 
         setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || '' });
-        if (!newHistoryType) setNewHistoryType('');
+        if (!newHistoryType && appointmentTypes.length > 0) setNewHistoryType(getFirstActiveTypeName() || '');
     }
   }, [patient, appointmentTypes, patientObjectives, getFirstActiveTypeName, getFirstActiveObjectiveName, isEditing, newHistoryType]); 
 
@@ -353,6 +375,14 @@ export default function PacienteDetalhePage() {
     if (!editedPatient || !editedPatient.internalId || !currentUserData) {
       toast({ title: "Erro", description: "Não foi possível identificar o paciente ou dados do usuário para salvar.", variant: "destructive" });
       return;
+    }
+     if (editedPatient.dob && isFuture(parseISO(editedPatient.dob))) {
+      toast({ title: "Data de Nascimento Inválida", description: "A data de nascimento não pode ser futura.", variant: "destructive" });
+      return;
+    }
+    if (editedPatient.objetivoPaciente && !patientObjectives.find(o => o.name === editedPatient.objetivoPaciente && o.status === 'active')) {
+        toast({ title: "Objetivo Inválido", description: "O objetivo do paciente selecionado não está ativo ou não existe.", variant: "destructive" });
+        return;
     }
     try {
       const patientRef = doc(db, 'pacientes', editedPatient.internalId);
@@ -366,7 +396,7 @@ export default function PacienteDetalhePage() {
         objetivoPaciente: editedPatient.objetivoPaciente || '',
       };
       await updateDoc(patientRef, dataToSave);
-      setPatient({ ...editedPatient }); 
+      setPatient(prev => prev ? { ...prev, ...dataToSave } : undefined); 
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -780,8 +810,8 @@ export default function PacienteDetalhePage() {
   };
 
   const handleConfirmDeleteHistory = async () => {
-    if (!patient || !patient.internalId || !historyItemToDelete) {
-      toast({ title: "Erro", description: "Não foi possível identificar o registro para excluir.", variant: "destructive" });
+    if (!patient || !patient.internalId || !historyItemToDelete || !firebaseUserAuth) {
+      toast({ title: "Erro", description: "Não foi possível identificar o registro para excluir ou usuário não autenticado.", variant: "destructive" });
       return;
     }
     try {
@@ -789,14 +819,18 @@ export default function PacienteDetalhePage() {
       
       const currentPatientDoc = await getDoc(patientRef);
       const currentPatientData = currentPatientDoc.data() as Patient | undefined;
-      const currentHistory = currentPatientData?.history || [];
-
+      
+      if (!currentPatientData) {
+        toast({ title: "Erro", description: "Paciente não encontrado para atualizar histórico.", variant: "destructive" });
+        return;
+      }
+      
+      const currentHistory = currentPatientData.history || [];
       const updatedHistory = currentHistory.filter(item => item.id !== historyItemToDelete.id);
       await updateDoc(patientRef, { history: updatedHistory });
 
-      const updatedPatientData = { ...patient, history: updatedHistory };
-      setPatient(updatedPatientData);
-      if(isEditing) setEditedPatient(updatedPatientData);
+      setPatient(prev => prev ? { ...prev, history: updatedHistory } : undefined);
+      if(isEditing && editedPatient) setEditedPatient(prev => prev ? { ...prev, history: updatedHistory } : undefined);
 
       toast({ title: "Registro Excluído", description: "O registro do histórico foi removido.", variant: "success" });
     } catch (error) {
@@ -996,8 +1030,8 @@ export default function PacienteDetalhePage() {
 
               <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
               {displayPatient?.history && displayPatient.history.length > 0 ? (
-                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item) => (
-                  <Card key={item.id} className="bg-muted/50">
+                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
+                  <Card key={`${item.id || 'fallbackID'}-${index}`} className="bg-muted/50">
                     <CardHeader className="pb-3 flex flex-row justify-between items-start">
                       <div>
                         <CardTitle className="text-base"> {item.type} </CardTitle>
@@ -1016,7 +1050,7 @@ export default function PacienteDetalhePage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleOpenDeleteHistoryDialog(item)}
-                            className="text-destructive focus:!bg-destructive/10 focus:!text-black hover:!bg-destructive/10 hover:!text-black"
+                            className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground focus:!bg-destructive focus:!text-destructive-foreground"
                           >
                             <Trash2 className="mr-2 h-4 w-4" /> Excluir Registro
                           </DropdownMenuItem>
@@ -1057,7 +1091,7 @@ export default function PacienteDetalhePage() {
               {isEditing ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
                    <div className="space-y-1"> <Label htmlFor="edit-name">Nome Completo</Label> <Input id="edit-name" name="name" value={editedPatient?.name || ''} onChange={handleInputChange} /> </div>
-                  <div className="space-y-1"> <Label htmlFor="edit-dob">Data de Nascimento</Label> <Input id="edit-dob" name="dob" type="date" value={editedPatient?.dob || ''} onChange={handleInputChange} /> </div>
+                  <div className="space-y-1"> <Label htmlFor="edit-dob">Data de Nascimento</Label> <Input id="edit-dob" name="dob" type="date" value={editedPatient?.dob || ''} onChange={handleInputChange} max={format(new Date(), 'yyyy-MM-dd')} /> </div>
                   <div className="space-y-1"> <Label htmlFor="edit-email">Email</Label> <Input id="edit-email" name="email" type="email" value={editedPatient?.email || ''} onChange={handleInputChange} /> </div>
                   <div className="space-y-1"> <Label htmlFor="edit-phone">Telefone</Label> <Input id="edit-phone" name="phone" type="tel" value={editedPatient?.phone || ''} onChange={handleInputChange} /> </div>
                   <div className="md:col-span-2 space-y-1"> <Label htmlFor="edit-address">Endereço</Label> <Input id="edit-address" name="address" value={editedPatient?.address || ''} onChange={handleInputChange} /> </div>
