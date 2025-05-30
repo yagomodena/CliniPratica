@@ -46,6 +46,7 @@ import {
   Timestamp,
   orderBy
 } from "firebase/firestore";
+import { MessageCircle } from "lucide-react";
 
 // Type for patients fetched from Firebase, used in select dropdowns for alerts
 type PatientForSelect = {
@@ -59,6 +60,7 @@ type PatientForBirthday = {
   id: string;
   name: string;
   dob?: string; // Date of birth as YYYY-MM-DD
+  phone?: string;
   slug: string; // Slug for linking
 };
 
@@ -113,7 +115,7 @@ export default function DashboardPage() {
   const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
   const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
-  
+
   const [clientNow, setClientNow] = useState<Date | null>(null);
   const [clientTodayString, setClientTodayString] = useState<string>('');
 
@@ -212,7 +214,7 @@ export default function DashboardPage() {
       if (error.code === 'permission-denied') {
         description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-         description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' e 'createdAt' na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ATIVADO.";
+        description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' e 'createdAt' na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ATIVADO.";
       }
       toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
     }
@@ -297,7 +299,7 @@ export default function DashboardPage() {
   const fetchMonthlyRevenueData = useCallback(async (currentUsuario: FirebaseUser, now: Date) => {
     if (!currentUsuario || !now) return;
     setIsLoadingRevenue(true);
-    
+
     let currentMonthTotal = 0;
     let previousMonthTotal = 0;
 
@@ -412,7 +414,7 @@ export default function DashboardPage() {
           setBirthdayPatients([]);
           setAlerts([]);
           setTodaysFirebaseAppointments([]);
-          setActualWeeklyAppointmentsData( ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map(day => ({ day, appointments: 0 })));
+          setActualWeeklyAppointmentsData(["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map(day => ({ day, appointments: 0 })));
           setIsLoadingFirebasePatients(false);
         }
       };
@@ -477,10 +479,10 @@ export default function DashboardPage() {
     } catch (error: any) {
       console.error("Erro ao adicionar alerta:", error);
       let description = "Não foi possível salvar o alerta.";
-       if (error.code === 'permission-denied') {
+      if (error.code === 'permission-denied') {
         description = "Permissão negada ao salvar o alerta. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-         description = "Falha ao salvar o alerta: A operação pode requerer um índice no Firestore que ainda não está ativo. Verifique o console do Firebase.";
+        description = "Falha ao salvar o alerta: A operação pode requerer um índice no Firestore que ainda não está ativo. Verifique o console do Firebase.";
       }
       toast({ title: "Erro ao adicionar alerta", description, variant: "destructive" });
     }
@@ -533,7 +535,7 @@ export default function DashboardPage() {
     } catch (error: any) {
       console.error("Erro ao editar alerta:", error);
       let description = "Não foi possível atualizar o alerta.";
-       if (error.code === 'permission-denied') {
+      if (error.code === 'permission-denied') {
         description = "Permissão negada ao atualizar o alerta. Verifique as regras de segurança do Firestore.";
       }
       toast({ title: "Erro", description, variant: "destructive" });
@@ -554,7 +556,7 @@ export default function DashboardPage() {
     } catch (error: any) {
       console.error("Erro ao resolver alerta:", error);
       let description = "Não foi possível remover o alerta.";
-       if (error.code === 'permission-denied') {
+      if (error.code === 'permission-denied') {
         description = "Permissão negada ao remover o alerta. Verifique as regras de segurança do Firestore.";
       }
       toast({ title: "Erro", description, variant: "destructive" });
@@ -639,9 +641,9 @@ export default function DashboardPage() {
             <CalendarCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
-             {isLoadingTodaysAppointments ? (
-                <p className="text-sm text-muted-foreground text-center py-8">Carregando agendamentos...</p>
-             ) : todaysFirebaseAppointments.length > 0 ? (
+            {isLoadingTodaysAppointments ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Carregando agendamentos...</p>
+            ) : todaysFirebaseAppointments.length > 0 ? (
               todaysFirebaseAppointments.map((appt) => (
                 <div key={appt.id} className="flex items-center justify-between text-sm gap-2">
                   <span className="font-medium shrink-0">{appt.time}</span>
@@ -776,6 +778,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        /* CARD DE ANIVERSARIANTES */
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-1">
@@ -790,20 +793,63 @@ export default function DashboardPage() {
                 <strong className="text-primary">Essencial, Profissional ou Clínica</strong>
               </div>
             ) : isLoadingFirebasePatients ? (
-                <p className="text-sm text-muted-foreground text-center py-8">Carregando aniversariantes...</p>
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Carregando aniversariantes...
+              </p>
             ) : birthdayPatients.length > 0 ? (
-              birthdayPatients.map((patient) => (
-                <div key={patient.id} className="flex items-center justify-between text-sm gap-2">
-                  <span className="font-medium truncate flex-1 min-w-0" title={patient.name}>{patient.name}</span>
-                  <Link href={`/pacientes/${patient.slug}`} passHref className="shrink-0">
-                    <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                </div>
-              ))
+              birthdayPatients.map((patient) => {
+                const message = `Olá ${patient.name}! Parabéns pelo seu aniversário 🎉 Desejamos muita saúde e felicidades!`;
+                const whatsappLink = `https://wa.me/55${patient.phone}?text=${encodeURIComponent(message)}`;
+
+                return (
+                  <div
+                    key={patient.id}
+                    className="flex items-center justify-between text-sm gap-2"
+                  >
+                    <span
+                      className="font-medium truncate flex-1 min-w-0"
+                      title={patient.name}
+                    >
+                      {patient.name}
+                    </span>
+                    <div className="flex gap-1">
+                      <Link
+                        href={whatsappLink}
+                        target="_blank"
+                        className="shrink-0"
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-1 text-green-600 hover:text-green-700"
+                          title="Enviar mensagem no WhatsApp"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </Button>
+                      </Link>
+
+                      <Link
+                        href={`/pacientes/${patient.slug}`}
+                        passHref
+                        className="shrink-0"
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto p-1 text-primary hover:text-primary/80"
+                          title="Ver paciente"
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-8">Nenhum aniversariante hoje.</p>
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Nenhum aniversariante hoje.
+              </p>
             )}
           </CardContent>
         </Card>
@@ -830,7 +876,7 @@ export default function DashboardPage() {
                   })}
                 </div>
                 {revenueComparisonPercentage !== null && (
-                   <p className={`text-xs ${revenueComparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <p className={`text-xs ${revenueComparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {revenueComparisonPercentage >= 0 ? '+' : ''}
                     {revenueComparisonPercentage.toFixed(1)}% em relação ao mês passado
                   </p>
@@ -908,15 +954,15 @@ export default function DashboardPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {isLoadingFirebasePatients ? (
-                        <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
+                      <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
                     ) : firebasePatients.length === 0 ? (
-                        <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
+                      <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
                     ) : (
-                        firebasePatients.map((patient) => (
+                      firebasePatients.map((patient) => (
                         <SelectItem key={patient.id} value={patient.id}>
-                            {patient.name}
+                          {patient.name}
                         </SelectItem>
-                        ))
+                      ))
                     )}
                   </SelectContent>
                 </Select>
