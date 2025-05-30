@@ -103,8 +103,8 @@ const initialAppointmentFormValues = {
   date: '',
   time: '',
   notes: '',
-  naoLancarFinanceiro: false, // Initialize new field
-  appointmentTypeId: '', // Added to store the ID
+  naoLancarFinanceiro: false, 
+  appointmentTypeId: '', 
 };
 
 type AppointmentFormValues = typeof initialAppointmentFormValues;
@@ -401,21 +401,24 @@ export default function AgendaPage() {
   const handleFormSelectChange = (formSetter: React.Dispatch<React.SetStateAction<AppointmentFormValues>>, field: keyof AppointmentFormValues, value: string) => {
     formSetter(prev => ({ ...prev, [field]: value }));
   
-    if (field === 'type') {
+    if (field === 'type' && currentUserData?.plano !== 'Gratuito') {
       const selectedType = appointmentTypes.find(t => t.name === value);
       if (selectedType) {
         formSetter(prev => ({ ...prev, appointmentTypeId: selectedType.id || '' }));
         if (selectedType.lancarFinanceiroAutomatico && (selectedType.valor || 0) > 0) {
           setShowNaoLancarFinanceiroSwitch(true);
-          formSetter(prev => ({ ...prev, naoLancarFinanceiro: false })); // Default to generating
+          formSetter(prev => ({ ...prev, naoLancarFinanceiro: false })); 
         } else {
           setShowNaoLancarFinanceiroSwitch(false);
-          formSetter(prev => ({ ...prev, naoLancarFinanceiro: true })); // Default to not generating if not applicable
+          formSetter(prev => ({ ...prev, naoLancarFinanceiro: true })); 
         }
       } else {
         setShowNaoLancarFinanceiroSwitch(false);
          formSetter(prev => ({ ...prev, naoLancarFinanceiro: true }));
       }
+    } else if (currentUserData?.plano === 'Gratuito') {
+      setShowNaoLancarFinanceiroSwitch(false);
+      formSetter(prev => ({ ...prev, naoLancarFinanceiro: true }));
     }
   };
 
@@ -457,7 +460,11 @@ export default function AgendaPage() {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
     }
-    const { patientId, type, date, time, notes, naoLancarFinanceiro, appointmentTypeId } = newAppointmentForm;
+    let { patientId, type, date, time, notes, naoLancarFinanceiro, appointmentTypeId } = newAppointmentForm;
+
+    if (currentUserData.plano === 'Gratuito') {
+        naoLancarFinanceiro = true; // Force no financial launch for free plan
+    }
 
     if (!patientId || !date || !time || !type || !appointmentTypeId) {
       toast({ title: "Erro de Validação", description: "Paciente, Data, Hora e Tipo são obrigatórios.", variant: "destructive" });
@@ -503,12 +510,12 @@ export default function AgendaPage() {
         appointmentTypeId,
         notes,
         status: 'agendado',
-        naoLancarFinanceiro, // Store user's choice
+        naoLancarFinanceiro, 
         createdAt: serverTimestamp(),
       });
 
-      // Create financial transaction if applicable
-      if (selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro) {
+      // Create financial transaction if applicable AND user is not on free plan
+      if (currentUserData.plano !== 'Gratuito' && selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro) {
         await addDoc(collection(db, 'financialTransactions'), {
           ownerId: currentUser.uid,
           appointmentId: newApptRef.id,
@@ -517,7 +524,7 @@ export default function AgendaPage() {
           patientId: selectedPatient.id,
           patientName: selectedPatient.name,
           amount: selectedAppointmentType.valor,
-          paymentMethod: 'Pix', // Default, can be changed later
+          paymentMethod: 'Pix', 
           status: 'Pendente',
           type: 'atendimento',
           createdAt: serverTimestamp(),
@@ -552,16 +559,24 @@ export default function AgendaPage() {
       notes: appointment.notes || '',
       naoLancarFinanceiro: appointment.naoLancarFinanceiro || false,
     });
-    setShowNaoLancarFinanceiroSwitch(!!(selectedType?.lancarFinanceiroAutomatico && (selectedType?.valor || 0) > 0));
+    if (currentUserData?.plano !== 'Gratuito') {
+      setShowNaoLancarFinanceiroSwitch(!!(selectedType?.lancarFinanceiroAutomatico && (selectedType?.valor || 0) > 0));
+    } else {
+      setShowNaoLancarFinanceiroSwitch(false);
+    }
     setIsEditAppointmentDialogOpen(true);
   };
 
   const handleSaveEditedAppointment = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!editingAppointmentInfo || !currentUser) return;
+    if (!editingAppointmentInfo || !currentUser || !currentUserData) return;
 
     const { appointment: originalAppointment } = editingAppointmentInfo;
-    const { patientId, type, date: newDateKey, time, notes, naoLancarFinanceiro, appointmentTypeId } = editAppointmentForm;
+    let { patientId, type, date: newDateKey, time, notes, naoLancarFinanceiro, appointmentTypeId } = editAppointmentForm;
+    
+    if (currentUserData.plano === 'Gratuito') {
+      naoLancarFinanceiro = true; 
+    }
 
     if (!patientId || !newDateKey || !time || !type || !appointmentTypeId) {
       toast({ title: "Erro de Validação", description: "Paciente, Data, Hora e Tipo são obrigatórios.", variant: "destructive" });
@@ -608,7 +623,7 @@ export default function AgendaPage() {
         type,
         appointmentTypeId,
         notes,
-        naoLancarFinanceiro, // Update this field
+        naoLancarFinanceiro, 
       });
 
       // Logic to manage financial transaction based on changes
@@ -617,19 +632,17 @@ export default function AgendaPage() {
       const financeSnapshot = await getDocs(qFinance);
       const existingTransaction = financeSnapshot.docs.length > 0 ? { id: financeSnapshot.docs[0].id, ...financeSnapshot.docs[0].data() } : null;
 
-      const shouldGenerateFinance = selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro;
+      const shouldGenerateFinance = currentUserData.plano !== 'Gratuito' && selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro;
 
       if (shouldGenerateFinance) {
         if (existingTransaction) {
-          // Update existing financial record if amount or date changed
           await updateDoc(doc(db, 'financialTransactions', existingTransaction.id), {
             amount: selectedAppointmentType.valor,
             date: Timestamp.fromDate(parseISO(newDateKey)),
             description: `Consulta - ${type} - ${selectedPatient.name}`,
-            status: 'Pendente', // Reset to pending if re-enabled or amount changed
+            status: 'Pendente', 
           });
         } else {
-          // Create new financial record
           await addDoc(financialTransactionsRef, {
             ownerId: currentUser.uid,
             appointmentId: originalAppointment.id,
@@ -645,7 +658,6 @@ export default function AgendaPage() {
           });
         }
       } else if (existingTransaction) {
-        // If finance should not be generated, but exists, cancel it
         await updateDoc(doc(db, 'financialTransactions', existingTransaction.id), {
           status: 'Cancelado',
         });
@@ -664,7 +676,7 @@ export default function AgendaPage() {
   };
 
   const updateAppointmentStatus = async (appointmentId: string, newStatus: Appointment['status']) => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUserData) return;
     try {
       const apptRef = doc(db, 'agendamentos', appointmentId);
       await updateDoc(apptRef, {
@@ -672,35 +684,34 @@ export default function AgendaPage() {
         updatedAt: serverTimestamp()
       });
   
-      // Manage linked financial transaction status
-      const financialTransactionsRef = collection(db, 'financialTransactions');
-      const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentId));
-      const financeSnapshot = await getDocs(qFinance);
-  
-      if (!financeSnapshot.empty) {
-        const financeDocId = financeSnapshot.docs[0].id;
-        const financeDocRef = doc(db, 'financialTransactions', financeDocId);
-        const financeDocData = financeSnapshot.docs[0].data();
-  
-        if (newStatus === 'realizado' && financeDocData.status === 'Pendente') {
-          await updateDoc(financeDocRef, {
-            status: 'Recebido',
-            updatedAt: serverTimestamp(),
-          });
-        } else if (newStatus === 'agendado' && (financeDocData.status === 'Recebido' || financeDocData.status === 'Cancelado')) {
-           // If reverting to 'agendado', set finance back to 'Pendente' only if it was previously 'Recebido' or 'Cancelado'
-           // Do not change if it was 'Pendente' already
-           if (financeDocData.status === 'Recebido' || financeDocData.status === 'Cancelado') {
+      if (currentUserData.plano !== 'Gratuito') {
+        const financialTransactionsRef = collection(db, 'financialTransactions');
+        const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentId));
+        const financeSnapshot = await getDocs(qFinance);
+    
+        if (!financeSnapshot.empty) {
+          const financeDocId = financeSnapshot.docs[0].id;
+          const financeDocRef = doc(db, 'financialTransactions', financeDocId);
+          const financeDocData = financeSnapshot.docs[0].data();
+    
+          if (newStatus === 'realizado' && financeDocData.status === 'Pendente') {
             await updateDoc(financeDocRef, {
-                status: 'Pendente',
-                updatedAt: serverTimestamp(),
+              status: 'Recebido',
+              updatedAt: serverTimestamp(),
             });
-           }
-        } else if (newStatus === 'cancelado') {
-          await updateDoc(financeDocRef, {
-            status: 'Cancelado',
-            updatedAt: serverTimestamp(),
-          });
+          } else if (newStatus === 'agendado' && (financeDocData.status === 'Recebido' || financeDocData.status === 'Cancelado')) {
+             if (financeDocData.status === 'Recebido' || financeDocData.status === 'Cancelado') {
+              await updateDoc(financeDocRef, {
+                  status: 'Pendente',
+                  updatedAt: serverTimestamp(),
+              });
+             }
+          } else if (newStatus === 'cancelado') {
+            await updateDoc(financeDocRef, {
+              status: 'Cancelado',
+              updatedAt: serverTimestamp(),
+            });
+          }
         }
       }
   
@@ -719,23 +730,23 @@ export default function AgendaPage() {
   };
 
   const handleConfirmDeleteAppt = async () => {
-    if (!appointmentToDeleteInfo || !currentUser) return;
+    if (!appointmentToDeleteInfo || !currentUser || !currentUserData) return;
     try {
-      // Delete the appointment document
       await deleteDoc(doc(db, 'agendamentos', appointmentToDeleteInfo.appointmentId));
   
-      // Find and update (cancel) any linked financial transaction
-      const financialTransactionsRef = collection(db, 'financialTransactions');
-      const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentToDeleteInfo.appointmentId));
-      const financeSnapshot = await getDocs(qFinance);
-  
-      if (!financeSnapshot.empty) {
-        const financeDocId = financeSnapshot.docs[0].id;
-        const financeDocRef = doc(db, 'financialTransactions', financeDocId);
-        await updateDoc(financeDocRef, {
-          status: 'Cancelado', // Mark as cancelled, don't delete, to maintain audit trail
-          updatedAt: serverTimestamp(),
-        });
+      if (currentUserData.plano !== 'Gratuito') {
+        const financialTransactionsRef = collection(db, 'financialTransactions');
+        const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentToDeleteInfo.appointmentId));
+        const financeSnapshot = await getDocs(qFinance);
+    
+        if (!financeSnapshot.empty) {
+          const financeDocId = financeSnapshot.docs[0].id;
+          const financeDocRef = doc(db, 'financialTransactions', financeDocId);
+          await updateDoc(financeDocRef, {
+            status: 'Cancelado', 
+            updatedAt: serverTimestamp(),
+          });
+        }
       }
   
       toast({ title: "Agendamento Excluído", description: `Agendamento para ${appointmentToDeleteInfo.patientName} foi excluído.`, variant: "success" });
@@ -767,15 +778,24 @@ export default function AgendaPage() {
       return;
     }
 
-    try {
-      const tiposRef = getAppointmentTypesPath(currentUserData);
-      await addDoc(tiposRef, {
+    const typeDataToSave: Partial<AppointmentTypeObject> = {
         name: trimmedName,
         status: 'active',
-        valor: newCustomType.valor || 0,
-        lancarFinanceiroAutomatico: newCustomType.lancarFinanceiroAutomatico || false,
         createdAt: serverTimestamp(),
-      });
+    };
+
+    if (currentUserData.plano !== 'Gratuito') {
+        typeDataToSave.valor = newCustomType.valor || 0;
+        typeDataToSave.lancarFinanceiroAutomatico = newCustomType.lancarFinanceiroAutomatico || false;
+    } else {
+        typeDataToSave.valor = 0;
+        typeDataToSave.lancarFinanceiroAutomatico = false;
+    }
+
+
+    try {
+      const tiposRef = getAppointmentTypesPath(currentUserData);
+      await addDoc(tiposRef, typeDataToSave);
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
       setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
@@ -803,15 +823,21 @@ export default function AgendaPage() {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
+    
+    const typeDataToUpdate: Partial<AppointmentTypeObject> = { name: newNameTrimmed };
+    if (currentUserData.plano !== 'Gratuito') {
+        typeDataToUpdate.valor = currentData.valor || 0;
+        typeDataToUpdate.lancarFinanceiroAutomatico = currentData.lancarFinanceiroAutomatico || false;
+    } else {
+        typeDataToUpdate.valor = 0;
+        typeDataToUpdate.lancarFinanceiroAutomatico = false;
+    }
+
 
     try {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToUpdateRef = doc(tiposCollectionRef, originalType.id);
-      await updateDoc(docToUpdateRef, {
-        name: newNameTrimmed,
-        valor: currentData.valor || 0,
-        lancarFinanceiroAutomatico: currentData.lancarFinanceiroAutomatico || false,
-      });
+      await updateDoc(docToUpdateRef, typeDataToUpdate);
 
       setEditingTypeInfo(null);
       toast({ title: "Sucesso", description: `Tipo "${originalType.name}" atualizado.`, variant: "success" });
@@ -1049,8 +1075,12 @@ export default function AgendaPage() {
               type: firstActiveName,
               appointmentTypeId: firstActiveId,
             });
-             const selectedType = appointmentTypes.find(t => t.id === firstActiveId);
-            setShowNaoLancarFinanceiroSwitch(!!(selectedType?.lancarFinanceiroAutomatico && (selectedType?.valor || 0) > 0));
+            if (currentUserData?.plano !== 'Gratuito') {
+                const selectedType = appointmentTypes.find(t => t.id === firstActiveId);
+                setShowNaoLancarFinanceiroSwitch(!!(selectedType?.lancarFinanceiroAutomatico && (selectedType?.valor || 0) > 0));
+            } else {
+                setShowNaoLancarFinanceiroSwitch(false);
+            }
           } else {
             setShowNaoLancarFinanceiroSwitch(false);
           }
@@ -1089,7 +1119,7 @@ export default function AgendaPage() {
                   <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
                 </div>
               </div>
-              {showNaoLancarFinanceiroSwitch && (
+              {showNaoLancarFinanceiroSwitch && currentUserData?.plano !== 'Gratuito' && (
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="naoLancarFinanceiroNew" className="text-right col-span-3">Gerar Lançamento Financeiro?</Label>
                   <Switch
@@ -1163,7 +1193,11 @@ export default function AgendaPage() {
                         <DropdownMenuContent align="end">
                             {appt.status === 'agendado' && !(clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow)) && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}><CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Realizado</DropdownMenuItem>}
                             {appt.status === 'realizado' && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}><RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Agendado</DropdownMenuItem>}
-                            {(appt.status === 'agendado' || appt.status === 'realizado') && <DropdownMenuItem onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive"><XCircle className="mr-2 h-4 w-4"/> Excluir Agendamento</DropdownMenuItem>}
+                            {(appt.status === 'agendado' || appt.status === 'realizado') && 
+                              <DropdownMenuItem onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4"/> Excluir Agendamento
+                              </DropdownMenuItem>
+                            }
                         </DropdownMenuContent>
                     </DropdownMenu>
                      <Button variant="outline" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3" title="Atendimento" disabled={appt.status === 'cancelado' || appt.status === 'realizado'} onClick={() => handleOpenRecordAttendanceDialog(appt)}><FileText className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Reg. Atend.</span><span className="sm:hidden">Atend.</span></Button>
@@ -1239,7 +1273,7 @@ export default function AgendaPage() {
                 <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
               </div>
             </div>
-            {showNaoLancarFinanceiroSwitch && (
+            {showNaoLancarFinanceiroSwitch && currentUserData?.plano !== 'Gratuito' && (
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="naoLancarFinanceiroEdit" className="text-right col-span-3">Gerar Lançamento Financeiro?</Label>
                   <Switch
@@ -1281,14 +1315,18 @@ export default function AgendaPage() {
               <Label htmlFor="newCustomTypeName" className="text-right col-span-1">Nome*</Label>
               <Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-3" />
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="newCustomTypeValor" className="text-right col-span-1">Valor (R$)</Label>
-              <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-3" placeholder="0.00" />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="newCustomTypeLancar" className="text-right col-span-3">Lançar Financeiro Automático?</Label>
-              <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-1 justify-self-start" />
-            </div>
+            {currentUserData?.plano !== 'Gratuito' && (
+                <>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="newCustomTypeValor" className="text-right col-span-1">Valor (R$)</Label>
+                    <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-3" placeholder="0.00" />
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="newCustomTypeLancar" className="text-right col-span-3">Lançar Financeiro Automático?</Label>
+                    <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-1 justify-self-start" />
+                    </div>
+                </>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" onClick={() => setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' })}>Cancelar</Button></DialogClose>
@@ -1305,19 +1343,25 @@ export default function AgendaPage() {
               <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
                 {editingTypeInfo && editingTypeInfo.type.id === type.id ? (
                   <div className="flex-grow grid grid-cols-3 gap-2 mr-2 items-center">
-                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-2" placeholder="Nome do tipo" />
-                     <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor"/>
-                     <div className="col-span-3 flex items-center justify-between mt-1">
-                        <Label htmlFor={`editLancar-${type.id}`} className="text-xs">Lançar Financeiro Auto.?</Label>
-                        <Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked }} : null)} />
-                     </div>
+                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-3" placeholder="Nome do tipo" />
+                    {currentUserData?.plano !== 'Gratuito' && (
+                        <>
+                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor"/>
+                            <div className="col-span-2 flex items-center justify-end mt-1 gap-2">
+                                <Label htmlFor={`editLancar-${type.id}`} className="text-xs">Lançar Financeiro Auto.?</Label>
+                                <Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked }} : null)} />
+                            </div>
+                        </>
+                    )}
                   </div>
                 ) : (
                   <div className="flex-grow">
                     <span className={` ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
-                    <div className="text-xs text-muted-foreground">
-                        Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}
-                    </div>
+                    {currentUserData?.plano !== 'Gratuito' && (
+                        <div className="text-xs text-muted-foreground">
+                            Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}
+                        </div>
+                    )}
                   </div>
                 )}
                 <div className="flex gap-1 items-center ml-auto">

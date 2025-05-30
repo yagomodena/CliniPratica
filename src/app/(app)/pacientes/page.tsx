@@ -45,7 +45,8 @@ import {
   where,
   updateDoc,
   deleteDoc,
-  orderBy
+  orderBy,
+  getCountFromServer
 } from 'firebase/firestore';
 import { getAuth, type User as FirebaseUser } from 'firebase/auth';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -79,7 +80,7 @@ type PatientObjectiveObject = {
   status: 'active' | 'inactive';
 };
 
-const initialPatientObjectivesData: PatientObjectiveObject[] = []; // Starts empty
+const initialPatientObjectivesData: PatientObjectiveObject[] = [];
 
 
 const getPatientObjectivesPath = (userData: any) => {
@@ -120,7 +121,7 @@ export default function PacientesPage() {
     dob: '',
     address: '',
     status: 'Ativo',
-    objetivoPaciente: '', // Initialize new field
+    objetivoPaciente: '', 
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,7 +146,6 @@ export default function PacientesPage() {
 
   const fetchPatientObjectives = useCallback(async () => {
     if (!currentUserData) {
-      console.log("Dados do usuário atual não carregados para buscar objetivos.");
       const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
       return;
@@ -246,6 +246,23 @@ export default function PacientesPage() {
       toast({ title: "Erro", description: "Usuário ou dados do usuário não autenticados.", variant: "destructive" });
       return;
     }
+
+    // Check patient limit for "Gratuito" plan
+    if (currentUserData.plano === 'Gratuito') {
+      const activePatientsQuery = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
+      const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
+      const activePatientsCount = activePatientsSnapshot.data().count;
+
+      if (activePatientsCount >= 10) {
+        toast({
+          title: "Limite Atingido",
+          description: "Você atingiu o limite de 10 pacientes ativos para o plano Gratuito. Faça upgrade para adicionar mais.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
 
     const nomeEmpresa = currentUserData.nomeEmpresa || '';
 
@@ -408,7 +425,24 @@ export default function PacientesPage() {
 
   const handleUpdatePatientStatus = async (patientInternalId: string, newStatus: 'Ativo' | 'Inativo') => {
     const patientToUpdate = patients.find(p => p.internalId === patientInternalId);
-    if (!patientToUpdate) return;
+    if (!patientToUpdate || !currentUser || !currentUserData) return;
+
+    if (newStatus === 'Ativo' && currentUserData.plano === 'Gratuito') {
+      const activePatientsQuery = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
+      const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
+      let activePatientsCount = activePatientsSnapshot.data().count;
+
+      // If the patient being activated is currently inactive, they are not yet counted in activePatientsCount
+      if (patientToUpdate.status === 'Inativo' && activePatientsCount >= 10) {
+         toast({
+          title: "Limite Atingido",
+          description: "Você atingiu o limite de 10 pacientes ativos para o plano Gratuito. Faça upgrade para ativar mais.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
 
     try {
       const patientRef = doc(db, 'pacientes', patientInternalId);

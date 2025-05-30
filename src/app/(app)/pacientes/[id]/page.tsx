@@ -260,8 +260,8 @@ export default function PacienteDetalhePage() {
     try {
       const uData = await fetchCurrentUserData(currentUserAuth);
       if (!uData) {
-        toast({ title: "Erro de Perfil", description: "Dados de perfil não encontrados.", variant: "destructive" });
-        router.push('/login');
+        toast({ title: "Erro de Perfil", description: "Dados de perfil não encontrados. Você será redirecionado para o login.", variant: "destructive" });
+        router.push('/login'); 
         setIsLoading(false);
         return;
       }
@@ -323,12 +323,14 @@ export default function PacienteDetalhePage() {
 
   useEffect(() => {
     if (firebaseUserAuth === undefined) {
-      setIsLoading(true);
+      setIsLoading(true); // Still waiting for auth state
     } else if (firebaseUserAuth === null) {
+      // Auth state resolved, but no user
       setIsLoading(false);
-      toast({ title: "Acesso Negado", description: "Faça login.", variant: "destructive" });
+      toast({ title: "Acesso Negado", description: "Faça login para continuar.", variant: "destructive" });
       router.push('/login');
-    } else if (patientSlug) {
+    } else if (patientSlug && firebaseUserAuth) {
+      // User is authenticated, proceed to load data
       loadPageData(firebaseUserAuth);
     }
   }, [patientSlug, firebaseUserAuth, loadPageData, router, toast]);
@@ -346,10 +348,10 @@ export default function PacienteDetalhePage() {
       const firstActiveObjective = getFirstActiveObjectiveName();
       const firstActiveType = getFirstActiveTypeName();
       setEditedPatient(prev => ({
-        ...(prev?.internalId === patient.internalId ? prev : patient), // Preserve edits if same patient
+        ...(prev?.internalId === patient.internalId ? prev : patient), 
         objetivoPaciente: (prev?.internalId === patient.internalId ? prev.objetivoPaciente : patient.objetivoPaciente) || firstActiveObjective || '',
       }));
-      if (activeTab === 'historico') { // Only set history type if on relevant tab
+      if (activeTab === 'historico') { 
         setNewHistoryType(prevHistoryType => prevHistoryType || firstActiveType || '');
       }
     }
@@ -358,15 +360,15 @@ export default function PacienteDetalhePage() {
 
   const handleSaveEditedPatient = async () => {
     if (!editedPatient || !editedPatient.internalId || !currentUserData) {
-      toast({ title: "Erro", description: "Não foi possível identificar dados.", variant: "destructive" });
+      toast({ title: "Erro", description: "Não foi possível identificar dados para salvar.", variant: "destructive" });
       return;
     }
     if (editedPatient.dob && isFuture(parseISO(editedPatient.dob))) {
-      toast({ title: "Data Inválida", description: "Data de nascimento futura.", variant: "destructive" });
+      toast({ title: "Data de Nascimento Inválida", description: "A data de nascimento não pode ser uma data futura.", variant: "destructive" });
       return;
     }
     if (editedPatient.objetivoPaciente && !patientObjectives.find(o => o.name === editedPatient.objetivoPaciente && o.status === 'active')) {
-      toast({ title: "Objetivo Inválido", description: "Objetivo selecionado não está ativo.", variant: "destructive" });
+      toast({ title: "Objetivo Inválido", description: "O objetivo do paciente selecionado não está ativo ou não existe.", variant: "destructive" });
       return;
     }
     try {
@@ -385,7 +387,7 @@ export default function PacienteDetalhePage() {
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível salvar.", variant: "destructive" });
+      toast({ title: "Erro ao Salvar", description: "Não foi possível salvar as alterações do paciente.", variant: "destructive" });
     }
   };
 
@@ -431,12 +433,12 @@ export default function PacienteDetalhePage() {
   const handleAddHistory = async () => {
     const isNoteEmpty = !newHistoryNote || newHistoryNote.trim() === '<p></p>' || newHistoryNote.trim() === '';
     if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim()) {
-      toast({ title: "Campos Obrigatórios", variant: "destructive" });
+      toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são obrigatórios para adicionar ao histórico.", variant: "destructive" });
       return;
     }
     const activeType = appointmentTypes.find(t => t.name === newHistoryType && t.status === 'active');
     if (!activeType) {
-      toast({ title: "Tipo Inválido", variant: "destructive" });
+      toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo.", variant: "destructive" });
       return;
     }
     const newEntry: HistoryItem = {
@@ -457,9 +459,9 @@ export default function PacienteDetalhePage() {
       if (isEditing) setEditedPatient(updatedPatientState);
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName() || '');
-      toast({ title: "Histórico Adicionado", variant: "success" });
+      toast({ title: "Histórico Adicionado", description: "Novo registro adicionado com sucesso.", variant: "success" });
     } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível adicionar.", variant: "destructive" });
+      toast({ title: "Erro", description: "Não foi possível adicionar o registro ao histórico.", variant: "destructive" });
     }
   };
 
@@ -467,81 +469,97 @@ export default function PacienteDetalhePage() {
     if (!patient || !patient.internalId) return;
     try {
       await deleteDoc(doc(db, 'pacientes', patient.internalId));
-      toast({ title: 'Paciente excluído', variant: 'success' });
+      toast({ title: 'Paciente excluído', description: `${patient.name} foi removido com sucesso.`, variant: 'success' });
       router.push('/pacientes');
     } catch (error) {
-      toast({ title: 'Erro', description: 'Não foi possível excluir.', variant: 'destructive' });
+      toast({ title: 'Erro ao Excluir', description: 'Não foi possível excluir o paciente.', variant: 'destructive' });
     }
   };
 
   const handleAddCustomType = async () => {
     if (!currentUserData) {
-      toast({ title: "Erro Autenticação", variant: "destructive" });
+      toast({ title: "Erro de Autenticação", description: "Dados do usuário não carregados.", variant: "destructive" });
       return;
     }
     const trimmedName = newCustomType.name?.trim();
     if (!trimmedName) {
-      toast({ title: 'Nome Inválido', variant: 'destructive' });
+      toast({ title: 'Nome Inválido', description: 'O nome do tipo de atendimento não pode ser vazio.', variant: 'destructive' });
       return;
     }
     if (appointmentTypes.some(type => type.name.toLowerCase() === trimmedName.toLowerCase())) {
-      toast({ title: "Tipo Duplicado", variant: "destructive" });
+      toast({ title: "Tipo Duplicado", description: `O tipo de atendimento "${trimmedName}" já existe.`, variant: "destructive" });
       return;
     }
-    try {
-      const tiposRef = getAppointmentTypesPath(currentUserData);
-      await addDoc(tiposRef, {
+
+    const typeDataToSave: Partial<AppointmentTypeObject> = {
         name: trimmedName,
         status: 'active',
-        valor: newCustomType.valor || 0,
-        lancarFinanceiroAutomatico: newCustomType.lancarFinanceiroAutomatico || false,
         createdAt: serverTimestamp(),
-      });
-      toast({ title: 'Tipo Adicionado', variant: 'success' });
+    };
+
+    if (currentUserData.plano !== 'Gratuito') {
+        typeDataToSave.valor = newCustomType.valor || 0;
+        typeDataToSave.lancarFinanceiroAutomatico = newCustomType.lancarFinanceiroAutomatico || false;
+    } else {
+        typeDataToSave.valor = 0;
+        typeDataToSave.lancarFinanceiroAutomatico = false;
+    }
+
+    try {
+      const tiposRef = getAppointmentTypesPath(currentUserData);
+      await addDoc(tiposRef, typeDataToSave);
+      toast({ title: 'Tipo Adicionado', description: 'Novo tipo de atendimento adicionado com sucesso.', variant: 'success' });
       setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
       await fetchAppointmentTypes(currentUserData);
     } catch (error) {
-      toast({ title: 'Erro', description: 'Não foi possível adicionar.', variant: 'destructive' });
+      toast({ title: 'Erro ao Adicionar Tipo', description: 'Não foi possível adicionar o tipo de atendimento.', variant: 'destructive' });
     }
   };
 
   const handleSaveEditedTypeName = async () => {
     if (!editingTypeInfo || !editingTypeInfo.type.id || !currentUserData || !editingTypeInfo.currentData) {
-      toast({ title: 'Erro', description: 'Dados incompletos.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Dados para edição do tipo de atendimento incompletos.', variant: 'destructive' });
       return;
     }
     const { type: originalType, currentData } = editingTypeInfo;
     const newNameTrimmed = currentData.name?.trim();
     if (!newNameTrimmed) {
-      toast({ title: "Nome Inválido", variant: "destructive" });
+      toast({ title: "Nome Inválido", description: "O nome do tipo de atendimento não pode ser vazio.", variant: "destructive" });
       return;
     }
     if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() &&
       appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
-      toast({ title: "Tipo Duplicado", variant: "destructive" });
+      toast({ title: "Tipo Duplicado", description: `O tipo de atendimento "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
+    
+    const typeDataToUpdate: Partial<AppointmentTypeObject> = { name: newNameTrimmed };
+    if (currentUserData.plano !== 'Gratuito') {
+        typeDataToUpdate.valor = currentData.valor || 0;
+        typeDataToUpdate.lancarFinanceiroAutomatico = currentData.lancarFinanceiroAutomatico || false;
+    } else {
+        typeDataToUpdate.valor = 0;
+        typeDataToUpdate.lancarFinanceiroAutomatico = false;
+    }
+
+
     try {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToUpdateRef = doc(tiposCollectionRef, originalType.id);
-      await updateDoc(docToUpdateRef, {
-        name: newNameTrimmed,
-        valor: currentData.valor || 0,
-        lancarFinanceiroAutomatico: currentData.lancarFinanceiroAutomatico || false,
-      });
+      await updateDoc(docToUpdateRef, typeDataToUpdate);
       setEditingTypeInfo(null);
-      toast({ title: "Tipo Atualizado", variant: "success" });
+      toast({ title: "Tipo Atualizado", description: `Tipo "${originalType.name}" atualizado com sucesso.`, variant: "success" });
       await fetchAppointmentTypes(currentUserData);
       if (newHistoryType === originalType.name) setNewHistoryType(newNameTrimmed);
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao atualizar.", variant: "destructive" });
+      toast({ title: "Erro ao Editar Tipo", description: "Falha ao atualizar o tipo de atendimento.", variant: "destructive" });
     }
   };
 
   const handleToggleTypeStatus = async (typeToToggle: AppointmentTypeObject) => {
     if (!typeToToggle || !typeToToggle.id || !currentUserData) {
-      toast({ title: 'Erro', description: 'Dados incompletos.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Informações do tipo de atendimento ou usuário incompletas.', variant: 'destructive' });
       setTypeToToggleStatusConfirm(null);
       return;
     }
@@ -549,12 +567,12 @@ export default function PacienteDetalhePage() {
     const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
     if (newStatus === 'inactive') {
       if (activeTypesCount <= 1 && appointmentTypes.length > 1 && appointmentTypes.some(t => t.status === 'inactive' && t.id !== typeToToggle.id)) {
-        toast({ title: "Atenção", description: "Não pode desativar último tipo ativo se houver outros inativos.", variant: "warning" });
+        toast({ title: "Atenção", description: "Não é possível desativar o último tipo ativo se existirem outros tipos inativos.", variant: "warning" });
         setTypeToToggleStatusConfirm(null);
         return;
       }
       if (activeTypesCount === 1 && appointmentTypes.length === 1) {
-        toast({ title: "Atenção", description: "Não pode desativar o único tipo existente.", variant: "warning" });
+        toast({ title: "Atenção", description: "Não é possível desativar o único tipo de atendimento existente.", variant: "warning" });
         setTypeToToggleStatusConfirm(null);
         return;
       }
@@ -563,12 +581,12 @@ export default function PacienteDetalhePage() {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToUpdateRef = doc(tiposCollectionRef, typeToToggle.id);
       await updateDoc(docToUpdateRef, { status: newStatus });
-      toast({ title: "Status Alterado", description: `Tipo ${typeToToggle.name} ${newStatus}.`, variant: "success" });
+      toast({ title: "Status Alterado", description: `O tipo "${typeToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`, variant: "success" });
       setTypeToToggleStatusConfirm(null);
       await fetchAppointmentTypes(currentUserData);
       if (newHistoryType === typeToToggle.name && newStatus === 'inactive') setNewHistoryType(getFirstActiveTypeName() || '');
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao alterar status.", variant: "destructive" });
+      toast({ title: "Erro ao Alterar Status", description: "Falha ao alterar o status do tipo de atendimento.", variant: "destructive" });
     }
   };
 
@@ -579,7 +597,7 @@ export default function PacienteDetalhePage() {
 
   const handleConfirmDeleteType = async () => {
     if (!typeToDelete || !typeToDelete.id || !currentUserData) {
-      toast({ title: 'Erro', description: 'Dados incompletos.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Informações para exclusão do tipo de atendimento incompletas.', variant: 'destructive' });
       setIsDeleteTypeConfirmOpen(false);
       setTypeToDelete(null);
       return;
@@ -588,11 +606,11 @@ export default function PacienteDetalhePage() {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id);
       await deleteDoc(docToDeleteRef);
-      toast({ title: "Tipo Excluído", variant: "success" });
+      toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido com sucesso.`, variant: "success" });
       await fetchAppointmentTypes(currentUserData);
       if (newHistoryType === typeToDelete.name) setNewHistoryType(getFirstActiveTypeName() || '');
     } catch (error) {
-      toast({ title: "Erro ao Excluir", description: "Verifique se está em uso.", variant: "destructive" });
+      toast({ title: "Erro ao Excluir Tipo", description: `Não foi possível excluir o tipo. Verifique se ele está em uso.`, variant: "destructive" });
     } finally {
       setIsDeleteTypeConfirmOpen(false);
       setTypeToDelete(null);
@@ -601,16 +619,16 @@ export default function PacienteDetalhePage() {
 
   const handleAddCustomObjective = async () => {
     if (!currentUserData) {
-      toast({ title: "Erro Autenticação", variant: "destructive" });
+      toast({ title: "Erro de Autenticação", description: "Dados do usuário não carregados.", variant: "destructive" });
       return;
     }
     const trimmedName = newCustomObjectiveName.trim();
     if (!trimmedName) {
-      toast({ title: "Nome Inválido", variant: "destructive" });
+      toast({ title: "Nome Inválido", description: "O nome do objetivo não pode ser vazio.", variant: "destructive" });
       return;
     }
     if (patientObjectives.some(obj => obj.name.toLowerCase() === trimmedName.toLowerCase())) {
-      toast({ title: "Objetivo Duplicado", variant: "destructive" });
+      toast({ title: "Objetivo Duplicado", description: `O objetivo "${trimmedName}" já existe.`, variant: "destructive" });
       return;
     }
     try {
@@ -618,26 +636,26 @@ export default function PacienteDetalhePage() {
       await addDoc(objectivesRef, { name: trimmedName, status: 'active', createdAt: serverTimestamp() });
       setNewCustomObjectiveName('');
       setIsAddObjectiveDialogOpen(false);
-      toast({ title: "Objetivo Adicionado", variant: "success" });
+      toast({ title: "Objetivo Adicionado", description: "Novo objetivo adicionado com sucesso.", variant: "success" });
       await fetchPatientObjectives(currentUserData);
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao adicionar.", variant: "destructive" });
+      toast({ title: "Erro ao Adicionar Objetivo", description: "Falha ao adicionar o objetivo.", variant: "destructive" });
     }
   };
 
   const handleSaveEditedObjectiveName = async () => {
     if (!editingObjectiveInfo || !editingObjectiveInfo.objective.id || !currentUserData) {
-      toast({ title: 'Erro', description: 'Dados incompletos.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Dados para edição do objetivo incompletos.', variant: 'destructive' });
       return;
     }
     const { objective: originalObjective, currentName } = editingObjectiveInfo;
     const newNameTrimmed = currentName.trim();
     if (!newNameTrimmed) {
-      toast({ title: "Nome Inválido", variant: "destructive" });
+      toast({ title: "Nome Inválido", description: "O nome do objetivo não pode ser vazio.", variant: "destructive" });
       return;
     }
     if (newNameTrimmed.toLowerCase() !== originalObjective.name.toLowerCase() && patientObjectives.some(obj => obj.id !== originalObjective.id && obj.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
-      toast({ title: "Objetivo Duplicado", variant: "destructive" });
+      toast({ title: "Objetivo Duplicado", description: `O objetivo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
     try {
@@ -645,19 +663,19 @@ export default function PacienteDetalhePage() {
       const docToUpdateRef = doc(objectivesCollectionRef, originalObjective.id);
       await updateDoc(docToUpdateRef, { name: newNameTrimmed });
       setEditingObjectiveInfo(null);
-      toast({ title: "Objetivo Atualizado", variant: "success" });
+      toast({ title: "Objetivo Atualizado", description: `Objetivo atualizado para "${newNameTrimmed}".`, variant: "success" });
       await fetchPatientObjectives(currentUserData);
       if (editedPatient?.objetivoPaciente === originalObjective.name) {
         setEditedPatient(prev => prev ? { ...prev, objetivoPaciente: newNameTrimmed } : undefined);
       }
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao editar.", variant: "destructive" });
+      toast({ title: "Erro ao Editar Objetivo", description: "Falha ao editar o objetivo.", variant: "destructive" });
     }
   };
 
   const handleToggleObjectiveStatus = async (objectiveToToggle: PatientObjectiveObject) => {
     if (!objectiveToToggle || !objectiveToToggle.id || !currentUserData) {
-      toast({ title: 'Erro', description: 'Dados incompletos.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Informações do objetivo ou usuário incompletas.', variant: 'destructive' });
       setObjectiveToToggleStatusConfirm(null);
       return;
     }
@@ -665,12 +683,12 @@ export default function PacienteDetalhePage() {
     const activeObjectivesCount = patientObjectives.filter(o => o.status === 'active').length;
     if (newStatus === 'inactive') {
       if (activeObjectivesCount <= 1 && patientObjectives.length > 1 && patientObjectives.some(o => o.status === 'inactive' && o.id !== objectiveToToggle.id)) {
-        toast({ title: "Atenção", description: "Não pode desativar último ativo se houver outros inativos.", variant: "warning" });
+        toast({ title: "Atenção", description: "Não é possível desativar o último objetivo ativo se existirem outros objetivos inativos.", variant: "warning" });
         setObjectiveToToggleStatusConfirm(null);
         return;
       }
       if (activeObjectivesCount === 1 && patientObjectives.length === 1) {
-        toast({ title: "Atenção", description: "Não pode desativar único objetivo.", variant: "warning" });
+        toast({ title: "Atenção", description: "Não é possível desativar o único objetivo existente.", variant: "warning" });
         setObjectiveToToggleStatusConfirm(null);
         return;
       }
@@ -680,13 +698,13 @@ export default function PacienteDetalhePage() {
       const docToUpdateRef = doc(objectivesCollectionRef, objectiveToToggle.id);
       await updateDoc(docToUpdateRef, { status: newStatus });
       setObjectiveToToggleStatusConfirm(null);
-      toast({ title: "Status Alterado", description: `Objetivo ${objectiveToToggle.name} ${newStatus}.` });
+      toast({ title: "Status Alterado", description: `Objetivo "${objectiveToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.` });
       await fetchPatientObjectives(currentUserData);
       if (editedPatient?.objetivoPaciente === objectiveToToggle.name && newStatus === 'inactive') {
         setEditedPatient(prev => prev ? { ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' } : undefined);
       }
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao alterar status.", variant: "destructive" });
+      toast({ title: "Erro ao Alterar Status", description: "Falha ao alterar o status do objetivo.", variant: "destructive" });
     }
   };
 
@@ -697,7 +715,7 @@ export default function PacienteDetalhePage() {
 
   const handleConfirmDeleteObjective = async () => {
     if (!objectiveToDelete || !objectiveToDelete.id || !currentUserData) {
-      toast({ title: 'Erro', description: 'Dados incompletos.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Informações para exclusão do objetivo incompletas.', variant: 'destructive' });
       setIsDeleteObjectiveConfirmOpen(false);
       setObjectiveToDelete(null);
       return;
@@ -706,13 +724,13 @@ export default function PacienteDetalhePage() {
       const objectivesCollectionRef = getPatientObjectivesPath(currentUserData);
       const docToDeleteRef = doc(objectivesCollectionRef, objectiveToDelete.id);
       await deleteDoc(docToDeleteRef);
-      toast({ title: "Objetivo Excluído", variant: "success" });
+      toast({ title: "Objetivo Excluído", description: `Objetivo "${objectiveToDelete.name}" removido com sucesso.`, variant: "success" });
       await fetchPatientObjectives(currentUserData);
       if (editedPatient?.objetivoPaciente === objectiveToDelete.name) {
         setEditedPatient(prev => prev ? { ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' } : undefined);
       }
     } catch (error) {
-      toast({ title: "Erro", description: "Falha ao excluir.", variant: "destructive" });
+      toast({ title: "Erro ao Excluir Objetivo", description: "Falha ao excluir o objetivo.", variant: "destructive" });
     } finally {
       setIsDeleteObjectiveConfirmOpen(false);
       setObjectiveToDelete(null);
@@ -730,7 +748,7 @@ export default function PacienteDetalhePage() {
   const handleExportPdf = async () => {
     const contentElement = document.getElementById('historyNoteContentToExport');
     if (!contentElement || !selectedHistoryNote || !patient) {
-      toast({ title: "Erro", description: "Conteúdo não encontrado.", variant: "destructive" });
+      toast({ title: "Erro ao Exportar", description: "Conteúdo da nota não encontrado para exportação.", variant: "destructive" });
       return;
     }
     try {
@@ -742,16 +760,16 @@ export default function PacienteDetalhePage() {
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
       pdf.addImage(imgData, 'PNG', 10, 10, pdfWidth, pdfHeight);
       pdf.save(`evolucao-${patient.name.replace(/\s+/g, '_')}-${selectedHistoryNote.date}.pdf`);
-      toast({ title: "PDF Exportado", variant: "success" });
+      toast({ title: "PDF Exportado", description: "A nota do histórico foi exportada como PDF.", variant: "success" });
     } catch (error) {
-      toast({ title: "Erro Exportar", description: "Não foi possível gerar PDF.", variant: "destructive" });
+      toast({ title: "Erro ao Exportar PDF", description: "Não foi possível gerar o arquivo PDF.", variant: "destructive" });
     }
   };
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
     if (value === "documentos") {
-      toast({ title: "Em Desenvolvimento", description: "Gestão de documentos em breve!", variant: "default" });
+      toast({ title: "Em Desenvolvimento", description: "A funcionalidade de gestão de documentos estará disponível em breve!", variant: "default" });
     }
   };
 
@@ -762,7 +780,7 @@ export default function PacienteDetalhePage() {
 
   const handleConfirmDeleteHistory = async () => {
     if (!patient || !patient.internalId || !historyItemToDelete || !firebaseUserAuth) {
-      toast({ title: "Erro", description: "Não foi possível identificar.", variant: "destructive" });
+      toast({ title: "Erro", description: "Não foi possível identificar o registro para exclusão.", variant: "destructive" });
       return;
     }
     try {
@@ -770,27 +788,27 @@ export default function PacienteDetalhePage() {
       const currentPatientDoc = await getDoc(patientRef);
       const currentPatientData = currentPatientDoc.data() as Patient | undefined;
       if (!currentPatientData) {
-        toast({ title: "Erro", description: "Paciente não encontrado.", variant: "destructive" });
+        toast({ title: "Erro", description: "Paciente não encontrado no banco de dados.", variant: "destructive" });
         return;
       }
       const updatedHistory = (currentPatientData.history || []).filter(item => item.id !== historyItemToDelete.id);
       await updateDoc(patientRef, { history: updatedHistory });
       setPatient(prev => prev ? { ...prev, history: updatedHistory } : undefined);
       if (isEditing && editedPatient) setEditedPatient(prev => prev ? { ...prev, history: updatedHistory } : undefined);
-      toast({ title: "Registro Excluído", variant: "success" });
+      toast({ title: "Registro Excluído", description: "O registro do histórico foi removido com sucesso.", variant: "success" });
     } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível excluir.", variant: "destructive" });
+      toast({ title: "Erro ao Excluir Registro", description: "Não foi possível excluir o registro do histórico.", variant: "destructive" });
     } finally {
       setIsDeleteHistoryConfirmOpen(false);
       setHistoryItemToDelete(null);
     }
   };
 
-  if (isLoading) return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando dados...</p></div>;
-  if (!patient && !isLoading) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar</Button></div>;
-
+  if (isLoading) return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando dados do paciente...</p></div>;
+  if (!patient && !isLoading) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button></div>;
+  
   const displayPatient = isEditing ? editedPatient : patient;
-  if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar.</p></div>;
+  if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
 
   const calculateAge = (dob: string) => {
     if (!dob) return '-';
@@ -825,12 +843,12 @@ export default function PacienteDetalhePage() {
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" size="sm" className={`hover:text-black ${displayPatient.status === 'Ativo' ? 'text-orange-600 border-orange-300 hover:bg-orange-50' : 'text-green-600 border-green-300 hover:bg-green-50'}`}>{displayPatient.status === 'Ativo' ? <UserX className="mr-2 h-4 w-4" /> : <UserCheck className="mr-2 h-4 w-4" />}{displayPatient.status === 'Ativo' ? 'Inativar' : 'Ativar'}</Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status</AlertDialogTitle><AlertDialogDescription>Deseja {displayPatient.status === 'Ativo' ? 'inativar' : 'ativar'} <strong>{displayPatient.name}</strong>?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className={displayPatient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'} onClick={handleToggleStatus}>{displayPatient.status === 'Ativo' ? 'Inativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle><AlertDialogDescription>Tem certeza que deseja {displayPatient.status === 'Ativo' ? 'inativar' : 'ativar'} o paciente <strong>{displayPatient.name}</strong>?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className={displayPatient.status === 'Inativo' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'} onClick={handleToggleStatus}>{displayPatient.status === 'Ativo' ? 'Inativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
               </AlertDialog>
               <Button variant="outline" size="sm" onClick={handleEditToggle}><Edit className="mr-2 h-4 w-4" /> Editar</Button>
               <AlertDialog>
-                <AlertDialogTrigger asChild><Button variant="destructive" size="sm"><Trash2 className="mr-2 h-4 w-4" /> Excluir</Button></AlertDialogTrigger>
-                <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir <strong>{displayPatient.name}</strong>?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={handleDeletePatient}>Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                <AlertDialogTrigger asChild><Button variant="destructive" size="sm"><Trash2 className="mr-2 h-4 w-4" /> Excluir Paciente</Button></AlertDialogTrigger>
+                <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Tem certeza que deseja excluir o paciente <strong>{displayPatient.name}</strong>? Esta ação não pode ser desfeita e removerá todo o histórico associado.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancelar</AlertDialogCancel><AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={handleDeletePatient}>Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
               </AlertDialog>
             </>
           )}
@@ -871,11 +889,11 @@ export default function PacienteDetalhePage() {
               </Card>
               <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
               {displayPatient?.history && displayPatient.history.length > 0 ? (
-                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item) => (
-                  <Card key={item.id} className="bg-muted/50">
+                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
+                  <Card key={`${item.id || 'fallbackID'}-${index}`} className="bg-muted/50">
                     <CardHeader className="pb-3 flex flex-row justify-between items-start">
                       <div><CardTitle className="text-base">{item.type}</CardTitle><span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span></div>
-                      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /><span className="sr-only">Opções</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleOpenHistoryModal(item)}><Eye className="mr-2 h-4 w-4" /> Ver Detalhes</DropdownMenuItem><DropdownMenuItem onClick={() => handleOpenDeleteHistoryDialog(item)} className="text-destructive hover:!bg-destructive hover:!text-destructive-foreground focus:!bg-destructive focus:!text-destructive-foreground"><Trash2 className="mr-2 h-4 w-4" /> Excluir</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+                      <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /><span className="sr-only">Opções</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleOpenHistoryModal(item)}><Eye className="mr-2 h-4 w-4" /> Ver Detalhes</DropdownMenuItem><DropdownMenuItem onClick={() => handleOpenDeleteHistoryDialog(item)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Excluir Registro</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
                     </CardHeader>
                     <CardContent>
                       <div className="text-sm text-foreground history-note-content prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: item.notes.length > 250 ? item.notes.substring(0, 250) + "..." : item.notes }} />
@@ -883,10 +901,10 @@ export default function PacienteDetalhePage() {
                     </CardContent>
                   </Card>
                 ))
-              ) : <p className="text-muted-foreground text-center py-4">Nenhum histórico.</p>}
+              ) : <p className="text-muted-foreground text-center py-4">Nenhum histórico de atendimento registrado para este paciente.</p>}
             </TabsContent>
             <TabsContent value="documentos" className="p-6 space-y-6 mt-0">
-              <Card><CardHeader><CardTitle className="text-lg font-semibold">Documentos</CardTitle></CardHeader><CardContent className="text-center py-16 text-muted-foreground"><Info className="mx-auto h-12 w-12" /><p>Em desenvolvimento.</p><p className="text-sm">Em breve!</p></CardContent></Card>
+              <Card><CardHeader><CardTitle className="text-lg font-semibold">Documentos do Paciente</CardTitle></CardHeader><CardContent className="text-center py-16 text-muted-foreground"><Info className="mx-auto h-12 w-12" /><p>Funcionalidade de Documentos em desenvolvimento.</p><p className="text-sm">Estará disponível em breve!</p></CardContent></Card>
             </TabsContent>
             <TabsContent value="dados" className="p-6 space-y-4 mt-0">
               <h3 className="text-lg font-semibold">Informações Pessoais</h3>
@@ -926,8 +944,12 @@ export default function PacienteDetalhePage() {
           <DialogHeader><DialogTitle>Novo Tipo de Atendimento</DialogTitle><DialogDescription>Insira os detalhes.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeName" className="text-right col-span-1">Nome*</Label><Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-3" /></div>
-            <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeValor" className="text-right col-span-1">Valor (R$)</Label><Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-3" placeholder="0.00" /></div>
-            <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeLancar" className="text-right col-span-3">Lançar Auto.?</Label><Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-1 justify-self-start" /></div>
+            {currentUserData?.plano !== 'Gratuito' && (
+                <>
+                    <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeValor" className="text-right col-span-1">Valor (R$)</Label><Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-3" placeholder="0.00" /></div>
+                    <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeLancar" className="text-right col-span-3">Lançar Financeiro Automático?</Label><Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-1 justify-self-start" /></div>
+                </>
+            )}
           </div>
           <DialogFooter><DialogClose asChild><Button variant="outline" onClick={() => setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' })}>Cancelar</Button></DialogClose><Button onClick={handleAddCustomType}>Salvar</Button></DialogFooter>
         </DialogContent>
@@ -941,12 +963,20 @@ export default function PacienteDetalhePage() {
               <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
                 {editingTypeInfo?.type.id === type.id ? (
                   <div className="flex-grow grid grid-cols-3 gap-2 mr-2 items-center">
-                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-2" placeholder="Nome" />
-                    <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor" />
-                    <div className="col-span-3 flex items-center justify-between mt-1"><Label htmlFor={`editLancar-${type.id}`} className="text-xs">Lançar Auto.?</Label><Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked } } : null)} /></div>
+                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-3" placeholder="Nome" />
+                    {currentUserData?.plano !== 'Gratuito' && (
+                        <>
+                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor" />
+                            <div className="col-span-2 flex items-center justify-end mt-1 gap-2"><Label htmlFor={`editLancar-${type.id}`} className="text-xs">Lançar Auto.?</Label><Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked } } : null)} /></div>
+                        </>
+                    )}
                   </div>
                 ) : (
-                  <div className="flex-grow"><span className={`${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span><div className="text-xs text-muted-foreground">Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}</div></div>
+                  <div className="flex-grow"><span className={`${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
+                  {currentUserData?.plano !== 'Gratuito' && (
+                    <div className="text-xs text-muted-foreground">Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}</div>
+                  )}
+                  </div>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
                   {editingTypeInfo?.type.id === type.id ? (<><Button size="icon" className="h-8 w-8" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></>)
@@ -968,8 +998,9 @@ export default function PacienteDetalhePage() {
       <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Gerenciar Objetivos</DialogTitle></DialogHeader><div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">{patientObjectives.map((obj) => (<div key={obj.id || obj.name} className="flex items-center justify-between p-2 border rounded-md">{editingObjectiveInfo?.objective.id === obj.id ? (<div className="flex-grow flex items-center gap-2 mr-2"><Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" /><Button size="icon" className="h-8 w-8" onClick={handleSaveEditedObjectiveName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></div>) : (<span className={`flex-grow ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>)}<div className="flex gap-1 items-center ml-auto">{editingObjectiveInfo?.objective.id !== obj.id && (<><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteObjectiveDialog(obj)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}<Switch checked={obj.status === 'active'} onCheckedChange={() => setObjectiveToToggleStatusConfirm(obj)} aria-label={`Status ${obj.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" /></div></div>))}{patientObjectives.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum objetivo.</p>}</div><DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={!!objectiveToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setObjectiveToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja {objectiveToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{objectiveToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => objectiveToToggleStatusConfirm && handleToggleObjectiveStatus(objectiveToToggleStatusConfirm)} className={objectiveToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{objectiveToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={isDeleteObjectiveConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setObjectiveToDelete(null); setIsDeleteObjectiveConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{objectiveToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteObjective} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}><DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]"><DialogHeader><DialogTitle>Detalhes - {selectedHistoryNote?.type}</DialogTitle><DialogDescription>Data: {selectedHistoryNote ? formatDate(selectedHistoryNote.date) : ''}</DialogDescription></DialogHeader><div id="historyNoteContentToExport" className="py-4 max-h-[60vh] overflow-y-auto">{selectedHistoryNote && <div className="history-note-content prose prose-sm sm:prose-base max-w-none" dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }} />}</div><DialogFooter><Button variant="outline" onClick={handleExportPdf}><FileDown className="mr-2 h-4 w-4" /> Exportar PDF</Button><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
+      <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}><DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]"><DialogHeader><DialogTitle>Detalhes - {selectedHistoryNote?.type}</DialogTitle><DialogDescription>Data: {selectedHistoryNote ? formatDate(selectedHistoryNote.date) : ''}</DialogDescription></DialogHeader><div id="historyNoteContentToExport" className="py-4 max-h-[60vh] overflow-y-auto">{selectedHistoryNote && <div className="history-note-content prose prose-sm sm:prose-base max-w-none" dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }} />}</div><DialogFooter><Button variant="outline" onClick={handleExportPdf}> <FileDown className="mr-2 h-4 w-4" /> Exportar para PDF </Button><DialogClose asChild><Button type="button" variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={isDeleteHistoryConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setHistoryItemToDelete(null); setIsDeleteHistoryConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Registro</AlertDialogTitle><AlertDialogDescription>Deseja excluir este registro de <strong>{historyItemToDelete?.type}</strong> em {historyItemToDelete ? formatDate(historyItemToDelete.date) : ''}?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setHistoryItemToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteHistory} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>
   );
 }
+
