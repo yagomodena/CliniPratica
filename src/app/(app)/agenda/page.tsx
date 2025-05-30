@@ -671,21 +671,39 @@ export default function AgendaPage() {
         status: newStatus,
         updatedAt: serverTimestamp()
       });
-
-      // If cancelled, update linked financial transaction
-      if (newStatus === 'cancelado') {
-        const financialTransactionsRef = collection(db, 'financialTransactions');
-        const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentId));
-        const financeSnapshot = await getDocs(qFinance);
-        if (!financeSnapshot.empty) {
-          const financeDocId = financeSnapshot.docs[0].id;
-          await updateDoc(doc(db, 'financialTransactions', financeDocId), {
+  
+      // Manage linked financial transaction status
+      const financialTransactionsRef = collection(db, 'financialTransactions');
+      const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentId));
+      const financeSnapshot = await getDocs(qFinance);
+  
+      if (!financeSnapshot.empty) {
+        const financeDocId = financeSnapshot.docs[0].id;
+        const financeDocRef = doc(db, 'financialTransactions', financeDocId);
+        const financeDocData = financeSnapshot.docs[0].data();
+  
+        if (newStatus === 'realizado' && financeDocData.status === 'Pendente') {
+          await updateDoc(financeDocRef, {
+            status: 'Recebido',
+            updatedAt: serverTimestamp(),
+          });
+        } else if (newStatus === 'agendado' && (financeDocData.status === 'Recebido' || financeDocData.status === 'Cancelado')) {
+           // If reverting to 'agendado', set finance back to 'Pendente' only if it was previously 'Recebido' or 'Cancelado'
+           // Do not change if it was 'Pendente' already
+           if (financeDocData.status === 'Recebido' || financeDocData.status === 'Cancelado') {
+            await updateDoc(financeDocRef, {
+                status: 'Pendente',
+                updatedAt: serverTimestamp(),
+            });
+           }
+        } else if (newStatus === 'cancelado') {
+          await updateDoc(financeDocRef, {
             status: 'Cancelado',
             updatedAt: serverTimestamp(),
           });
         }
       }
-
+  
       toast({ title: "Status Atualizado", description: `Agendamento marcado como ${newStatus}.`, variant: "success" });
       await fetchAppointments(currentUser);
     } catch (error) {
@@ -1058,9 +1076,9 @@ export default function AgendaPage() {
                   />
                 </div>
               )}
-              <div className="grid grid-cols-4 items-center gap-4">
-                 <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
-                 <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
+               <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
+                <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newTime" className="text-right col-span-1">Hora*</Label>
@@ -1261,7 +1279,7 @@ export default function AgendaPage() {
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
               <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
-                {editingTypeInfo?.type.id === type.id ? (
+                {editingTypeInfo && editingTypeInfo.type.id === type.id ? (
                   <div className="flex-grow grid grid-cols-3 gap-2 mr-2 items-center">
                     <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-2" placeholder="Nome do tipo" />
                      <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor"/>
@@ -1279,7 +1297,7 @@ export default function AgendaPage() {
                   </div>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
-                  {editingTypeInfo?.type.id === type.id ? (
+                  {editingTypeInfo && editingTypeInfo.type.id === type.id ? (
                     <>
                       <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button>
@@ -1338,3 +1356,4 @@ export default function AgendaPage() {
     </div>
   );
 }
+
