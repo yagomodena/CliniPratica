@@ -894,9 +894,9 @@ export default function AgendaPage() {
                   </Button>
                 </div>
               </div>
-               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
-                <Input 
+              <div className="grid grid-cols-4 items-center gap-4">
+                 <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
+                 <Input 
                   id="newDate" 
                   type="date" 
                   value={newAppointmentForm.date} 
@@ -997,7 +997,9 @@ export default function AgendaPage() {
                                 </DropdownMenuItem>
                             )}
                             {(appt.status === 'agendado' || appt.status === 'realizado') && (
-                                <DropdownMenuItem onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!text-destructive-foreground focus:!bg-destructive/10">
+                                <DropdownMenuItem 
+                                  onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} 
+                                  className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
                                  <XCircle className="mr-2 h-4 w-4"/> Cancelar Agendamento
                                 </DropdownMenuItem>
                             )}
@@ -1281,3 +1283,4 @@ export default function AgendaPage() {
     </div>
   );
 }
+
