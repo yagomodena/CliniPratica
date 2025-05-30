@@ -93,12 +93,8 @@ type AppointmentTypeObject = {
   status: 'active' | 'inactive';
 };
 
-const fallbackAppointmentTypesData: AppointmentTypeObject[] = [
-  { name: 'Consulta', status: 'active' },
-  { name: 'Retorno', status: 'active' },
-  { name: 'Avaliação', status: 'active' },
-  { name: 'Outro', status: 'active' },
-];
+const fallbackAppointmentTypesData: AppointmentTypeObject[] = [];
+
 
 const getAppointmentTypesPath = (userData: any) => {
   const isClinica = userData?.plano === 'Clínica';
@@ -164,7 +160,7 @@ export default function AgendaPage() {
 
   const fetchAppointmentTypes = useCallback(async () => {
     if (!currentUserData) {
-      console.log("User data not available for fetching appointment types. Using fallback.");
+      console.log("User data not available for fetching appointment types. Using fallback (empty).");
       const fallbackWithTempIds = fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }));
       setAppointmentTypes(fallbackWithTempIds.sort((a, b) => a.name.localeCompare(b.name)));
       setIsLoadingTypes(false);
@@ -946,7 +942,7 @@ export default function AgendaPage() {
             <DialogDescription>Modifique os detalhes do agendamento.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveEditedAppointment} className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
+             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="editPatientId" className="text-right col-span-1">Paciente*</Label>
               <Select value={editAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'patientId', value)} required>
                 <SelectTrigger id="editPatientId" className="col-span-3"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
@@ -1142,3 +1138,6 @@ export default function AgendaPage() {
     </div>
   );
 }
+
+
+    
