@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { CalendarClock, TrendingUp, Users, UsersRound, LineChart as LineChartIcon, Ban } from "lucide-react";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as RechartsLineChart, ResponsiveContainer, Cell } from "recharts"; // Imported Cell
+import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as RechartsLineChart, ResponsiveContainer, Cell } from "recharts";
 import { auth, db } from '@/firebase';
 import type { User as FirebaseUser } from 'firebase/auth'; 
 import { onAuthStateChanged } from 'firebase/auth';
@@ -30,6 +30,7 @@ type PatientStatusData = {
   count: number;
 };
 
+// Placeholder data (remove if not used elsewhere or replace with actual fetching for return rate)
 const initialPatientReturnData = [
   { month: "Jan", rate: 60 }, { month: "Fev", rate: 65 }, { month: "Mar", rate: 70 },
   { month: "Abr", rate: 72 }, { month: "Mai", rate: 68 }, { month: "Jun", rate: 75 },
@@ -49,7 +50,11 @@ const chartConfigNewPatients = {
 const chartConfigActiveInactive = {
     count: { label: "Quantidade" },
     ativos: { label: "Ativos", color: "hsl(var(--chart-2))" },
-    inativos: { label: "Inativos", color: "hsl(0, 80%, 70%)" }, // Lighter red
+    inativos: { label: "Inativos", color: "hsl(0, 80%, 70%)" }, 
+};
+
+const chartConfigCancelledAppointments = {
+  total: { label: "Cancelados", color: "hsl(var(--destructive))" },
 };
 
 
@@ -65,6 +70,9 @@ export default function RelatoriosPage() {
 
   const [activeInactivePatientData, setActiveInactivePatientData] = useState<PatientStatusData[]>([]);
   const [isLoadingActiveInactiveData, setIsLoadingActiveInactiveData] = useState(true);
+
+  const [cancelledMonthlyAppointmentsData, setCancelledMonthlyAppointmentsData] = useState<MonthlyData[]>([]);
+  const [isLoadingCancelledAppointments, setIsLoadingCancelledAppointments] = useState(true);
 
 
   useEffect(() => {
@@ -95,8 +103,8 @@ export default function RelatoriosPage() {
       const q = query(
         apptsRef,
         where('uid', '==', user.uid),
-        where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd'))
-        // No status filter here, counting all non-deleted appointments as per previous revert.
+        where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd')),
+        where('status', '!=', 'cancelado') // Exclude cancelled appointments
       );
       const querySnapshot = await getDocs(q);
 
@@ -105,7 +113,7 @@ export default function RelatoriosPage() {
         const apptDateStr = data.date as string;
         if (apptDateStr) {
           try {
-            const apptDate = parseISO(apptDateStr); // Use parseISO for robust date parsing
+            const apptDate = parseISO(apptDateStr);
             const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
             const monthEntry = monthsData.find(m => m.month === apptMonthKey);
             if (monthEntry) {
@@ -119,9 +127,56 @@ export default function RelatoriosPage() {
       setActualMonthlyAppointmentsData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos mensais:", error);
-      setActualMonthlyAppointmentsData(monthsData); // Set to default empty months on error
+      setActualMonthlyAppointmentsData(monthsData); 
     } finally {
       setIsLoadingMonthlyAppointments(false);
+    }
+  }, []);
+
+  const fetchCancelledAppointmentsCounts = useCallback(async (user: FirebaseUser, currentDate: Date) => {
+    if (!user || !currentDate) return;
+    setIsLoadingCancelledAppointments(true);
+    const monthsData: MonthlyData[] = [];
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+    for (let i = 5; i >= 0; i--) {
+      const targetMonthDate = subMonths(currentDate, i);
+      const monthKey = `${monthNames[getMonth(targetMonthDate)]}/${String(getYear(targetMonthDate)).slice(-2)}`;
+      monthsData.push({ month: monthKey, total: 0 });
+    }
+    const sixMonthsAgo = startOfMonth(subMonths(currentDate, 5));
+
+    try {
+      const apptsRef = collection(db, 'agendamentos');
+      const q = query(
+        apptsRef,
+        where('uid', '==', user.uid),
+        where('status', '==', 'cancelado'),
+        where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd')) // Consider original date of cancelled appt
+      );
+      const querySnapshot = await getDocs(q);
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const apptDateStr = data.date as string;
+        if (apptDateStr) {
+          try {
+            const apptDate = parseISO(apptDateStr);
+            const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
+            const monthEntry = monthsData.find(m => m.month === apptMonthKey);
+            if (monthEntry) {
+              monthEntry.total += 1;
+            }
+          } catch (e) {
+            console.error("Error parsing cancelled appointment date:", apptDateStr, e);
+          }
+        }
+      });
+      setCancelledMonthlyAppointmentsData(monthsData);
+    } catch (error) {
+      console.error("Erro ao buscar agendamentos cancelados:", error);
+      setCancelledMonthlyAppointmentsData(monthsData);
+    } finally {
+      setIsLoadingCancelledAppointments(false);
     }
   }, []);
 
@@ -154,7 +209,6 @@ export default function RelatoriosPage() {
         const data = docSnap.data();
         if (data.createdAt && (data.createdAt as Timestamp).toDate) {
           const patientCreationDate = (data.createdAt as Timestamp).toDate();
-          // Ensure creation date is within the 6-month window (Firestore query might be slightly broader)
           if (patientCreationDate >= sixMonthsAgoDate && patientCreationDate <= currentDate) {
             const patientMonthKey = `${monthNames[getMonth(patientCreationDate)]}/${String(getYear(patientCreationDate)).slice(-2)}`;
             const monthEntry = monthsData.find(m => m.month === patientMonthKey);
@@ -167,7 +221,7 @@ export default function RelatoriosPage() {
       setNewPatientsPerMonthData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar novos pacientes por mês:", error);
-      setNewPatientsPerMonthData(monthsData); // Set to default empty months on error
+      setNewPatientsPerMonthData(monthsData); 
     } finally {
       setIsLoadingNewPatients(false);
     }
@@ -215,15 +269,18 @@ export default function RelatoriosPage() {
       fetchMonthlyAppointmentsCounts(currentUser, clientNow);
       fetchNewPatientsPerMonth(currentUser, clientNow);
       fetchActiveInactivePatientCounts(currentUser);
+      fetchCancelledAppointmentsCounts(currentUser, clientNow);
     } else if (clientNow) { 
         setIsLoadingMonthlyAppointments(false);
         setIsLoadingNewPatients(false);
         setIsLoadingActiveInactiveData(false);
+        setIsLoadingCancelledAppointments(false);
         setActualMonthlyAppointmentsData(defaultMonths);
         setNewPatientsPerMonthData(defaultMonths);
         setActiveInactivePatientData(defaultPatientStatus);
+        setCancelledMonthlyAppointmentsData(defaultMonths);
     }
-  }, [currentUser, clientNow, fetchMonthlyAppointmentsCounts, fetchNewPatientsPerMonth, fetchActiveInactivePatientCounts]);
+  }, [currentUser, clientNow, fetchMonthlyAppointmentsCounts, fetchNewPatientsPerMonth, fetchActiveInactivePatientCounts, fetchCancelledAppointmentsCounts]);
 
 
   return (
@@ -234,7 +291,7 @@ export default function RelatoriosPage() {
         <Card className="shadow-md">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5"/> Agendamentos por Mês</CardTitle>
-            <CardDescription>Visualização do número de agendamentos mensais.</CardDescription>
+            <CardDescription>Visualização do número de agendamentos realizados mensalmente.</CardDescription>
           </CardHeader>
           <CardContent>
              <ChartContainer config={chartConfigAppointments} className="w-full aspect-video">
@@ -258,7 +315,7 @@ export default function RelatoriosPage() {
          <Card className="shadow-md">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5"/> Taxa de Retorno de Pacientes</CardTitle>
-            <CardDescription>Percentual de pacientes que retornaram para novas consultas.</CardDescription>
+            <CardDescription>Percentual de pacientes que retornaram para novas consultas (dados simulados).</CardDescription>
           </CardHeader>
           <CardContent>
              <ChartContainer config={chartConfigReturn} className="w-full aspect-video">
@@ -299,7 +356,7 @@ export default function RelatoriosPage() {
             </CardContent>
          </Card>
 
-        <Card className="shadow-md md:col-span-1">
+        <Card className="shadow-md">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><UsersRound className="h-5 w-5"/> Pacientes Ativos vs. Inativos</CardTitle>
             <CardDescription>Comparativo entre pacientes ativos e inativos.</CardDescription>
@@ -328,26 +385,31 @@ export default function RelatoriosPage() {
             </ChartContainer>
           </CardContent>
         </Card>
-
-        {/* Placeholder for more reports - to be expanded */}
-        <Card className="shadow-md md:col-span-2">
+        
+        <Card className="shadow-md">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><LineChartIcon className="h-5 w-5"/> Mais Relatórios (Em Breve)</CardTitle>
-            <CardDescription>Visualizações detalhadas sobre cancelamentos, procedimentos e origem dos pacientes estarão disponíveis aqui.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Ban className="h-5 w-5"/> Agendamentos Cancelados por Mês</CardTitle>
+            <CardDescription>Visualização do número de agendamentos cancelados mensalmente.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
-            <Ban className="h-10 w-10 mb-2 opacity-50" />
-            <p>Relatórios detalhados de:</p>
-            <ul className="list-disc list-inside text-sm mt-1">
-                <li>Agendamentos Cancelados por Mês</li>
-                <li>Procedimentos Mais Realizados</li>
-                <li>Origem dos Pacientes</li>
-            </ul>
-            <p className="mt-2 text-xs">Funcionalidades em desenvolvimento.</p>
+          <CardContent className="min-h-[200px] flex items-center justify-center">
+            <ChartContainer config={chartConfigCancelledAppointments} className="w-full aspect-video">
+              {isLoadingCancelledAppointments ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsBarChart data={cancelledMonthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                    <Bar dataKey="total" fill="var(--color-total)" radius={4} />
+                  </RechartsBarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartContainer>
           </CardContent>
         </Card>
       </div>
     </div>
   );
 }
-
