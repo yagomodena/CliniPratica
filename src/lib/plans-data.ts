@@ -38,7 +38,7 @@ export const plans: Plan[] = [
       { text: 'Até 50 pacientes', included: true },
       { text: 'Agenda completa com alertas', included: true },
       { text: 'Relatórios básicos', included: true },
-      { text: 'Financeiro completo', included: true },
+      { text: 'Controle de Lançamentos Financeiros', included: true }, // Alterado aqui
       { text: 'Suporte por e-mail', included: true },
     ],
     popular: true,
@@ -52,6 +52,7 @@ export const plans: Plan[] = [
     features: [
       { text: 'Pacientes ilimitados', included: true },
       { text: 'Todas as funcionalidades do Essencial', included: true },
+      { text: 'Financeiro Completo (inclui contas a receber por paciente)', included: true }, // Adicionado/Especificado
       { text: 'Mensagens por WhatsApp (ilimitado)', included: true },
       { text: 'Relatórios avançados', included: true },
       { text: 'Suporte prioritário', included: true },
@@ -65,7 +66,7 @@ export const plans: Plan[] = [
     level: 3,
     features: [
       { text: 'Múltiplos profissionais', included: true },
-      { text: 'Todas as funcionalidades do Profissional', included: true },
+      { text: 'Todas as funcionalidades do Profissional', included: true }, // Herda o Financeiro Completo
       { text: 'Relatórios por profissional/unidade', included: true },
       { text: 'Gerente de contas dedicado', included: true },
     ],
