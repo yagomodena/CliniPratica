@@ -23,6 +23,7 @@ import {
 } from 'firebase/firestore';
 import { format, startOfMonth, subMonths, getMonth, getYear, parseISO, endOfMonth, isWithinInterval, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Label } from '@/components/ui/label'; // Added Label import
 
 type MonthlyData = {
   month: string;
@@ -131,15 +132,17 @@ export default function RelatoriosPage() {
   const fetchClinicProfessionals = async () => {
     setIsLoadingProfessionals(true);
     try {
+      // For simplicity, fetching all users. In a real scenario, you might filter by clinic ID.
       const usersSnapshot = await getDocs(query(collection(db, 'usuarios'), orderBy('nomeCompleto')));
       const professionals: UserForFilter[] = [{ id: 'all', nomeCompleto: 'Todos os Profissionais' }];
       usersSnapshot.forEach(doc => {
+        // Potentially add a check here if users have a role or belong to the same clinic
         professionals.push({ id: doc.id, nomeCompleto: doc.data().nomeCompleto as string });
       });
       setClinicProfessionals(professionals);
     } catch (error) {
       console.error("Erro ao buscar profissionais:", error);
-      setClinicProfessionals([{ id: 'all', nomeCompleto: 'Todos os Profissionais' }]);
+      setClinicProfessionals([{ id: 'all', nomeCompleto: 'Todos os Profissionais' }]); // Fallback
     } finally {
       setIsLoadingProfessionals(false);
     }
@@ -157,7 +160,6 @@ export default function RelatoriosPage() {
     const targetUid = getTargetUid();
     if (!targetUid || !currentDate) {
         setIsLoadingMonthlyAppointments(false);
-        // Set default empty state for the chart
         const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(currentDate || new Date(), 5 - i);
             return { month: `${format(targetMonthDate, "MMM", { locale: ptBR })}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
@@ -181,8 +183,8 @@ export default function RelatoriosPage() {
         apptsRef,
         where('uid', '==', targetUid),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd')),
-        where('date', '<=', format(endOfDay(currentDate), 'yyyy-MM-dd')), // Ensure current month appointments are included up to end of day
-        where('status', '!=', 'cancelado')
+        where('date', '<=', format(endOfDay(currentDate), 'yyyy-MM-dd')), 
+        where('status', '!=', 'cancelado') 
       );
       const querySnapshot = await getDocs(q);
       querySnapshot.forEach((docSnap) => {
@@ -206,7 +208,7 @@ export default function RelatoriosPage() {
       setActualMonthlyAppointmentsData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos mensais:", error);
-      setActualMonthlyAppointmentsData(monthsData);
+      setActualMonthlyAppointmentsData(monthsData); // Set to default on error
     } finally {
       setIsLoadingMonthlyAppointments(false);
     }
@@ -263,7 +265,7 @@ export default function RelatoriosPage() {
       setCancelledMonthlyAppointmentsData(monthsData);
     } catch (error) {
       console.error("Erro ao buscar agendamentos cancelados:", error);
-      setCancelledMonthlyAppointmentsData(monthsData);
+      setCancelledMonthlyAppointmentsData(monthsData); // Set to default on error
     } finally {
       setIsLoadingCancelledAppointments(false);
     }
@@ -316,7 +318,7 @@ export default function RelatoriosPage() {
       setNewPatientsPerMonthData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar novos pacientes por mês:", error);
-      setNewPatientsPerMonthData(monthsData);
+      setNewPatientsPerMonthData(monthsData); // Set to default on error
     } finally {
       setIsLoadingNewPatients(false);
     }
@@ -344,7 +346,7 @@ export default function RelatoriosPage() {
       ]);
     } catch (error: any) {
       console.error("Erro ao buscar contagem de pacientes ativos/inativos:", error);
-      setActiveInactivePatientData([{ name: 'Ativos', count: 0 }, { name: 'Inativos', count: 0 }]);
+      setActiveInactivePatientData([{ name: 'Ativos', count: 0 }, { name: 'Inativos', count: 0 }]); // Set to default on error
     } finally {
       setIsLoadingActiveInactiveData(false);
     }
@@ -362,7 +364,7 @@ export default function RelatoriosPage() {
         return;
     }
     setIsLoadingPatientReturnRate(true);
-    const lookbackStartDate = startOfMonth(subMonths(currentDate, 7));
+    const lookbackStartDate = startOfMonth(subMonths(currentDate, 7)); // Look back 7 months for cohort data
     const appointmentsQueryRangeEnd = endOfDay(currentDate);
     let allFetchedAppointments: Array<{ id: string; patientId: string; date: string }> = [];
 
@@ -396,10 +398,11 @@ export default function RelatoriosPage() {
     }
 
     const monthlyReturnRates: MonthlyReturnRateData[] = [];
-    for (let i = 5; i >= 0; i--) {
-        const cohortMonthStartDate = startOfMonth(subMonths(currentDate, i + 1));
+    for (let i = 5; i >= 0; i--) { // Iterate for the last 6 months to display
+        const cohortMonthStartDate = startOfMonth(subMonths(currentDate, i + 1)); // e.g., if i=0, this is last month; if i=5, this is 6 months ago
         const cohortMonthEndDate = endOfMonth(cohortMonthStartDate);
         const monthKey = `${format(cohortMonthStartDate, "MMM", { locale: ptBR })}/${String(getYear(cohortMonthStartDate)).slice(-2)}`;
+        
         const patientsInCohortMonth = new Set<string>();
         allFetchedAppointments.forEach(appt => {
             const apptDate = parseISO(appt.date);
@@ -412,20 +415,24 @@ export default function RelatoriosPage() {
             monthlyReturnRates.push({ month: monthKey, rate: 0 });
             continue;
         }
+
         let returnedPatientCount = 0;
         for (const patientId of patientsInCohortMonth) {
             const hasReturned = allFetchedAppointments.some(appt => {
                 if (appt.patientId !== patientId) return false;
                 const apptDate = parseISO(appt.date);
+                // Check if appointment is *after* the cohort month ends and within the overall query range
                 return apptDate > cohortMonthEndDate && apptDate <= appointmentsQueryRangeEnd;
             });
             if (hasReturned) {
                 returnedPatientCount++;
             }
         }
+
         const returnRate = patientsInCohortMonth.size > 0 ? (returnedPatientCount / patientsInCohortMonth.size) * 100 : 0;
         monthlyReturnRates.push({ month: monthKey, rate: Math.round(returnRate) });
     }
+
     setPatientReturnRateData(monthlyReturnRates);
     setIsLoadingPatientReturnRate(false);
   }, [getTargetUid]);
@@ -439,6 +446,7 @@ export default function RelatoriosPage() {
       fetchCancelledAppointmentsCounts(clientNow);
       fetchPatientReturnRateData(clientNow);
     } else if (!currentUser && clientNow) { // Handle no user but clientNow is ready
+        // Initialize all charts with default empty data
         const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(clientNow, 5 - i);
             return { month: `${format(targetMonthDate, "MMM", { locale: ptBR })}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
@@ -452,6 +460,8 @@ export default function RelatoriosPage() {
         setActiveInactivePatientData([{ name: 'Ativos', count: 0 }, { name: 'Inativos', count: 0 }]);
         setCancelledMonthlyAppointmentsData(defaultMonths);
         setPatientReturnRateData(defaultReturnRates);
+
+        // Set loading states to false
         setIsLoadingMonthlyAppointments(false);
         setIsLoadingNewPatients(false);
         setIsLoadingActiveInactiveData(false);
@@ -526,7 +536,7 @@ export default function RelatoriosPage() {
                 <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5"/> Agendamentos por Mês</CardTitle>
                 <CardDescription>Visualização do número de agendamentos realizados mensalmente (não cancelados).</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-h-[200px] flex items-center justify-center">
                 <ChartContainer config={chartConfigAppointments} className="w-full aspect-video">
                 {isLoadingMonthlyAppointments ? (
                     <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
@@ -578,7 +588,7 @@ export default function RelatoriosPage() {
                 <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5"/> Taxa de Retorno de Pacientes</CardTitle>
                 <CardDescription>Percentual de pacientes de um mês (coorte) que retornaram nos meses seguintes.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-h-[200px] flex items-center justify-center">
                 <ChartContainer config={chartConfigReturn} className="w-full aspect-video">
                 {isLoadingPatientReturnRate ? (
                     <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
@@ -667,3 +677,5 @@ export default function RelatoriosPage() {
   );
 }
 
+
+    
