@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserPlus, History, FileUp, CalendarClock, Send, CheckCircle } from 'lucide-react';
+import { UserPlus, History, DollarSign, CalendarClock, Send, CheckCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface Benefit {
@@ -21,9 +21,9 @@ const benefits: Benefit[] = [
     description: 'Acesse facilmente todo o histórico de consultas e evoluções.',
   },
   {
-    icon: FileUp,
-    title: 'Upload de Exames',
-    description: 'Anexe exames e documentos importantes ao prontuário do paciente.',
+    icon: DollarSign,
+    title: 'Controle Financeiro',
+    description: 'Organize seus recebimentos, acompanhe faturamento e tenha controle financeiro do seu consultório.',
   },
   {
     icon: CalendarClock,
@@ -69,3 +69,4 @@ export function BenefitsSection() {
     </section>
   );
 }
+

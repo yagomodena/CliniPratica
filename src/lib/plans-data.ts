@@ -25,19 +25,18 @@ export const plans: Plan[] = [
       { text: 'Agenda básica', included: true },
       { text: 'Suporte comunitário', included: true },
       { text: 'Relatórios e financeiro (não disponível)', included: false },
-      { text: 'Upload de exames (limitado)', included: false },
+      { text: 'Upload de exames (não disponível)', included: false },
     ],
-    cta: 'Plano Atual', // Updated CTA for modal context
+    cta: 'Começar Gratuitamente', 
   },
   {
     name: 'Essencial',
     price: 'R$39,90',
-    priceDetail: '/mês',
+    priceDetail: '/mês (R$29,90/mês no plano anual)',
     level: 1,
     features: [
       { text: 'Até 50 pacientes', included: true },
       { text: 'Agenda completa com alertas', included: true },
-      { text: 'Upload de exames (1GB)', included: true },
       { text: 'Relatórios básicos', included: true },
       { text: 'Financeiro completo', included: true },
       { text: 'Suporte por e-mail', included: true },
@@ -48,7 +47,7 @@ export const plans: Plan[] = [
   {
     name: 'Profissional',
     price: 'R$69,90',
-    priceDetail: '/mês',
+    priceDetail: '/mês (R$49,90/mês no plano anual)',
     level: 2,
     features: [
       { text: 'Pacientes ilimitados', included: true },
@@ -62,7 +61,7 @@ export const plans: Plan[] = [
   {
     name: 'Clínica',
     price: 'R$99,90',
-    priceDetail: '/mês',
+    priceDetail: '/mês (R$79,90/mês no plano anual)',
     level: 3,
     features: [
       { text: 'Múltiplos profissionais', included: true },
@@ -73,3 +72,4 @@ export const plans: Plan[] = [
     cta: 'Escolher Clínica',
   },
 ];
+
