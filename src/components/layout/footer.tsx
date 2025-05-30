@@ -10,7 +10,7 @@ export function Footer() {
         <div className="grid md:grid-cols-3 gap-8 mb-8">
           <div>
             <Link href="/" passHref className="mb-4 inline-block">
-                <Logo textClassName="text-primary" dotClassName="text-foreground"/>
+              <Logo textClassName="text-primary" dotClassName="text-foreground" />
             </Link>
             <p className="text-muted-foreground text-sm">
               Simplificando o acompanhamento de pacientes para profissionais da saúde.
@@ -44,12 +44,25 @@ export function Footer() {
           <div>
             <h3 className="text-lg font-semibold mb-4 text-foreground">Siga-nos</h3>
             <div className="flex space-x-4">
-              <Link href="https://www.instagram.com/clinipratica/" aria-label="Instagram" className="text-muted-foreground hover:text-primary transition-colors">
+              <a
+                href="https://www.instagram.com/clinipratica/"
+                aria-label="Instagram"
+                className="text-muted-foreground hover:text-primary transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <Instagram className="h-6 w-6" />
-              </Link>
-              <Link href="https://www.youtube.com/@CliniPratica" aria-label="Youtube" className="text-muted-foreground hover:text-primary transition-colors">
-                <Twitter className="h-6 w-6" />
-              </Link>
+              </a>
+
+              <a
+                href="https://www.youtube.com/@CliniPratica"
+                aria-label="Youtube"
+                className="text-muted-foreground hover:text-primary transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Youtube className="h-6 w-6" />
+              </a>
             </div>
           </div>
         </div>
