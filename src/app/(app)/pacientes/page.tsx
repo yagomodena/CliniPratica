@@ -247,22 +247,27 @@ export default function PacientesPage() {
       return;
     }
 
-    // Check patient limit for "Gratuito" plan
-    if (currentUserData.plano === 'Gratuito') {
-      const activePatientsQuery = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
-      const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
-      const activePatientsCount = activePatientsSnapshot.data().count;
+    const activePatientsQuery = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
+    const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
+    const activePatientsCount = activePatientsSnapshot.data().count;
 
-      if (activePatientsCount >= 10) {
-        toast({
-          title: "Limite Atingido",
-          description: "Você atingiu o limite de 10 pacientes ativos para o plano Gratuito. Faça upgrade para adicionar mais.",
-          variant: "destructive",
-        });
-        return;
-      }
+    if (currentUserData.plano === 'Gratuito' && activePatientsCount >= 10) {
+      toast({
+        title: "Limite Atingido",
+        description: "Você atingiu o limite de 10 pacientes ativos para o plano Gratuito. Faça upgrade para adicionar mais.",
+        variant: "destructive",
+      });
+      return;
     }
 
+    if (currentUserData.plano === 'Essencial' && activePatientsCount >= 50) {
+      toast({
+        title: "Limite Atingido",
+        description: "Você atingiu o limite de 50 pacientes ativos para o plano Essencial. Faça upgrade para adicionar mais.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const nomeEmpresa = currentUserData.nomeEmpresa || '';
 
@@ -427,16 +432,23 @@ export default function PacientesPage() {
     const patientToUpdate = patients.find(p => p.internalId === patientInternalId);
     if (!patientToUpdate || !currentUser || !currentUserData) return;
 
-    if (newStatus === 'Ativo' && currentUserData.plano === 'Gratuito') {
+    if (newStatus === 'Ativo') {
       const activePatientsQuery = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
       const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
       let activePatientsCount = activePatientsSnapshot.data().count;
 
-      // If the patient being activated is currently inactive, they are not yet counted in activePatientsCount
-      if (patientToUpdate.status === 'Inativo' && activePatientsCount >= 10) {
+      if (currentUserData.plano === 'Gratuito' && activePatientsCount >= 10) {
          toast({
           title: "Limite Atingido",
           description: "Você atingiu o limite de 10 pacientes ativos para o plano Gratuito. Faça upgrade para ativar mais.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (currentUserData.plano === 'Essencial' && activePatientsCount >= 50) {
+         toast({
+          title: "Limite Atingido",
+          description: "Você atingiu o limite de 50 pacientes ativos para o plano Essencial. Faça upgrade para ativar mais.",
           variant: "destructive",
         });
         return;
@@ -836,4 +848,3 @@ export default function PacientesPage() {
     </div>
   );
 }
-

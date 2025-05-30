@@ -104,7 +104,7 @@ import { ptBR } from 'date-fns/locale';
 import type { DateRange } from 'react-day-picker';
 import { Badge } from '@/components/ui/badge';
 import { auth, db } from '@/firebase';
-import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import { User as FirebaseUser, onAuthStateChanged, getAuth } from 'firebase/auth'; // Added getAuth
 import {
   collection,
   query,
@@ -207,6 +207,7 @@ export default function FinanceiroPage() {
 
   const [clientNow, setClientNow] = useState<Date | null>(null);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [currentUserPlan, setCurrentUserPlan] = useState<string | null>(null);
   const [firebasePatients, setFirebasePatients] = useState<PatientForSelect[]>([]);
   const [isLoadingFirebasePatients, setIsLoadingFirebasePatients] = useState(true);
 
@@ -215,9 +216,19 @@ export default function FinanceiroPage() {
 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const authInstance = getAuth();
+    const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
       setCurrentUser(user);
-      if (!user) {
+      if (user) {
+        const userDocRef = doc(db, 'usuarios', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          setCurrentUserPlan(userDocSnap.data()?.plano || "Gratuito");
+        } else {
+          setCurrentUserPlan("Gratuito"); // Default if user data not found
+        }
+      } else {
+        setCurrentUserPlan(null);
         setTransactions([]);
         setIsLoadingTransactions(false);
         setFirebasePatients([]);
@@ -248,6 +259,7 @@ export default function FinanceiroPage() {
           description: data.description,
           patientId: data.patientId,
           patientName: data.patientName,
+          appointmentId: data.appointmentId,
           amount: data.amount,
           paymentMethod: data.paymentMethod as PaymentMethod,
           status: data.status as TransactionStatus,
@@ -539,6 +551,7 @@ export default function FinanceiroPage() {
       description: transactionForm.description!,
       patientId: transactionForm.patientId || null,
       patientName: selectedPatient?.name || (transactionForm.type === 'manual' ? null : transactionForm.patientName),
+      appointmentId: transactionForm.appointmentId || null,
       amount: transactionForm.amount!,
       paymentMethod: transactionForm.paymentMethod as PaymentMethod,
       status: transactionForm.status as TransactionStatus,
@@ -670,7 +683,7 @@ export default function FinanceiroPage() {
   };
 
 
-  if (!clientNow || isLoadingTransactions || !currentUser) {
+  if (!clientNow || isLoadingTransactions || !currentUser || currentUserPlan === null) { // Add currentUserPlan check
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <p className="text-xl text-muted-foreground">Carregando dados financeiros...</p>
@@ -683,422 +696,447 @@ export default function FinanceiroPage() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-3xl font-bold text-foreground">Controle Financeiro</h1>
-        <Dialog open={isAddTransactionDialogOpen} onOpenChange={(isOpen) => {
-          setIsAddTransactionDialogOpen(isOpen);
-          if (!isOpen) {
-            setEditingTransaction(null);
-            setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
-          }
-        }}>
-          <DialogTrigger asChild>
-            <Button className="w-full sm:w-auto">
-              <PlusCircle className="mr-2 h-4 w-4" /> Novo Lançamento
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{editingTransaction ? 'Editar Lançamento' : 'Adicionar Novo Lançamento'}</DialogTitle>
-              <DialogDescription>
-                Preencha os detalhes do lançamento financeiro.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmitTransaction} className="grid gap-4 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                <Label htmlFor="description" className="sm:text-right">Descrição*</Label>
-                <Input id="description" name="description" value={transactionForm.description} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                <Label htmlFor="amount" className="sm:text-right">Valor (R$)*</Label>
-                <Input id="amount" name="amount" type="number" value={transactionForm.amount} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required min="0.01" step="0.01" />
-              </div>
-               <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                <Label htmlFor="date" className="sm:text-right col-span-1">Data*</Label>
-                <Popover>
-                    <PopoverTrigger asChild>
-                        <Button
-                        variant={"outline"}
-                        className={`col-span-1 sm:col-span-3 justify-start text-left font-normal w-full ${!transactionForm.date && "text-muted-foreground"}`}
-                        >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {transactionForm.date ? format(parseISO(transactionForm.date), "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                        mode="single"
-                        selected={transactionForm.date ? parseISO(transactionForm.date) : undefined}
-                        onSelect={(date) => handleDateChange(date, 'date')}
-                        locale={ptBR}
-                        />
-                    </PopoverContent>
-                </Popover>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                <Label htmlFor="paymentMethod" className="sm:text-right">Forma Pgto.*</Label>
-                <Select name="paymentMethod" value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)} required>
-                  <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {paymentMethods.map(pm => <SelectItem key={pm} value={pm}>{pm}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                <Label htmlFor="status" className="sm:text-right">Status*</Label>
-                <Select name="status" value={transactionForm.status} onValueChange={(value) => handleFormSelectChange('status', value)} required>
-                  <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {transactionStatuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-               <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                <Label htmlFor="type" className="sm:text-right">Tipo*</Label>
-                <Select name="type" value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value as TransactionType)} required>
-                  <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="atendimento">Vinculado a Atendimento</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {transactionForm.type === 'atendimento' && (
+        {currentUserPlan !== 'Gratuito' && (
+          <Dialog open={isAddTransactionDialogOpen} onOpenChange={(isOpen) => {
+            setIsAddTransactionDialogOpen(isOpen);
+            if (!isOpen) {
+              setEditingTransaction(null);
+              setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button className="w-full sm:w-auto">
+                <PlusCircle className="mr-2 h-4 w-4" /> Novo Lançamento
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{editingTransaction ? 'Editar Lançamento' : 'Adicionar Novo Lançamento'}</DialogTitle>
+                <DialogDescription>
+                  Preencha os detalhes do lançamento financeiro.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmitTransaction} className="grid gap-4 py-4">
                 <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                    <Label htmlFor="patientId" className="sm:text-right">Paciente</Label>
-                    <Select name="patientId" value={transactionForm.patientId || ''} onValueChange={(value) => handleFormSelectChange('patientId', value)}>
-                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue placeholder={isLoadingFirebasePatients ? "Carregando..." : "Selecione (opcional)"} /></SelectTrigger>
+                  <Label htmlFor="description" className="sm:text-right">Descrição*</Label>
+                  <Input id="description" name="description" value={transactionForm.description} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                  <Label htmlFor="amount" className="sm:text-right">Valor (R$)*</Label>
+                  <Input id="amount" name="amount" type="number" value={transactionForm.amount} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required min="0.01" step="0.01" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                  <Label htmlFor="date" className="sm:text-right col-span-1">Data*</Label>
+                  <Popover>
+                      <PopoverTrigger asChild>
+                          <Button
+                          variant={"outline"}
+                          className={`col-span-1 sm:col-span-3 justify-start text-left font-normal w-full ${!transactionForm.date && "text-muted-foreground"}`}
+                          >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {transactionForm.date ? format(parseISO(transactionForm.date), "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
+                          </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                          mode="single"
+                          selected={transactionForm.date ? parseISO(transactionForm.date) : undefined}
+                          onSelect={(date) => handleDateChange(date, 'date')}
+                          locale={ptBR}
+                          initialFocus
+                          />
+                      </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                  <Label htmlFor="paymentMethod" className="sm:text-right">Forma Pgto.*</Label>
+                  <Select name="paymentMethod" value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)} required>
+                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                        {isLoadingFirebasePatients ? (
-                            <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                        ) : firebasePatients.length === 0 ? (
-                            <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
-                        ) : (
-                           firebasePatients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                        )}
+                      {paymentMethods.map(pm => <SelectItem key={pm} value={pm}>{pm}</SelectItem>)}
                     </SelectContent>
-                    </Select>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                  <Label htmlFor="status" className="sm:text-right">Status*</Label>
+                  <Select name="status" value={transactionForm.status} onValueChange={(value) => handleFormSelectChange('status', value)} required>
+                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {transactionStatuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                  <Label htmlFor="type" className="sm:text-right">Tipo*</Label>
+                  <Select name="type" value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value as TransactionType)} required>
+                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual">Manual</SelectItem>
+                      <SelectItem value="atendimento">Vinculado a Atendimento</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {transactionForm.type === 'atendimento' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
+                      <Label htmlFor="patientId" className="sm:text-right">Paciente</Label>
+                      <Select name="patientId" value={transactionForm.patientId || ''} onValueChange={(value) => handleFormSelectChange('patientId', value)}>
+                      <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue placeholder={isLoadingFirebasePatients ? "Carregando..." : "Selecione (opcional)"} /></SelectTrigger>
+                      <SelectContent>
+                          {isLoadingFirebasePatients ? (
+                              <SelectItem value="loading" disabled>Carregando...</SelectItem>
+                          ) : firebasePatients.length === 0 ? (
+                              <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
+                          ) : (
+                            firebasePatients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
+                          )}
+                      </SelectContent>
+                      </Select>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-x-4 gap-y-2">
+                  <Label htmlFor="notes" className="sm:text-right sm:pt-2">Observações</Label>
+                  <Textarea id="notes" name="notes" value={transactionForm.notes} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" rows={3} />
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+                  <Button type="submit">{editingTransaction ? 'Salvar Alterações' : 'Adicionar Lançamento'}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      {currentUserPlan !== 'Gratuito' ? (
+        <>
+          <Card className="shadow-md">
+            <CardHeader>
+              <CardTitle>Filtro por Período</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-end">
+              <div className="w-full sm:max-w-xs">
+                <Label htmlFor="period-select">Selecionar Período</Label>
+                <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodOption)}>
+                  <SelectTrigger id="period-select" className="w-full">
+                    <SelectValue placeholder="Selecione o período" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {periodOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedPeriod === 'custom' && (
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end w-full mt-4 sm:mt-0">
+                  <div className="flex-1">
+                    <Label htmlFor="custom-start-date">Data Inicial</Label>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button id="custom-start-date" variant="outline" className="w-full justify-start text-left font-normal">
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {customDateRange?.from ? format(customDateRange.from, 'PPP', { locale: ptBR }) : <span>Data inicial</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar mode="single" selected={customDateRange?.from} onSelect={(date) => setCustomDateRange(prev => ({...prev, from: date }))} locale={ptBR} />
+                        </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="flex-1 mt-2 sm:mt-0">
+                    <Label htmlFor="custom-end-date">Data Final</Label>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button id="custom-end-date" variant="outline" className="w-full justify-start text-left font-normal">
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {customDateRange?.to ? format(customDateRange.to, 'PPP', { locale: ptBR }) : <span>Data final</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar mode="single" selected={customDateRange?.to} onSelect={(date) => setCustomDateRange(prev => ({...prev, to: date }))} disabled={{ before: customDateRange?.from }} locale={ptBR} />
+                        </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
               )}
-              <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-x-4 gap-y-2">
-                <Label htmlFor="notes" className="sm:text-right sm:pt-2">Observações</Label>
-                <Textarea id="notes" name="notes" value={transactionForm.notes} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" rows={3} />
-              </div>
-              <DialogFooter>
-                <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-                <Button type="submit">{editingTransaction ? 'Salvar Alterações' : 'Adicionar Lançamento'}</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </CardContent>
+          </Card>
 
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle>Filtro por Período</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-end">
-          <div className="w-full sm:max-w-xs">
-            <Label htmlFor="period-select">Selecionar Período</Label>
-            <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodOption)}>
-              <SelectTrigger id="period-select" className="w-full">
-                <SelectValue placeholder="Selecione o período" />
-              </SelectTrigger>
-              <SelectContent>
-                {periodOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {selectedPeriod === 'custom' && (
-            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end w-full mt-4 sm:mt-0">
-              <div className="flex-1">
-                <Label htmlFor="custom-start-date">Data Inicial</Label>
-                 <Popover>
-                    <PopoverTrigger asChild>
-                        <Button id="custom-start-date" variant="outline" className="w-full justify-start text-left font-normal">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {customDateRange?.from ? format(customDateRange.from, 'PPP', { locale: ptBR }) : <span>Data inicial</span>}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar mode="single" selected={customDateRange?.from} onSelect={(date) => setCustomDateRange(prev => ({...prev, from: date }))} locale={ptBR} />
-                    </PopoverContent>
-                </Popover>
-              </div>
-              <div className="flex-1 mt-2 sm:mt-0">
-                <Label htmlFor="custom-end-date">Data Final</Label>
-                <Popover>
-                    <PopoverTrigger asChild>
-                         <Button id="custom-end-date" variant="outline" className="w-full justify-start text-left font-normal">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {customDateRange?.to ? format(customDateRange.to, 'PPP', { locale: ptBR }) : <span>Data final</span>}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar mode="single" selected={customDateRange?.to} onSelect={(date) => setCustomDateRange(prev => ({...prev, to: date }))} disabled={{ before: customDateRange?.from }} locale={ptBR} />
-                    </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Faturamento Bruto (Recebido)</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">R$ {summaryData.totalRevenue.toFixed(2)}</div>
-             {summaryData.comparisonPercentage !== null ? (
-                <p className={`text-xs ${summaryData.comparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage.toFixed(1)}% em relação ao período anterior
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">Não há dados do período anterior para comparação.</p>
-              )}
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Atendimentos Pagos</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summaryData.paidAppointments}</div>
-            <p className="text-xs text-muted-foreground">No período selecionado</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Média por Atendimento Pago</CardTitle>
-            <Percent className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">R$ {summaryData.averagePerAppointment.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">Considerando atendimentos pagos</p>
-          </CardContent>
-        </Card>
-         <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Evolução do Faturamento</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${getEvolutionTextAndColor(summaryData.comparisonPercentage).colorClass}`}>
-                {getEvolutionTextAndColor(summaryData.comparisonPercentage).text}
-            </div>
-            {summaryData.comparisonPercentage !== null ? (
-                <p className="text-xs text-muted-foreground">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Faturamento Bruto (Recebido)</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">R$ {summaryData.totalRevenue.toFixed(2)}</div>
+                {summaryData.comparisonPercentage !== null ? (
+                    <p className={`text-xs ${summaryData.comparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage.toFixed(1)}% em relação ao período anterior
-                </p>
-            ) : (
-                <p className="text-xs text-muted-foreground">Não há dados do período anterior.</p>
-            )}
+                    </p>
+                ) : (
+                    <p className="text-xs text-muted-foreground">Não há dados do período anterior para comparação.</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Atendimentos Pagos</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryData.paidAppointments}</div>
+                <p className="text-xs text-muted-foreground">No período selecionado</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Média por Atendimento Pago</CardTitle>
+                <Percent className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">R$ {summaryData.averagePerAppointment.toFixed(2)}</div>
+                <p className="text-xs text-muted-foreground">Considerando atendimentos pagos</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Evolução do Faturamento</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold ${getEvolutionTextAndColor(summaryData.comparisonPercentage).colorClass}`}>
+                    {getEvolutionTextAndColor(summaryData.comparisonPercentage).text}
+                </div>
+                {summaryData.comparisonPercentage !== null ? (
+                    <p className="text-xs text-muted-foreground">
+                        {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage.toFixed(1)}% em relação ao período anterior
+                    </p>
+                ) : (
+                    <p className="text-xs text-muted-foreground">Não há dados do período anterior.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="shadow-md">
+            <CardHeader>
+              <CardTitle>Gráfico de Faturamento no Período</CardTitle>
+              <CardDescription>Evolução do faturamento (status Recebido) por dia no período selecionado.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={{ faturamento: { label: 'Faturamento (R$)', color: 'hsl(var(--primary))' } }} className="h-[300px] w-full">
+                <ResponsiveContainer>
+                  <RechartsBarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                    <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                    <Bar dataKey="faturamento" fill="var(--color-faturamento)" radius={4} />
+                  </RechartsBarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+
+          {currentUserPlan !== 'Essencial' && (
+            <Card className="shadow-md">
+                <CardHeader>
+                <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" />Contas a Receber por Paciente</CardTitle>
+                <CardDescription>Status de pagamento dos atendimentos no período selecionado.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                <Table>
+                    <TableHeader>
+                    <TableRow>
+                        <TableHead>Paciente</TableHead>
+                        <TableHead>Descrição</TableHead>
+                        <TableHead>Vencimento</TableHead>
+                        <TableHead>Data Pgto.</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-center">Dias Atraso</TableHead>
+                        <TableHead className="text-right">Valor (R$)</TableHead>
+                        <TableHead className="text-center">Forma Pgto.</TableHead>
+                    </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                    {receivablesData.length > 0 ? (
+                        receivablesData.map((item) => (
+                        <TableRow key={item.id}>
+                            <TableCell>{item.patientName}</TableCell>
+                            <TableCell>{item.description}</TableCell>
+                            <TableCell>{format(item.dueDate, 'dd/MM/yyyy')}</TableCell>
+                            <TableCell>{item.paymentDate ? format(item.paymentDate, 'dd/MM/yyyy') : '-'}</TableCell>
+                            <TableCell>
+                            <Badge variant={getPaymentStatusBadgeVariant(item.paymentStatusDisplay)} className="capitalize text-xs whitespace-nowrap">
+                                {item.paymentStatusDisplay === 'Pago' && <CheckCircle className="mr-1 h-3 w-3" />}
+                                {item.paymentStatusDisplay === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
+                                {item.paymentStatusDisplay === 'Atrasado' && <AlertTriangle className="mr-1 h-3 w-3" />}
+                                {item.paymentStatusDisplay}
+                            </Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                            {item.paymentStatusDisplay === 'Atrasado' && item.daysOverdue !== undefined && item.daysOverdue > 0
+                                ? <span className="text-destructive font-medium">{item.daysOverdue}</span>
+                                : '-'}
+                            </TableCell>
+                            <TableCell className={`text-right font-medium ${item.paymentStatusDisplay === 'Atrasado' ? 'text-destructive' : item.paymentStatusDisplay === 'Pago' ? 'text-green-600' : ''}`}>
+                            {item.amount.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1">
+                                {getPaymentMethodIcon(item.paymentMethod)}
+                                <span className="text-xs text-muted-foreground">{item.paymentMethod || '-'}</span>
+                            </div>
+                            </TableCell>
+                        </TableRow>
+                        ))
+                    ) : (
+                        <TableRow>
+                        <TableCell colSpan={8} className="text-center h-24">
+                            Nenhum atendimento com pendência ou pago encontrado para o período selecionado.
+                        </TableCell>
+                        </TableRow>
+                    )}
+                    </TableBody>
+                </Table>
+                </CardContent>
+            </Card>
+          )}
+
+
+          <Card className="shadow-md">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex-1">
+                    <CardTitle>Todos os Lançamentos Financeiros</CardTitle>
+                    <CardDescription>Lista de todas as transações (incluindo manuais) no período selecionado.</CardDescription>
+                </div>
+                <Button variant="outline" onClick={handleExportExcel} className="w-full mt-2 sm:mt-0 sm:w-auto">
+                    <FileDown className="mr-2 h-4 w-4" /> Exportar Excel (Em breve)
+                </Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>Paciente</TableHead>
+                    <TableHead>Valor (R$)</TableHead>
+                    <TableHead>Forma Pgto.</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTransactions.length > 0 ? (
+                    filteredTransactions.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell>{format(t.date, 'dd/MM/yyyy')}</TableCell>
+                        <TableCell>
+                          {t.description}
+                          {t.notes && <p className="text-xs text-muted-foreground italic mt-1">"{t.notes}"</p>}
+                        </TableCell>
+                        <TableCell>{t.patientName || '-'}</TableCell>
+                        <TableCell className={`font-medium ${t.status === 'Cancelado' ? 'text-muted-foreground line-through' : (t.status === 'Pendente' ? 'text-orange-600' : 'text-green-600')}`}>
+                          {t.amount.toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                            <div className="flex items-center gap-1">
+                            {getPaymentMethodIcon(t.paymentMethod)}
+                            <span className="text-xs">{t.paymentMethod}</span>
+                            </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getTransactionStatusBadgeVariant(t.status)} className="capitalize text-xs whitespace-nowrap">
+                              {t.status === 'Recebido' && <CheckCircle className="mr-1 h-3 w-3" />}
+                              {t.status === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
+                              {t.status === 'Cancelado' && <XCircle className="mr-1 h-3 w-3" />}
+                              {t.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="sr-only">Mais ações</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleEditTransaction(t)}>
+                                <Edit2 className="mr-2 h-4 w-4" />
+                                Editar
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => openDeleteTransactionDialog(t)} className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Excluir
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {t.status === 'Pendente' && (
+                                <>
+                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Recebido')}>
+                                    <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
+                                    Marcar como Recebido
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
+                                    <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                                    Marcar como Cancelado
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {t.status === 'Recebido' && (
+                                <>
+                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
+                                    <Clock className="mr-2 h-4 w-4 text-orange-500" />
+                                    Marcar como Pendente
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
+                                    <XCircle className="mr-2 h-4 w-4 text-red-500" />
+                                    Marcar como Cancelado
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {t.status === 'Cancelado' && (
+                                <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
+                                  <Clock className="mr-2 h-4 w-4 text-orange-500" />
+                                  Marcar como Pendente
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center h-24">
+                        {isLoadingTransactions ? "Carregando lançamentos..." : "Nenhum lançamento encontrado para o período selecionado."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle className="text-xl font-semibold">Acesso Restrito</CardTitle>
+            <CardDescription>
+              A funcionalidade completa de Controle Financeiro está disponível nos planos Essencial, Profissional e Clínica.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p>Com o plano Gratuito, você tem acesso limitado a esta seção.</p>
+            <Button className="mt-4" onClick={() => console.log("Redirecionar para página de planos")}>
+              Ver Planos
+            </Button>
           </CardContent>
         </Card>
-      </div>
+      )}
 
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle>Gráfico de Faturamento no Período</CardTitle>
-          <CardDescription>Evolução do faturamento (status Recebido) por dia no período selecionado.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChartContainer config={{ faturamento: { label: 'Faturamento (R$)', color: 'hsl(var(--primary))' } }} className="h-[300px] w-full">
-            <ResponsiveContainer>
-              <RechartsBarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                <Bar dataKey="faturamento" fill="var(--color-faturamento)" radius={4} />
-              </RechartsBarChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" />Contas a Receber por Paciente</CardTitle>
-          <CardDescription>Status de pagamento dos atendimentos no período selecionado.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Vencimento</TableHead>
-                <TableHead>Data Pgto.</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-center">Dias Atraso</TableHead>
-                <TableHead className="text-right">Valor (R$)</TableHead>
-                <TableHead className="text-center">Forma Pgto.</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {receivablesData.length > 0 ? (
-                receivablesData.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.patientName}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>{format(item.dueDate, 'dd/MM/yyyy')}</TableCell>
-                    <TableCell>{item.paymentDate ? format(item.paymentDate, 'dd/MM/yyyy') : '-'}</TableCell>
-                    <TableCell>
-                      <Badge variant={getPaymentStatusBadgeVariant(item.paymentStatusDisplay)} className="capitalize text-xs whitespace-nowrap">
-                        {item.paymentStatusDisplay === 'Pago' && <CheckCircle className="mr-1 h-3 w-3" />}
-                        {item.paymentStatusDisplay === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
-                        {item.paymentStatusDisplay === 'Atrasado' && <AlertTriangle className="mr-1 h-3 w-3" />}
-                        {item.paymentStatusDisplay}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {item.paymentStatusDisplay === 'Atrasado' && item.daysOverdue !== undefined && item.daysOverdue > 0
-                        ? <span className="text-destructive font-medium">{item.daysOverdue}</span>
-                        : '-'}
-                    </TableCell>
-                    <TableCell className={`text-right font-medium ${item.paymentStatusDisplay === 'Atrasado' ? 'text-destructive' : item.paymentStatusDisplay === 'Pago' ? 'text-green-600' : ''}`}>
-                      {item.amount.toFixed(2)}
-                    </TableCell>
-                     <TableCell className="text-center">
-                       <div className="flex items-center justify-center gap-1">
-                         {getPaymentMethodIcon(item.paymentMethod)}
-                         <span className="text-xs text-muted-foreground">{item.paymentMethod || '-'}</span>
-                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center h-24">
-                    Nenhum atendimento com pendência ou pago encontrado para o período selecionado.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-
-      <Card className="shadow-md">
-        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-            <div className="flex-1">
-                <CardTitle>Todos os Lançamentos Financeiros</CardTitle>
-                <CardDescription>Lista de todas as transações (incluindo manuais) no período selecionado.</CardDescription>
-            </div>
-            <Button variant="outline" onClick={handleExportExcel} className="w-full mt-2 sm:mt-0 sm:w-auto">
-                <FileDown className="mr-2 h-4 w-4" /> Exportar Excel (Em breve)
-            </Button>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Valor (R$)</TableHead>
-                <TableHead>Forma Pgto.</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredTransactions.length > 0 ? (
-                filteredTransactions.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell>{format(t.date, 'dd/MM/yyyy')}</TableCell>
-                    <TableCell>
-                      {t.description}
-                      {t.notes && <p className="text-xs text-muted-foreground italic mt-1">"{t.notes}"</p>}
-                    </TableCell>
-                    <TableCell>{t.patientName || '-'}</TableCell>
-                    <TableCell className={`font-medium ${t.status === 'Cancelado' ? 'text-muted-foreground line-through' : (t.status === 'Pendente' ? 'text-orange-600' : 'text-green-600')}`}>
-                      {t.amount.toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                        <div className="flex items-center gap-1">
-                           {getPaymentMethodIcon(t.paymentMethod)}
-                           <span className="text-xs">{t.paymentMethod}</span>
-                        </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={getTransactionStatusBadgeVariant(t.status)} className="capitalize text-xs whitespace-nowrap">
-                          {t.status === 'Recebido' && <CheckCircle className="mr-1 h-3 w-3" />}
-                          {t.status === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
-                          {t.status === 'Cancelado' && <XCircle className="mr-1 h-3 w-3" />}
-                          {t.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                            <span className="sr-only">Mais ações</span>
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEditTransaction(t)}>
-                            <Edit2 className="mr-2 h-4 w-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openDeleteTransactionDialog(t)} className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive-foreground">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Excluir
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {t.status === 'Pendente' && (
-                            <>
-                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Recebido')}>
-                                <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
-                                Marcar como Recebido
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
-                                <XCircle className="mr-2 h-4 w-4 text-red-500" />
-                                Marcar como Cancelado
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          {t.status === 'Recebido' && (
-                            <>
-                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
-                                <Clock className="mr-2 h-4 w-4 text-orange-500" />
-                                Marcar como Pendente
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
-                                <XCircle className="mr-2 h-4 w-4 text-red-500" />
-                                Marcar como Cancelado
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          {t.status === 'Cancelado' && (
-                            <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
-                              <Clock className="mr-2 h-4 w-4 text-orange-500" />
-                              Marcar como Pendente
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center h-24">
-                    {isLoadingTransactions ? "Carregando lançamentos..." : "Nenhum lançamento encontrado para o período selecionado."}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
 
       {/* Delete Transaction Confirmation Dialog */}
       <AlertDialog open={isDeleteTransactionConfirmOpen} onOpenChange={setIsDeleteTransactionConfirmOpen}>

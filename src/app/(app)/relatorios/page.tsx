@@ -8,14 +8,16 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as RechartsLineChart, ResponsiveContainer, Cell } from "recharts";
 import { auth, db } from '@/firebase';
 import type { User as FirebaseUser } from 'firebase/auth'; 
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, getAuth } from 'firebase/auth'; // Added getAuth
 import {
   collection,
   query,
   where,
   getDocs,
   Timestamp,
-  getCountFromServer
+  getCountFromServer,
+  doc, // Added doc
+  getDoc // Added getDoc
 } from 'firebase/firestore';
 import { format, startOfMonth, subMonths, getMonth, getYear, parseISO, endOfMonth, isWithinInterval, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -58,6 +60,7 @@ const chartConfigCancelledAppointments = {
 
 export default function RelatoriosPage() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [currentUserPlan, setCurrentUserPlan] = useState<string | null>(null);
   const [clientNow, setClientNow] = useState<Date | null>(null);
 
   const [actualMonthlyAppointmentsData, setActualMonthlyAppointmentsData] = useState<MonthlyData[]>([]);
@@ -78,8 +81,20 @@ export default function RelatoriosPage() {
 
   useEffect(() => {
     setClientNow(new Date());
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const authInstance = getAuth();
+    const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
       setCurrentUser(user);
+      if (user) {
+        const userDocRef = doc(db, 'usuarios', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          setCurrentUserPlan(userDocSnap.data()?.plano || "Gratuito");
+        } else {
+          setCurrentUserPlan("Gratuito"); // Default if user data not found
+        }
+      } else {
+        setCurrentUserPlan(null);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -115,7 +130,7 @@ export default function RelatoriosPage() {
         if (apptDateStr) {
           try {
             const apptDate = parseISO(apptDateStr);
-            if (apptDate >= sixMonthsAgo && apptDate <= currentDate) {
+            if (apptDate >= sixMonthsAgo && apptDate <= endOfDay(currentDate)) { // Use endOfDay for current month
                 const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
                 const monthEntry = monthsData.find(m => m.month === apptMonthKey);
                 if (monthEntry) {
@@ -155,7 +170,8 @@ export default function RelatoriosPage() {
         apptsRef,
         where('uid', '==', user.uid),
         where('status', '==', 'cancelado'),
-        where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd')) 
+        where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd')),
+        where('date', '<=', format(endOfDay(currentDate), 'yyyy-MM-dd'))
       );
       const querySnapshot = await getDocs(q);
       querySnapshot.forEach((docSnap) => {
@@ -164,7 +180,7 @@ export default function RelatoriosPage() {
         if (apptDateStr) {
           try {
             const apptDate = parseISO(apptDateStr);
-             if (apptDate >= sixMonthsAgo && apptDate <= currentDate) {
+             if (apptDate >= sixMonthsAgo && apptDate <= endOfDay(currentDate)) {
                 const apptMonthKey = `${monthNames[getMonth(apptDate)]}/${String(getYear(apptDate)).slice(-2)}`;
                 const monthEntry = monthsData.find(m => m.month === apptMonthKey);
                 if (monthEntry) {
@@ -200,13 +216,16 @@ export default function RelatoriosPage() {
 
     const sixMonthsAgoDate = startOfMonth(subMonths(currentDate, 5));
     const sixMonthsAgoTimestamp = Timestamp.fromDate(sixMonthsAgoDate);
+    const currentEndTimestamp = Timestamp.fromDate(endOfDay(currentDate));
+
 
     try {
       const patientsRef = collection(db, 'pacientes');
       const q = query(
         patientsRef,
         where('uid', '==', user.uid),
-        where('createdAt', '>=', sixMonthsAgoTimestamp)
+        where('createdAt', '>=', sixMonthsAgoTimestamp),
+        where('createdAt', '<=', currentEndTimestamp)
       );
       const querySnapshot = await getDocs(q);
 
@@ -214,7 +233,7 @@ export default function RelatoriosPage() {
         const data = docSnap.data();
         if (data.createdAt && (data.createdAt as Timestamp).toDate) {
           const patientCreationDate = (data.createdAt as Timestamp).toDate();
-          if (patientCreationDate >= sixMonthsAgoDate && patientCreationDate <= currentDate) {
+          if (patientCreationDate >= sixMonthsAgoDate && patientCreationDate <= endOfDay(currentDate)) {
             const patientMonthKey = `${monthNames[getMonth(patientCreationDate)]}/${String(getYear(patientCreationDate)).slice(-2)}`;
             const monthEntry = monthsData.find(m => m.month === patientMonthKey);
             if (monthEntry) {
@@ -384,138 +403,148 @@ export default function RelatoriosPage() {
       <h1 className="text-3xl font-bold text-foreground">Relatórios</h1>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5"/> Agendamentos por Mês</CardTitle>
-            <CardDescription>Visualização do número de agendamentos realizados mensalmente (não cancelados).</CardDescription>
-          </CardHeader>
-          <CardContent>
-             <ChartContainer config={chartConfigAppointments} className="w-full aspect-video">
-              {isLoadingMonthlyAppointments ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
-              ) : (
-                 <ResponsiveContainer width="100%" height="100%">
-                   <RechartsBarChart data={actualMonthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3"/>
-                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false}/>
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />}/>
-                    <Bar dataKey="total" fill="var(--color-total)" radius={4} />
-                   </RechartsBarChart>
-                 </ResponsiveContainer>
-              )}
-            </ChartContainer>
-          </CardContent>
-        </Card>
-
-         <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5"/> Taxa de Retorno de Pacientes</CardTitle>
-            <CardDescription>Percentual de pacientes de um mês que retornaram nos meses seguintes.</CardDescription>
-          </CardHeader>
-          <CardContent>
-             <ChartContainer config={chartConfigReturn} className="w-full aspect-video">
-              {isLoadingPatientReturnRate ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
-              ) : (
-                 <ResponsiveContainer width="100%" height="100%">
-                    <RechartsLineChart data={patientReturnRateData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                        <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
-                        <ChartTooltip 
-                            cursor={false} 
-                            content={<ChartTooltipContent 
-                                        indicator="line" 
-                                        hideLabel 
-                                        formatter={(value) => `${value}%`} 
-                                    />} 
-                        />
-                        <Line type="monotone" dataKey="rate" stroke="var(--color-rate)" strokeWidth={2} dot={true} />
-                    </RechartsLineChart>
-                </ResponsiveContainer>
+        { (currentUserPlan === 'Essencial' || currentUserPlan === 'Profissional' || currentUserPlan === 'Clínica') && (
+            <Card className="shadow-md">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><CalendarClock className="h-5 w-5"/> Agendamentos por Mês</CardTitle>
+                <CardDescription>Visualização do número de agendamentos realizados mensalmente (não cancelados).</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ChartContainer config={chartConfigAppointments} className="w-full aspect-video">
+                {isLoadingMonthlyAppointments ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+                ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                    <RechartsBarChart data={actualMonthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                        <CartesianGrid vertical={false} strokeDasharray="3 3"/>
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
+                        <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false}/>
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />}/>
+                        <Bar dataKey="total" fill="var(--color-total)" radius={4} />
+                    </RechartsBarChart>
+                    </ResponsiveContainer>
                 )}
-             </ChartContainer>
-          </CardContent>
-        </Card>
+                </ChartContainer>
+            </CardContent>
+            </Card>
+        )}
 
-         <Card className="shadow-md">
+        { (currentUserPlan === 'Essencial' || currentUserPlan === 'Profissional' || currentUserPlan === 'Clínica') && (
+            <Card className="shadow-md">
             <CardHeader>
                 <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5"/> Novos Pacientes por Mês</CardTitle>
                 <CardDescription>Quantidade de novos pacientes cadastrados.</CardDescription>
             </CardHeader>
             <CardContent className="min-h-[200px] flex flex-col items-center justify-center">
-              <ChartContainer config={chartConfigNewPatients} className="w-full aspect-video">
+                <ChartContainer config={chartConfigNewPatients} className="w-full aspect-video">
                 {isLoadingNewPatients ? (
-                  <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+                    <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%">
                     <RechartsLineChart data={newPatientsPerMonthData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                      <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
-                      <Line type="monotone" dataKey="total" stroke="var(--color-total)" strokeWidth={2} dot={true} />
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                        <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" hideLabel />} />
+                        <Line type="monotone" dataKey="total" stroke="var(--color-total)" strokeWidth={2} dot={true} />
                     </RechartsLineChart>
-                  </ResponsiveContainer>
+                    </ResponsiveContainer>
                 )}
-              </ChartContainer>
+                </ChartContainer>
             </CardContent>
-         </Card>
+            </Card>
+        )}
 
-        <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><UsersRound className="h-5 w-5"/> Pacientes Ativos vs. Inativos</CardTitle>
-            <CardDescription>Comparativo entre pacientes ativos e inativos.</CardDescription>
-          </CardHeader>
-          <CardContent className="min-h-[200px] flex items-center justify-center">
-             <ChartContainer config={chartConfigActiveInactive} className="w-full aspect-video">
-              {isLoadingActiveInactiveData ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
-              ) : (
-                 <ResponsiveContainer width="100%" height="100%">
-                   <RechartsBarChart data={activeInactivePatientData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                    <CartesianGrid horizontal={false} strokeDasharray="3 3"/>
-                    <XAxis type="number" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
-                    <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} width={60} />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                    <Bar dataKey="count" radius={4}>
-                      {activeInactivePatientData.map((entry, index) => {
-                        const colorKey = entry.name.toLowerCase() as keyof typeof chartConfigActiveInactive;
-                        const color = chartConfigActiveInactive[colorKey]?.color || 'hsl(var(--primary))';
-                        return <Cell key={`cell-${index}`} fill={color} />;
-                      })}
-                    </Bar>
-                   </RechartsBarChart>
-                 </ResponsiveContainer>
-              )}
-            </ChartContainer>
-          </CardContent>
-        </Card>
+        { (currentUserPlan === 'Profissional' || currentUserPlan === 'Clínica') && (
+            <Card className="shadow-md">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5"/> Taxa de Retorno de Pacientes</CardTitle>
+                <CardDescription>Percentual de pacientes de um mês que retornaram nos meses seguintes.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ChartContainer config={chartConfigReturn} className="w-full aspect-video">
+                {isLoadingPatientReturnRate ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+                ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                        <RechartsLineChart data={patientReturnRateData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                            <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12}/>
+                            <ChartTooltip 
+                                cursor={false} 
+                                content={<ChartTooltipContent 
+                                            indicator="line" 
+                                            hideLabel 
+                                            formatter={(value) => `${value}%`} 
+                                        />} 
+                            />
+                            <Line type="monotone" dataKey="rate" stroke="var(--color-rate)" strokeWidth={2} dot={true} />
+                        </RechartsLineChart>
+                    </ResponsiveContainer>
+                    )}
+                </ChartContainer>
+            </CardContent>
+            </Card>
+        )}
         
-        <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Ban className="h-5 w-5"/> Agendamentos Cancelados por Mês</CardTitle>
-            <CardDescription>Visualização do número de agendamentos marcados como cancelados mensalmente.</CardDescription>
-          </CardHeader>
-          <CardContent className="min-h-[200px] flex items-center justify-center">
-            <ChartContainer config={chartConfigCancelledAppointments} className="w-full aspect-video">
-              {isLoadingCancelledAppointments ? (
-                <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsBarChart data={cancelledMonthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                    <Bar dataKey="total" fill="var(--color-total)" radius={4} />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
-              )}
-            </ChartContainer>
-          </CardContent>
-        </Card>
+        { (currentUserPlan === 'Profissional' || currentUserPlan === 'Clínica') && (
+            <Card className="shadow-md">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><UsersRound className="h-5 w-5"/> Pacientes Ativos vs. Inativos</CardTitle>
+                <CardDescription>Comparativo entre pacientes ativos e inativos.</CardDescription>
+            </CardHeader>
+            <CardContent className="min-h-[200px] flex items-center justify-center">
+                <ChartContainer config={chartConfigActiveInactive} className="w-full aspect-video">
+                {isLoadingActiveInactiveData ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+                ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                    <RechartsBarChart data={activeInactivePatientData} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                        <CartesianGrid horizontal={false} strokeDasharray="3 3"/>
+                        <XAxis type="number" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                        <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} width={60} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                        <Bar dataKey="count" radius={4}>
+                        {activeInactivePatientData.map((entry, index) => {
+                            const colorKey = entry.name.toLowerCase() as keyof typeof chartConfigActiveInactive;
+                            const color = chartConfigActiveInactive[colorKey]?.color || 'hsl(var(--primary))';
+                            return <Cell key={`cell-${index}`} fill={color} />;
+                        })}
+                        </Bar>
+                    </RechartsBarChart>
+                    </ResponsiveContainer>
+                )}
+                </ChartContainer>
+            </CardContent>
+            </Card>
+        )}
+        
+        { (currentUserPlan === 'Profissional' || currentUserPlan === 'Clínica') && (
+            <Card className="shadow-md">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Ban className="h-5 w-5"/> Agendamentos Cancelados por Mês</CardTitle>
+                <CardDescription>Visualização do número de agendamentos marcados como cancelados mensalmente.</CardDescription>
+            </CardHeader>
+            <CardContent className="min-h-[200px] flex items-center justify-center">
+                <ChartContainer config={chartConfigCancelledAppointments} className="w-full aspect-video">
+                {isLoadingCancelledAppointments ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">Carregando dados...</div>
+                ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                    <RechartsBarChart data={cancelledMonthlyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                        <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
+                        <YAxis tickLine={false} axisLine={false} tickMargin={8} fontSize={12} allowDecimals={false} />
+                        <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                        <Bar dataKey="total" fill="var(--color-total)" radius={4} />
+                    </RechartsBarChart>
+                    </ResponsiveContainer>
+                )}
+                </ChartContainer>
+            </CardContent>
+            </Card>
+        )}
       </div>
     </div>
   );
