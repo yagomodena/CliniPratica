@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 import { format, startOfMonth, subMonths, getMonth, getYear, parseISO, endOfMonth, isWithinInterval, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Label } from '@/components/ui/label'; // Added Label import
+import { Label } from '@/components/ui/label';
 
 type MonthlyData = {
   month: string;
@@ -74,7 +74,7 @@ const chartConfigCancelledAppointments = {
 
 export default function RelatoriosPage() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null); // To store plan and other user data
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [clientNow, setClientNow] = useState<Date | null>(null);
 
   const [actualMonthlyAppointmentsData, setActualMonthlyAppointmentsData] = useState<MonthlyData[]>([]);
@@ -92,12 +92,11 @@ export default function RelatoriosPage() {
   const [patientReturnRateData, setPatientReturnRateData] = useState<MonthlyReturnRateData[]>([]);
   const [isLoadingPatientReturnRate, setIsLoadingPatientReturnRate] = useState(true);
 
-  // State for filters (Clínica plan)
   const [clinicProfessionals, setClinicProfessionals] = useState<UserForFilter[]>([]);
   const [isLoadingProfessionals, setIsLoadingProfessionals] = useState(false);
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>('all');
 
-  const [clinicUnits, setClinicUnits] = useState<UnitForFilter[]>([ // Placeholder data
+  const [clinicUnits, setClinicUnits] = useState<UnitForFilter[]>([
     { id: 'all', name: 'Todas as Unidades' },
     { id: 'unit1', name: 'Unidade Principal (Exemplo)' }
   ]);
@@ -116,11 +115,10 @@ export default function RelatoriosPage() {
           const uData = userDocSnap.data();
           setCurrentUserData(uData);
           if (uData?.plano === 'Clínica') {
-            fetchClinicProfessionals();
-            // fetchClinicUnits(); // Placeholder if we had real unit data
+            fetchClinicProfessionals(uData.nomeEmpresa);
           }
         } else {
-          setCurrentUserData({ plano: "Gratuito" }); // Default if user data not found
+          setCurrentUserData({ plano: "Gratuito" });
         }
       } else {
         setCurrentUserData(null);
@@ -129,20 +127,25 @@ export default function RelatoriosPage() {
     return () => unsubscribe();
   }, []);
 
-  const fetchClinicProfessionals = async () => {
+  const fetchClinicProfessionals = async (adminCompanyName?: string) => {
+    if (!adminCompanyName) {
+      setClinicProfessionals([{ id: 'all', nomeCompleto: 'Todos os Profissionais' }]);
+      return;
+    }
     setIsLoadingProfessionals(true);
     try {
-      // For simplicity, fetching all users. In a real scenario, you might filter by clinic ID.
-      const usersSnapshot = await getDocs(query(collection(db, 'usuarios'), orderBy('nomeCompleto')));
+      const usersRef = collection(db, 'usuarios');
+      const q = query(usersRef, where('nomeEmpresa', '==', adminCompanyName), orderBy('nomeCompleto'));
+      const usersSnapshot = await getDocs(q);
+      
       const professionals: UserForFilter[] = [{ id: 'all', nomeCompleto: 'Todos os Profissionais' }];
       usersSnapshot.forEach(doc => {
-        // Potentially add a check here if users have a role or belong to the same clinic
         professionals.push({ id: doc.id, nomeCompleto: doc.data().nomeCompleto as string });
       });
       setClinicProfessionals(professionals);
     } catch (error) {
-      console.error("Erro ao buscar profissionais:", error);
-      setClinicProfessionals([{ id: 'all', nomeCompleto: 'Todos os Profissionais' }]); // Fallback
+      console.error("Erro ao buscar profissionais da clínica:", error);
+      setClinicProfessionals([{ id: 'all', nomeCompleto: 'Todos os Profissionais' }]);
     } finally {
       setIsLoadingProfessionals(false);
     }
@@ -208,7 +211,7 @@ export default function RelatoriosPage() {
       setActualMonthlyAppointmentsData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos mensais:", error);
-      setActualMonthlyAppointmentsData(monthsData); // Set to default on error
+      setActualMonthlyAppointmentsData(monthsData);
     } finally {
       setIsLoadingMonthlyAppointments(false);
     }
@@ -265,7 +268,7 @@ export default function RelatoriosPage() {
       setCancelledMonthlyAppointmentsData(monthsData);
     } catch (error) {
       console.error("Erro ao buscar agendamentos cancelados:", error);
-      setCancelledMonthlyAppointmentsData(monthsData); // Set to default on error
+      setCancelledMonthlyAppointmentsData(monthsData);
     } finally {
       setIsLoadingCancelledAppointments(false);
     }
@@ -318,7 +321,7 @@ export default function RelatoriosPage() {
       setNewPatientsPerMonthData(monthsData);
     } catch (error: any) {
       console.error("Erro ao buscar novos pacientes por mês:", error);
-      setNewPatientsPerMonthData(monthsData); // Set to default on error
+      setNewPatientsPerMonthData(monthsData);
     } finally {
       setIsLoadingNewPatients(false);
     }
@@ -346,7 +349,7 @@ export default function RelatoriosPage() {
       ]);
     } catch (error: any) {
       console.error("Erro ao buscar contagem de pacientes ativos/inativos:", error);
-      setActiveInactivePatientData([{ name: 'Ativos', count: 0 }, { name: 'Inativos', count: 0 }]); // Set to default on error
+      setActiveInactivePatientData([{ name: 'Ativos', count: 0 }, { name: 'Inativos', count: 0 }]);
     } finally {
       setIsLoadingActiveInactiveData(false);
     }
@@ -357,14 +360,14 @@ export default function RelatoriosPage() {
      if (!targetUid || !currentDate) {
         setIsLoadingPatientReturnRate(false);
         const defaultRates = Array.from({ length: 6 }).map((_, i) => {
-            const targetMonthDate = subMonths(currentDate || new Date(), 5 - i); // Cohort month
+            const targetMonthDate = subMonths(currentDate || new Date(), 5 - i);
             return { month: `${format(targetMonthDate, "MMM", { locale: ptBR })}/${String(getYear(targetMonthDate)).slice(-2)}`, rate: 0 };
         });
         setPatientReturnRateData(defaultRates);
         return;
     }
     setIsLoadingPatientReturnRate(true);
-    const lookbackStartDate = startOfMonth(subMonths(currentDate, 7)); // Look back 7 months for cohort data
+    const lookbackStartDate = startOfMonth(subMonths(currentDate, 7));
     const appointmentsQueryRangeEnd = endOfDay(currentDate);
     let allFetchedAppointments: Array<{ id: string; patientId: string; date: string }> = [];
 
@@ -398,8 +401,8 @@ export default function RelatoriosPage() {
     }
 
     const monthlyReturnRates: MonthlyReturnRateData[] = [];
-    for (let i = 5; i >= 0; i--) { // Iterate for the last 6 months to display
-        const cohortMonthStartDate = startOfMonth(subMonths(currentDate, i + 1)); // e.g., if i=0, this is last month; if i=5, this is 6 months ago
+    for (let i = 5; i >= 0; i--) {
+        const cohortMonthStartDate = startOfMonth(subMonths(currentDate, i + 1));
         const cohortMonthEndDate = endOfMonth(cohortMonthStartDate);
         const monthKey = `${format(cohortMonthStartDate, "MMM", { locale: ptBR })}/${String(getYear(cohortMonthStartDate)).slice(-2)}`;
         
@@ -421,7 +424,6 @@ export default function RelatoriosPage() {
             const hasReturned = allFetchedAppointments.some(appt => {
                 if (appt.patientId !== patientId) return false;
                 const apptDate = parseISO(appt.date);
-                // Check if appointment is *after* the cohort month ends and within the overall query range
                 return apptDate > cohortMonthEndDate && apptDate <= appointmentsQueryRangeEnd;
             });
             if (hasReturned) {
@@ -445,8 +447,7 @@ export default function RelatoriosPage() {
       fetchActiveInactivePatientCounts();
       fetchCancelledAppointmentsCounts(clientNow);
       fetchPatientReturnRateData(clientNow);
-    } else if (!currentUser && clientNow) { // Handle no user but clientNow is ready
-        // Initialize all charts with default empty data
+    } else if (!currentUser && clientNow) {
         const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(clientNow, 5 - i);
             return { month: `${format(targetMonthDate, "MMM", { locale: ptBR })}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
@@ -461,7 +462,6 @@ export default function RelatoriosPage() {
         setCancelledMonthlyAppointmentsData(defaultMonths);
         setPatientReturnRateData(defaultReturnRates);
 
-        // Set loading states to false
         setIsLoadingMonthlyAppointments(false);
         setIsLoadingNewPatients(false);
         setIsLoadingActiveInactiveData(false);
@@ -471,7 +471,7 @@ export default function RelatoriosPage() {
   }, [
       currentUser, 
       clientNow, 
-      getTargetUid, // Add getTargetUid here, as it's used by the fetch functions
+      getTargetUid,
       fetchMonthlyAppointmentsCounts, 
       fetchNewPatientsPerMonth, 
       fetchActiveInactivePatientCounts, 
@@ -677,5 +677,7 @@ export default function RelatoriosPage() {
   );
 }
 
+
+    
 
     
