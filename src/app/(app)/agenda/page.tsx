@@ -4,7 +4,7 @@
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send } from "lucide-react";
+import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send, FileText } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -960,7 +960,7 @@ export default function AgendaPage() {
                        <Badge variant={getStatusBadgeVariant(appt.status)} className="mt-1.5 text-xs capitalize">{appt.status}</Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap justify-end">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1005,10 +1005,20 @@ export default function AgendaPage() {
                             )}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                    <Button asChild variant="ghost" size="sm" className="h-8">
+                    <Button asChild variant="outline" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3" 
+                        title="Registrar Atendimento" 
+                        disabled={appt.status === 'cancelado'}>
+                        <Link href={`/pacientes/${appt.patientSlug}?tab=historico`}>
+                            <FileText className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" />
+                            <span className="hidden sm:inline">Reg. Atend.</span>
+                            <span className="sm:hidden">Atend.</span>
+                        </Link>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3">
                       <Link href={`/pacientes/${appt.patientSlug}`}>
+                        <Eye className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" />
                         <span className="sm:hidden">Ver</span>
-                        <span className="hidden sm:inline">Ver Paciente</span>
+                        <span className="hidden sm:inline">Paciente</span>
                       </Link>
                     </Button>
                   </div>

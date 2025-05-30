@@ -10,7 +10,7 @@ import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, Calenda
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from 'next/dynamic';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
@@ -83,11 +83,7 @@ type AppointmentTypeObject = {
 };
 
 const initialAppointmentTypesData: AppointmentTypeObject[] = [
-  { name: 'Consulta', status: 'active' },
-  { name: 'Retorno', status: 'active' },
-  { name: 'Avaliação', status: 'active' },
-  { name: 'Observação', status: 'active' },
-  { name: 'Outro', status: 'active' },
+  // Fallback, user-defined types will be fetched from Firestore
 ];
 
 type PatientObjectiveObject = {
@@ -131,6 +127,7 @@ const getPatientObjectivesPath = (userData: any) => {
 export default function PacienteDetalhePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const patientSlug = params.id as string;
 
@@ -164,7 +161,10 @@ export default function PacienteDetalhePage() {
 
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
-  const [activeTab, setActiveTab] = useState("historico");
+  
+  const initialTab = searchParams.get('tab') || "historico";
+  const [activeTab, setActiveTab] = useState(initialTab);
+
 
   const [isDeleteHistoryConfirmOpen, setIsDeleteHistoryConfirmOpen] = useState(false);
   const [historyItemToDelete, setHistoryItemToDelete] = useState<HistoryItem | null>(null);
@@ -184,7 +184,7 @@ export default function PacienteDetalhePage() {
   const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null): Promise<any | null> => {
     if (!user) {
       console.warn("fetchCurrentUserData: No user provided for profile data fetch.");
-      setCurrentUserData(null);
+      setCurrentUserData(null); // Ensure state is cleared if no user
       return null;
     }
     try {
@@ -192,19 +192,19 @@ export default function PacienteDetalhePage() {
       const userDocSnap = await getDoc(userDocRef);
       if (userDocSnap.exists()) {
         const data = { ...userDocSnap.data(), uid: user.uid };
-        setCurrentUserData(data);
-        return data;
+        // Removed setCurrentUserData(data) from here to avoid triggering re-renders based on this state.
+        return data; 
       }
       console.warn("fetchCurrentUserData: User profile data not found for UID:", user.uid);
-      setCurrentUserData(null);
-      return null; // Explicitly return null if profile data not found
+      setCurrentUserData(null); // Ensure state is cleared
+      return null;
     } catch (error) {
       console.error("Error fetching user profile data:", error);
       toast({ title: "Erro de Perfil", description: "Não foi possível carregar dados do perfil do usuário.", variant: "destructive" });
-      setCurrentUserData(null);
+      setCurrentUserData(null); // Ensure state is cleared
       return null;
     }
-  }, [toast, setCurrentUserData]);
+  }, [toast]); // Removed setCurrentUserData from dependency array as it's a stable setter
 
 
   const fetchAppointmentTypes = useCallback(async (userDataForPath: any) => {
@@ -216,7 +216,6 @@ export default function PacienteDetalhePage() {
     }
     try {
       const tiposRef = getAppointmentTypesPath(userDataForPath);
-      // Fetch all types, filtering for active ones will be done client-side or when populating dropdowns
       const snapshot = await getDocs(query(tiposRef, orderBy("name")));
       const allFetchedTypes: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
@@ -229,11 +228,11 @@ export default function PacienteDetalhePage() {
 
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      toast({ title: "Erro ao Carregar Tipos", description: "Não foi possível carregar os tipos de atendimento. Usando padrões.", variant: "warning", duration: 4000 });
+      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos de atendimento. Usando padrões. Erro: ${error.message}`, variant: "warning", duration: 4000 });
       const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
     }
-  }, [toast, setAppointmentTypes]);
+  }, [toast]);
 
   const fetchPatientObjectives = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
@@ -255,7 +254,94 @@ export default function PacienteDetalhePage() {
       toast({ title: "Erro ao Carregar Objetivos", description: "Não foi possível carregar os objetivos. Usando opções padrão.", variant: "warning" });
       setPatientObjectives(initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name)));
     }
-  }, [toast, setPatientObjectives]);
+  }, [toast]);
+
+
+  const loadPageData = useCallback(async (currentUser: FirebaseUser) => {
+      if (!patientSlug) {
+          setIsLoading(false);
+          return;
+      }
+      setIsLoading(true);
+      try {
+          const uData = await fetchCurrentUserData(currentUser);
+          if (!uData) {
+              toast({ title: "Erro de Perfil", description: "Dados de perfil do usuário não encontrados. Faça login novamente.", variant: "destructive" });
+              router.push('/login');
+              setIsLoading(false);
+              return;
+          }
+          setCurrentUserData(uData); // Set user data state here
+
+          await Promise.all([
+              fetchAppointmentTypes(uData),
+              fetchPatientObjectives(uData)
+          ]);
+
+          const patientsRef = collection(db, 'pacientes');
+          const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUser.uid));
+          const querySnapshot = await getDocs(q);
+
+          if (!querySnapshot.empty) {
+              const docSnap = querySnapshot.docs[0];
+              const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>;
+              let uniqueIdCounter = Date.now();
+              const processedHistory = (data.history || []).map((histItem) => ({
+                  ...histItem,
+                  id: histItem.id || `hist-load-${docSnap.id}-${uniqueIdCounter++}`
+              }));
+              const fetchedPatient: Patient = {
+                  ...data,
+                  internalId: docSnap.id,
+                  slug: patientSlug,
+                  history: processedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+                  documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
+                  objetivoPaciente: data.objetivoPaciente || '',
+                  name: data.name || '',
+                  email: data.email || '',
+                  phone: data.phone || '',
+                  dob: data.dob || '',
+                  address: data.address || '',
+                  status: data.status || 'Ativo',
+                  avatar: data.avatar || `https://placehold.co/100x100.png`,
+                  lastVisit: data.lastVisit || '',
+                  nextVisit: data.nextVisit || '',
+              };
+              setPatient(fetchedPatient);
+          } else {
+              toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
+              setPatient(undefined);
+              router.push('/pacientes');
+          }
+      } catch (error: any) {
+          console.error("Erro ao carregar dados da página do paciente:", error);
+          toast({ title: "Erro ao Carregar Dados", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
+          setPatient(undefined);
+      } finally {
+          setIsLoading(false);
+      }
+  }, [patientSlug, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
+
+
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (firebaseUserAuth === undefined) {
+      setIsLoading(true);
+    } else if (firebaseUserAuth === null) {
+      setIsLoading(false);
+      toast({ title: "Acesso Negado", description: "Por favor, faça login para continuar.", variant: "destructive" });
+      router.push('/login');
+    } else if (patientSlug && firebaseUserAuth) {
+      loadPageData(firebaseUserAuth);
+    }
+  }, [patientSlug, firebaseUserAuth, loadPageData, router, toast]);
+
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
@@ -264,95 +350,6 @@ export default function PacienteDetalhePage() {
   const getFirstActiveObjectiveName = useCallback(() => {
     return patientObjectives.find(o => o.status === 'active')?.name || '';
   }, [patientObjectives]);
-
-
-  const loadPageData = useCallback(async (currentUser: FirebaseUser) => {
-    if (!patientSlug) {
-      setIsLoading(false);
-      return;
-    }
-    // currentUser is guaranteed to be non-null by the calling useEffect
-
-    setIsLoading(true);
-    try {
-      const uData = await fetchCurrentUserData(currentUser); // Pass the authenticated user
-      if (!uData) {
-        setIsLoading(false);
-        toast({ title: "Erro de Perfil", description: "Dados de perfil do usuário não encontrados. Faça login novamente.", variant: "destructive" });
-        router.push('/login');
-        return;
-      }
-
-      // Fetch dependent data using uData
-      await Promise.all([
-        fetchAppointmentTypes(uData),
-        fetchPatientObjectives(uData)
-      ]);
-
-      const patientsRef = collection(db, 'pacientes');
-      const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUser.uid));
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        const docSnap = querySnapshot.docs[0];
-        const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>;
-
-        let uniqueIdCounter = Date.now(); // Use timestamp for better initial uniqueness
-        const processedHistory = (data.history || []).map((histItem) => ({
-          ...histItem,
-          id: histItem.id || `hist-load-${docSnap.id}-${uniqueIdCounter++}`
-        }));
-
-        const fetchedPatient: Patient = {
-          ...data,
-          internalId: docSnap.id,
-          slug: patientSlug,
-          history: processedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-          documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
-          objetivoPaciente: data.objetivoPaciente || '',
-          name: data.name || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          dob: data.dob || '',
-          address: data.address || '',
-          status: data.status || 'Ativo',
-          avatar: data.avatar || `https://placehold.co/100x100.png`,
-          lastVisit: data.lastVisit || '',
-          nextVisit: data.nextVisit || '',
-        };
-        setPatient(fetchedPatient);
-      } else {
-        toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
-        setPatient(undefined);
-        router.push('/pacientes');
-      }
-    } catch (error: any) {
-      console.error("Erro ao carregar dados da página do paciente:", error);
-      toast({ title: "Erro ao Carregar Dados", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
-      setPatient(undefined);
-      // Consider if redirecting to /pacientes is always best on error
-    } finally {
-      setIsLoading(false);
-    }
-  }, [patientSlug, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives, setIsLoading, setPatient, setCurrentUserData, setAppointmentTypes, setPatientObjectives]);
-
-  useEffect(() => {
-    if (patientSlug) {
-      if (firebaseUserAuth === undefined) { // Auth state not yet resolved
-        setIsLoading(true);
-      } else if (firebaseUserAuth === null) { // Auth state resolved, user not logged in
-        setIsLoading(false);
-        toast({ title: "Acesso Negado", description: "Por favor, faça login para continuar.", variant: "destructive" });
-        router.push('/login');
-      } else { // Auth state resolved, user is logged in
-        loadPageData(firebaseUserAuth);
-      }
-    } else {
-      // No patientSlug, maybe initial render before params, or invalid route
-      setIsLoading(false);
-      // Optionally, redirect or show an error if slug remains missing after a short delay
-    }
-  }, [patientSlug, firebaseUserAuth, loadPageData, router, toast, setIsLoading]);
 
 
   useEffect(() => {
@@ -374,16 +371,14 @@ export default function PacienteDetalhePage() {
         return basePatientData;
       });
 
-      // Only update newHistoryType if it's empty or the current type is no longer active/valid
-      if (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active')) {
-        setNewHistoryType(firstActiveType || '');
-      }
+      setNewHistoryType(prev => prev || firstActiveType || '');
+
     }
   }, [patient, appointmentTypes, patientObjectives, isEditing, getFirstActiveObjectiveName, getFirstActiveTypeName]);
 
 
   const handleSaveEditedPatient = async () => {
-    if (!editedPatient || !editedPatient.internalId || !currentUserData) { // currentUserData might still be needed for path generation for objectives/types if edited
+    if (!editedPatient || !editedPatient.internalId || !currentUserData) { 
       toast({ title: "Erro", description: "Não foi possível identificar o paciente ou dados do usuário para salvar.", variant: "destructive" });
       return;
     }
@@ -405,10 +400,9 @@ export default function PacienteDetalhePage() {
         address: editedPatient.address || '',
         status: editedPatient.status || 'Ativo',
         objetivoPaciente: editedPatient.objetivoPaciente || '',
-        // history and documents are managed separately
       };
       await updateDoc(patientRef, dataToSave);
-      setPatient(prev => prev ? { ...prev, ...dataToSave } : undefined); // Update main patient state
+      setPatient(prev => prev ? { ...prev, ...dataToSave } : undefined); 
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -431,7 +425,7 @@ export default function PacienteDetalhePage() {
 
   const handleCancelEdit = () => {
     if (patient) {
-      setEditedPatient({ ...patient }); // Reset to original patient data
+      setEditedPatient({ ...patient }); 
     }
     setIsEditing(false);
   };
@@ -454,7 +448,7 @@ export default function PacienteDetalhePage() {
       const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
       await updateDoc(patientRef, { status: newStatus });
       setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
-      if (editedPatient) { // Also update editedPatient if it's tracking the same patient
+      if (editedPatient) { 
         setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
       }
       toast({ title: `Paciente ${newStatus === 'Ativo' ? 'ativado' : 'inativado'}`, description: `O status de ${patient.name} foi atualizado com sucesso.`, variant: newStatus === 'Ativo' ? 'success' : 'warning', });
@@ -476,29 +470,27 @@ export default function PacienteDetalhePage() {
       return;
     }
     const newEntry: HistoryItem = {
-      id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // Ensure unique ID
-      date: new Date().toISOString().split('T')[0], // Current date in YYYY-MM-DD format
+      id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, 
+      date: new Date().toISOString().split('T')[0], 
       type: newHistoryType,
       notes: newHistoryNote,
     };
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
-      // Fetch current history to prepend, ensuring no data loss if other updates happen concurrently (less likely here)
       const currentPatientDoc = await getDoc(patientRef);
       const currentPatientData = currentPatientDoc.data() as Patient | undefined;
       const currentHistory = currentPatientData?.history || [];
       
-      const updatedHistory = [newEntry, ...currentHistory]; // Prepend new entry
+      const updatedHistory = [newEntry, ...currentHistory]; 
 
       await updateDoc(patientRef, { history: updatedHistory });
 
-      // Update local state to reflect the change immediately
       const updatedPatientState = { ...patient, history: updatedHistory };
       setPatient(updatedPatientState);
-      if(isEditing) setEditedPatient(updatedPatientState); // if editing, update that too
+      if(isEditing) setEditedPatient(updatedPatientState); 
 
       setNewHistoryNote('');
-      setNewHistoryType(getFirstActiveTypeName() || ''); // Reset to first active type or empty
+      setNewHistoryType(getFirstActiveTypeName() || ''); 
       toast({ title: "Histórico Adicionado", description: `Novo registro de ${newHistoryType} adicionado.`, variant: "success" });
     } catch (error) {
       console.error("Erro ao adicionar histórico:", error);
@@ -519,7 +511,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleAddCustomType = async () => {
-    if (!currentUserData) { // Use currentUserData which is set by fetchCurrentUserData
+    if (!currentUserData) { 
         toast({ title: "Erro de Autenticação", description: "Dados do usuário não carregados para adicionar tipo.", variant: "destructive"});
         return;
     }
@@ -533,18 +525,17 @@ export default function PacienteDetalhePage() {
       return;
     }
     try {
-      const tiposRef = getAppointmentTypesPath(currentUserData); // Pass userData here
-      // const newDocRef = await addDoc(tiposRef, { name: trimmedName, status: 'active' }); // Firestore adds ID automatically
+      const tiposRef = getAppointmentTypesPath(currentUserData); 
       await addDoc(tiposRef, {
         name: trimmedName,
         status: 'active',
-        createdAt: serverTimestamp(), // Optional: track creation time
+        createdAt: serverTimestamp(), 
       });
 
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
-      await fetchAppointmentTypes(currentUserData); // Re-fetch with userData
+      await fetchAppointmentTypes(currentUserData); 
     } catch (error) {
       console.error("Erro ao adicionar tipo:", error);
       toast({ title: 'Erro', description: 'Não foi possível adicionar o tipo de atendimento.', variant: 'destructive' });
@@ -563,7 +554,6 @@ export default function PacienteDetalhePage() {
       toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
       return;
     }
-    // Check if new name duplicates another existing type's name (excluding itself)
     if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() && 
         appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
@@ -571,16 +561,15 @@ export default function PacienteDetalhePage() {
     }
   
     try {
-      const tiposCollectionRef = getAppointmentTypesPath(currentUserData); // Use currentUserData
-      const docToUpdateRef = doc(tiposCollectionRef, originalType.id); // Use originalType.id which should be the Firestore ID
+      const tiposCollectionRef = getAppointmentTypesPath(currentUserData); 
+      const docToUpdateRef = doc(tiposCollectionRef, originalType.id); 
       
       await updateDoc(docToUpdateRef, { name: newNameTrimmed });
   
       setEditingTypeInfo(null);
       toast({ title: "Sucesso", description: `Nome do tipo "${originalType.name}" atualizado para "${newNameTrimmed}".`, variant: "success" });
-      await fetchAppointmentTypes(currentUserData); // Refresh from Firestore with userData
+      await fetchAppointmentTypes(currentUserData); 
   
-      // Update forms if they were using the old type name
       if (newHistoryType === originalType.name) {
         setNewHistoryType(newNameTrimmed);
       }
@@ -592,7 +581,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleToggleTypeStatus = async (typeToToggle: AppointmentTypeObject) => {
-     if (!typeToToggle || !typeToToggle.id || !currentUserData) { // Use currentUserData
+     if (!typeToToggle || !typeToToggle.id || !currentUserData) { 
        toast({ title: 'Erro', description: 'Informações do tipo ou usuário incompletas.', variant: 'destructive' });
       setTypeToToggleStatusConfirm(null);
       return;
@@ -600,10 +589,9 @@ export default function PacienteDetalhePage() {
 
     const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
 
-    // Prevent deactivating the last active type if other inactive types exist
     const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
     if (newStatus === 'inactive') {
-      if (activeTypesCount <= 1 && appointmentTypes.some(t => t.status === 'inactive' && t.id !== typeToToggle.id)) {
+      if (activeTypesCount <= 1 && appointmentTypes.length > 1 && appointmentTypes.some(t => t.status === 'inactive' && t.id !== typeToToggle.id)) {
           toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo quando outros tipos inativos existem.", variant: "warning" });
           setTypeToToggleStatusConfirm(null);
           return;
@@ -617,8 +605,8 @@ export default function PacienteDetalhePage() {
 
 
     try {
-      const tiposCollectionRef = getAppointmentTypesPath(currentUserData); // Use currentUserData
-      const docToUpdateRef = doc(tiposCollectionRef, typeToToggle.id); // Use typeToToggle.id
+      const tiposCollectionRef = getAppointmentTypesPath(currentUserData); 
+      const docToUpdateRef = doc(tiposCollectionRef, typeToToggle.id); 
       
       await updateDoc(docToUpdateRef, { status: newStatus });
       
@@ -628,9 +616,8 @@ export default function PacienteDetalhePage() {
         variant: "success"
       });
       setTypeToToggleStatusConfirm(null);
-      await fetchAppointmentTypes(currentUserData); // Refresh from Firestore with userData
+      await fetchAppointmentTypes(currentUserData); 
 
-      // If the currently toggled type was selected in a form and became inactive, update the form
       if (newHistoryType === typeToToggle.name && newStatus === 'inactive') {
         setNewHistoryType(getFirstActiveTypeName() || '');
       }
@@ -647,7 +634,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleConfirmDeleteType = async () => {
-     if (!typeToDelete || !typeToDelete.id || !currentUserData) { // Use currentUserData
+     if (!typeToDelete || !typeToDelete.id || !currentUserData) { 
       toast({ title: 'Erro', description: 'Informações para exclusão ou dados do usuário incompletos.', variant: 'destructive' });
       setIsDeleteTypeConfirmOpen(false);
       setTypeToDelete(null);
@@ -655,13 +642,13 @@ export default function PacienteDetalhePage() {
     }
 
     try {
-      const tiposCollectionRef = getAppointmentTypesPath(currentUserData); // Use currentUserData
-      const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id); // Use typeToDelete.id
+      const tiposCollectionRef = getAppointmentTypesPath(currentUserData); 
+      const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id); 
       await deleteDoc(docToDeleteRef);
 
       toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
       
-      await fetchAppointmentTypes(currentUserData); // Refresh from Firestore with userData
+      await fetchAppointmentTypes(currentUserData); 
 
       if (newHistoryType === typeToDelete.name) {
         setNewHistoryType(getFirstActiveTypeName() || '');
@@ -691,12 +678,12 @@ export default function PacienteDetalhePage() {
       return;
     }
     try {
-      const objectivesRef = getPatientObjectivesPath(currentUserData); // Use currentUserData
+      const objectivesRef = getPatientObjectivesPath(currentUserData); 
       await addDoc(objectivesRef, { name: trimmedName, status: 'active', createdAt: serverTimestamp() });
       setNewCustomObjectiveName('');
       setIsAddObjectiveDialogOpen(false);
       toast({ title: "Sucesso", description: "Objetivo adicionado." });
-      await fetchPatientObjectives(currentUserData); // Re-fetch with userData
+      await fetchPatientObjectives(currentUserData); 
     } catch (error) {
       console.error("Erro ao adicionar objetivo:", error);
       toast({ title: "Erro", description: "Falha ao adicionar objetivo.", variant: "destructive" });
@@ -719,12 +706,12 @@ export default function PacienteDetalhePage() {
       return;
     }
     try {
-      const objectivesCollectionRef = getPatientObjectivesPath(currentUserData); // Use currentUserData
-      const docToUpdateRef = doc(objectivesCollectionRef, originalObjective.id); // Use originalObjective.id
+      const objectivesCollectionRef = getPatientObjectivesPath(currentUserData); 
+      const docToUpdateRef = doc(objectivesCollectionRef, originalObjective.id); 
       await updateDoc(docToUpdateRef, { name: newNameTrimmed });
       setEditingObjectiveInfo(null);
       toast({ title: "Sucesso", description: "Nome do objetivo atualizado." });
-      await fetchPatientObjectives(currentUserData); // Re-fetch with userData
+      await fetchPatientObjectives(currentUserData); 
       if (editedPatient?.objetivoPaciente === originalObjective.name) {
         setEditedPatient(prev => prev ? { ...prev, objetivoPaciente: newNameTrimmed } : undefined);
       }
@@ -735,7 +722,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleToggleObjectiveStatus = async (objectiveToToggle: PatientObjectiveObject) => {
-    if (!objectiveToToggle || !objectiveToToggle.id || !currentUserData) { // Use currentUserData
+    if (!objectiveToToggle || !objectiveToToggle.id || !currentUserData) { 
         toast({ title: 'Erro', description: 'Informações do objetivo ou dados do usuário incompletos.', variant: 'destructive' });
         setObjectiveToToggleStatusConfirm(null);
         return;
@@ -757,12 +744,12 @@ export default function PacienteDetalhePage() {
     }
 
     try {
-        const objectivesCollectionRef = getPatientObjectivesPath(currentUserData); // Use currentUserData
-        const docToUpdateRef = doc(objectivesCollectionRef, objectiveToToggle.id); // Use objectiveToToggle.id
+        const objectivesCollectionRef = getPatientObjectivesPath(currentUserData); 
+        const docToUpdateRef = doc(objectivesCollectionRef, objectiveToToggle.id); 
         await updateDoc(docToUpdateRef, { status: newStatus });
         setObjectiveToToggleStatusConfirm(null);
         toast({ title: "Status Alterado", description: `Objetivo "${objectiveToToggle.name}" ${newStatus === 'active' ? 'ativado' : 'desativado'}.` });
-        await fetchPatientObjectives(currentUserData); // Re-fetch with userData
+        await fetchPatientObjectives(currentUserData); 
         if (editedPatient?.objetivoPaciente === objectiveToToggle.name && newStatus === 'inactive') {
             setEditedPatient(prev => prev ? { ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' } : undefined);
         }
@@ -779,18 +766,18 @@ export default function PacienteDetalhePage() {
   };
 
   const handleConfirmDeleteObjective = async () => {
-    if (!objectiveToDelete || !objectiveToDelete.id || !currentUserData) { // Use currentUserData
+    if (!objectiveToDelete || !objectiveToDelete.id || !currentUserData) { 
         toast({ title: 'Erro', description: 'Informações para exclusão ou dados do usuário incompletos.', variant: 'destructive' });
         setIsDeleteObjectiveConfirmOpen(false);
         setObjectiveToDelete(null);
         return;
     }
     try {
-      const objectivesCollectionRef = getPatientObjectivesPath(currentUserData); // Use currentUserData
-      const docToDeleteRef = doc(objectivesCollectionRef, objectiveToDelete.id); // Use objectiveToDelete.id
+      const objectivesCollectionRef = getPatientObjectivesPath(currentUserData); 
+      const docToDeleteRef = doc(objectivesCollectionRef, objectiveToDelete.id); 
       await deleteDoc(docToDeleteRef);
       toast({ title: "Objetivo Excluído", description: `O objetivo "${objectiveToDelete.name}" foi removido.`, variant: "success" });
-      await fetchPatientObjectives(currentUserData); // Re-fetch with userData
+      await fetchPatientObjectives(currentUserData); 
       if (editedPatient?.objetivoPaciente === objectiveToDelete.name) {
         setEditedPatient(prev => prev ? { ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' } : undefined);
       }
@@ -887,7 +874,7 @@ export default function PacienteDetalhePage() {
   if (!patient && !isLoading) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button></div>;
   
   const displayPatient = isEditing ? editedPatient : patient;
-  if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>; // Should not happen if isLoading is false and patient is undefined
+  if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>; 
 
   const calculateAge = (dob: string) => {
     if (!dob) return '-';
@@ -900,7 +887,7 @@ export default function PacienteDetalhePage() {
       }
       return age;
     } catch (error) {
-      return '-'; // Invalid date format
+      return '-'; 
     }
   };
   const formatDate = (dateString: string, formatStr = 'PPP') => {
@@ -908,7 +895,7 @@ export default function PacienteDetalhePage() {
     try {
       return format(parseISO(dateString), formatStr, { locale: ptBR });
     } catch (error) {
-      return dateString; // Return original if parsing fails
+      return dateString; 
     }
   };
 
@@ -1017,7 +1004,7 @@ export default function PacienteDetalhePage() {
         </CardHeader>
 
         <CardContent className="p-0">
-          <Tabs defaultValue="historico" value={activeTab} onValueChange={handleTabChange} className="w-full">
+          <Tabs defaultValue={initialTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
             <TabsList className="flex flex-wrap w-full items-center justify-start rounded-none border-b bg-transparent px-2 py-0 sm:px-4">
               <TabsTrigger value="historico" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Histórico</TabsTrigger>
               <TabsTrigger value="documentos" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Documentos</TabsTrigger>
@@ -1053,7 +1040,7 @@ export default function PacienteDetalhePage() {
                   <div>
                     <Label htmlFor="atendimento-notas">Observações</Label>
                      <div className="mt-1">
-                      {isClient && TiptapEditor ? (
+                      {isClient ? (
                         <TiptapEditor content={newHistoryNote} onChange={setNewHistoryNote} />
                       ) : (
                         <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><p className="text-muted-foreground">Carregando editor...</p></div>
@@ -1070,8 +1057,8 @@ export default function PacienteDetalhePage() {
 
               <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
               {displayPatient?.history && displayPatient.history.length > 0 ? (
-                [...displayPatient.history].map((item) => (
-                  <Card key={item.id} className="bg-muted/50">
+                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
+                  <Card key={`${item.id || 'fallbackID'}-${index}`} className="bg-muted/50">
                     <CardHeader className="pb-3 flex flex-row justify-between items-start">
                       <div>
                         <CardTitle className="text-base"> {item.type} </CardTitle>
