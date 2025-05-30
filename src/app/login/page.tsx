@@ -25,7 +25,7 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -51,27 +51,30 @@ export default function LoginPage() {
 
       router.push('/dashboard');
     } catch (error: any) {
-      console.error('Erro ao fazer login - Código:', error.code, 'Mensagem:', error.message);
-
       let toastMessage = 'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente.';
+      let consoleMessage = `Erro ao fazer login - Código: "${error.code}", Mensagem: "${error.message}"`;
 
       switch (error.code) {
         case 'auth/user-not-found':
         case 'auth/wrong-password':
         case 'auth/invalid-credential':
           toastMessage = 'E-mail ou senha incorretos. Verifique e tente novamente.';
+          console.warn(consoleMessage, error); // Warn for common credential issues
           break;
         case 'auth/invalid-email':
           toastMessage = 'O formato do e-mail informado é inválido.';
+          console.warn(consoleMessage, error); // Warn for invalid email format
           break;
         case 'auth/user-disabled':
           toastMessage = 'Esta conta de usuário foi desabilitada.';
+          console.warn(consoleMessage, error);
           break;
         case 'auth/too-many-requests':
           toastMessage = 'Acesso bloqueado temporariamente devido a muitas tentativas. Tente novamente mais tarde.';
+          console.warn(consoleMessage, error);
           break;
         default:
-          console.warn('Erro de login não mapeado diretamente:', error.code, error.message);
+          console.error(consoleMessage, error); // Error for unexpected issues
           break;
       }
 
@@ -111,7 +114,6 @@ export default function LoginPage() {
       if (error.code === 'auth/invalid-email') {
         message = "O formato do e-mail fornecido é inválido.";
       }
-      // Firebase often doesn't confirm if user exists for security, so generic error is fine
       toast({
         title: "Erro",
         description: message,
@@ -146,7 +148,15 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Senha</Label>
-                <Dialog open={isResetPasswordDialogOpen} onOpenChange={setIsResetPasswordDialogOpen}>
+                <Dialog 
+                  open={isResetPasswordDialogOpen} 
+                  onOpenChange={(isOpen) => {
+                    if (isOpen) {
+                      dismiss(); // Dismiss any active toasts when opening the dialog
+                    }
+                    setIsResetPasswordDialogOpen(isOpen);
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button variant="link" type="button" className="px-0 text-xs h-auto py-0 text-muted-foreground hover:text-primary">
                       Esqueceu sua senha?
@@ -212,6 +222,9 @@ export default function LoginPage() {
             <Link href="/" className="font-medium text-primary hover:underline">
               &larr; Voltar para a página inicial
             </Link>
+          </div>
+          <div className="mt-4 text-center text-xs text-muted-foreground">
+            Versão 1.0.0
           </div>
         </CardContent>
       </Card>
