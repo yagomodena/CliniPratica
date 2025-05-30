@@ -54,8 +54,8 @@ const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod
   loading: () => <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><p className="text-muted-foreground">Carregando editor...</p></div>,
 });
 
-type HistoryItem = { id: string; date: string; type: string; notes: string }; // Ensured id is not optional
-type DocumentItem = { name: string; uploadDate: string; url: string; storagePath: string; }; // Added id if needed for key
+type HistoryItem = { id: string; date: string; type: string; notes: string };
+type DocumentItem = { name: string; uploadDate: string; url: string; storagePath: string; };
 type Patient = {
   internalId: string;
   id: string;
@@ -165,17 +165,26 @@ export default function PacienteDetalhePage() {
   }, []);
 
   const fetchCurrentUserData = useCallback(async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error("Usuário não autenticado");
-    const userDoc = await getDoc(doc(db, 'usuarios', currentUser.uid));
-    const userData = userDoc.data();
-    if (!userData) throw new Error("Dados do usuário não encontrados");
-    return { ...userData, uid: currentUser.uid };
+    const currentUserAuth = auth.currentUser;
+    if (!currentUserAuth) {
+      // This should ideally not be hit if called after auth checks
+      console.error("fetchCurrentUserData: auth.currentUser is null. This function should be called after auth state is confirmed.");
+      throw new Error("Usuário não autenticado");
+    }
+    const userDocRef = doc(db, 'usuarios', currentUserAuth.uid);
+    const userDocSnap = await getDoc(userDocRef);
+    if (!userDocSnap.exists()) {
+      console.warn("fetchCurrentUserData: Dados do usuário não encontrados no Firestore para UID:", currentUserAuth.uid);
+      // Depending on strictness, you might throw an error or return a default/null profile
+      throw new Error("Dados do usuário não encontrados");
+    }
+    return { ...userDocSnap.data(), uid: currentUserAuth.uid };
   }, []);
+
 
   const fetchAppointmentTypes = useCallback(async () => {
     try {
-      const userProfile = await fetchCurrentUserData();
+      const userProfile = await fetchCurrentUserData(); // Assumes auth.currentUser is available
       const tiposRef = getAppointmentTypesPath(userProfile);
       const snapshot = await getDocs(query(tiposRef, orderBy("name")));
       const allFetchedTypes: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
@@ -183,12 +192,13 @@ export default function PacienteDetalhePage() {
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
+      
       const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(allFetchedTypes.length > 0 ? allFetchedTypes : fallbackTypes);
 
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos de atendimento. Usando opções padrão. Detalhe: ${error.message}`, variant: "warning", duration: 7000 });
+      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos de atendimento. Detalhe: ${error.message}`, variant: "warning", duration: 7000 });
       const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
     }
@@ -196,7 +206,7 @@ export default function PacienteDetalhePage() {
 
   const fetchPatientObjectives = useCallback(async () => {
     try {
-      const userProfile = await fetchCurrentUserData();
+      const userProfile = await fetchCurrentUserData(); // Assumes auth.currentUser is available
       const objectivesRef = getPatientObjectivesPath(userProfile);
       const snapshot = await getDocs(query(objectivesRef, orderBy("name")));
       const fetchedObjectives: PatientObjectiveObject[] = snapshot.docs.map(docSnap => ({
@@ -208,7 +218,7 @@ export default function PacienteDetalhePage() {
       setPatientObjectives(fetchedObjectives.length > 0 ? fetchedObjectives : fallback);
     } catch (error: any) {
       console.error("Erro ao buscar objetivos do paciente:", error);
-      toast({ title: "Erro ao Carregar Objetivos", description: `Não foi possível carregar os objetivos. Usando opções padrão. Detalhe: ${error.message}`, variant: "warning" });
+      toast({ title: "Erro ao Carregar Objetivos", description: `Não foi possível carregar os objetivos. Detalhe: ${error.message}`, variant: "warning" });
       const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
     }
@@ -223,7 +233,7 @@ export default function PacienteDetalhePage() {
   }, [patientObjectives]);
 
    useEffect(() => {
-    const fetchPatientData = async () => {
+    const fetchAllPatientData = async () => {
       if (!patientSlug) {
         toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
         setIsLoading(false);
@@ -232,16 +242,22 @@ export default function PacienteDetalhePage() {
       }
       setIsLoading(true);
       try {
-        const currentUser = auth.currentUser;
-        if (!currentUser) {
-          toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
+        const currentUserAuth = auth.currentUser;
+        if (!currentUserAuth) {
+          toast({ title: "Erro", description: "Usuário não autenticado. Redirecionando para login.", variant: "destructive" });
           setIsLoading(false);
           router.push('/login');
           return;
         }
+        
+        // Fetch dependent data first, as they rely on user context
+        await fetchAppointmentTypes();
+        await fetchPatientObjectives();
+
         const patientsRef = collection(db, 'pacientes');
-        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUser.uid));
+        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUserAuth.uid));
         const querySnapshot = await getDocs(q);
+        
         if (!querySnapshot.empty) {
           const docSnap = querySnapshot.docs[0];
           const data = docSnap.data() as Omit<Patient, 'internalId'>;
@@ -249,33 +265,29 @@ export default function PacienteDetalhePage() {
             ...data,
             internalId: docSnap.id,
             slug: patientSlug,
-            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}-${Date.now()}` })), // Ensure unique ID
+            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}-${Date.now()}` })),
             documents: (data.documents || []).map((doc, index) => ({ ...doc, id: `doc-${index}`})) as DocumentItem[],
-            objetivoPaciente: data.objetivoPaciente || '',
+            objetivoPaciente: data.objetivoPaciente || getFirstActiveObjectiveName(), // Use getFirstActiveObjectiveName here
           };
           setPatient(fetchedPatient);
-          setEditedPatient({ ...fetchedPatient, objetivoPaciente: data.objetivoPaciente || getFirstActiveObjectiveName() });
+          setEditedPatient({ ...fetchedPatient }); // Initialize editedPatient correctly
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
           setPatient(undefined);
           setEditedPatient(undefined);
         }
       } catch (error) {
-        console.error("Erro ao buscar paciente:", error);
-        toast({ title: "Erro", description: "Falha ao carregar os dados do paciente.", variant: "destructive" });
+        console.error("Erro ao buscar dados do paciente ou dependências:", error);
+        toast({ title: "Erro", description: "Falha ao carregar os dados da página.", variant: "destructive" });
       } finally {
         setIsLoading(false);
       }
     };
     if (patientSlug) {
-      fetchPatientData();
+      fetchAllPatientData();
     }
-  }, [patientSlug, router, toast, getFirstActiveObjectiveName]);
+  }, [patientSlug, router, toast, fetchAppointmentTypes, fetchPatientObjectives, getFirstActiveObjectiveName]);
 
-  useEffect(() => {
-    fetchAppointmentTypes();
-    fetchPatientObjectives();
-  }, [fetchAppointmentTypes, fetchPatientObjectives]);
 
   useEffect(() => {
     if (appointmentTypes.length > 0 && !newHistoryType) {
@@ -372,7 +384,7 @@ export default function PacienteDetalhePage() {
       return;
     }
     const newEntry: HistoryItem = {
-      id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // More unique ID
+      id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
       notes: newHistoryNote,
@@ -666,10 +678,10 @@ export default function PacienteDetalhePage() {
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth() - 20; // A4 width in mm with margin
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 20; 
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      let position = 10; // Top margin
-      pdf.addImage(imgData, 'PNG', 10, position, pdfWidth, pdfHeight); // Left margin
+      let position = 10; 
+      pdf.addImage(imgData, 'PNG', 10, position, pdfWidth, pdfHeight); 
       pdf.save(`evolucao-${patient.name.replace(/\s+/g, '_')}-${selectedHistoryNote.date}.pdf`);
       toast({ title: "PDF Exportado", description: "O PDF da nota foi baixado.", variant: "success" });
     } catch (error) {
@@ -679,7 +691,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleTabChange = (value: string) => {
-    setActiveTab(value); // Always update the active tab
+    setActiveTab(value); 
     if (value === "documentos") {
       toast({
         title: "Funcionalidade em Desenvolvimento",
@@ -701,7 +713,7 @@ export default function PacienteDetalhePage() {
     }
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
-      // Filter out the item to delete. Ensure we are comparing by a unique ID.
+      
       const updatedHistory = patient.history.filter(item => item.id !== historyItemToDelete.id);
       await updateDoc(patientRef, { history: updatedHistory });
 
@@ -745,7 +757,7 @@ export default function PacienteDetalhePage() {
     try {
       return format(parseISO(dateString), formatStr, { locale: ptBR });
     } catch (error) {
-      return dateString; // Return original string if parsing fails
+      return dateString; 
     }
   };
 
