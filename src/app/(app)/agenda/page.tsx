@@ -70,6 +70,7 @@ type Appointment = {
   type: string; 
   notes?: string;
   date: string; // 'yyyy-MM-dd', added for easier access within the object
+  status?: 'agendado' | 'cancelado' | 'realizado'; // New status field
 };
 
 type AppointmentsData = {
@@ -104,7 +105,11 @@ const getAppointmentTypesPath = (userData: any) => {
   const identifier = isClinica ? userData.nomeEmpresa : userData.uid;
   if (!identifier) {
     console.error("Identificador do usuário ou empresa não encontrado para tipos de atendimento.", userData);
-    return collection(db, 'appointmentTypes', 'default_types', 'tipos'); 
+    // Fallback to a path that implies a default set of types, perhaps within a 'system' or 'defaults' collection
+    // This part is crucial: it needs a valid path even if the identifier is missing.
+    // For now, let's point to a hypothetical default collection structure.
+    // Consider if this default path should actually exist in Firestore or if it's just for local fallback.
+    return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos'); 
   }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
 };
@@ -120,10 +125,12 @@ export default function AgendaPage() {
   const { toast } = useToast();
 
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<any>(null); // Store user profile data
   const [firebasePatients, setFirebasePatients] = useState<PatientFromFirebase[]>([]);
   const [isLoadingPatients, setIsLoadingPatients] = useState(true);
 
   const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]);
+  const [isLoadingTypes, setIsLoadingTypes] = useState(true);
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
   const [newCustomTypeName, setNewCustomTypeName] = useState('');
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
@@ -139,52 +146,77 @@ export default function AgendaPage() {
   const [editingAppointmentInfo, setEditingAppointmentInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
   const [editAppointmentForm, setEditAppointmentForm] = useState<AppointmentFormValues>(initialAppointmentFormValues);
 
-  const [isDeleteApptConfirmOpen, setIsDeleteApptConfirmOpen] = useState(false);
-  const [appointmentToDeleteInfo, setAppointmentToDeleteInfo] = useState<{ appointmentId: string; dateKey: string, patientName: string, time: string } | null>(null);
+  const [isCancelApptConfirmOpen, setIsCancelApptConfirmOpen] = useState(false);
+  const [appointmentToCancelInfo, setAppointmentToCancelInfo] = useState<{ appointmentId: string; dateKey: string, patientName: string, time: string } | null>(null);
 
-  const fetchCurrentUserData = useCallback(async () => {
-    const authInstance = getAuth();
-    const firebaseCurrentUser = authInstance.currentUser;
-    if (!firebaseCurrentUser) throw new Error("Usuário não autenticado");
 
-    const userDocRef = doc(db, 'usuarios', firebaseCurrentUser.uid);
+  const fetchCurrentUserData = useCallback(async (user: FirebaseUser) => {
+    if (!user) return null;
+    const userDocRef = doc(db, 'usuarios', user.uid);
     const userDocSnap = await getDoc(userDocRef);
-    const userData = userDocSnap.data();
-
-    if (!userData) throw new Error("Dados do usuário não encontrados no Firestore");
-    return { ...userData, uid: firebaseCurrentUser.uid }; 
+    if (userDocSnap.exists()) {
+      return { ...userDocSnap.data(), uid: user.uid }; // Add uid to the returned object
+    }
+    console.warn("User data not found in Firestore for UID:", user.uid);
+    return null;
   }, []);
 
+
   const fetchAppointmentTypes = useCallback(async () => {
+    if (!currentUserData) {
+      console.log("User data not available for fetching appointment types. Using fallback.");
+      const fallbackWithTempIds = fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }));
+      setAppointmentTypes(fallbackWithTempIds.sort((a, b) => a.name.localeCompare(b.name)));
+      setIsLoadingTypes(false);
+      return;
+    }
+    setIsLoadingTypes(true);
     try {
-      const userProfile = await fetchCurrentUserData();
-      const tiposRef = getAppointmentTypesPath(userProfile);
-      const snapshot = await getDocs(query(tiposRef, orderBy("name"))); // Order by name
+      const tiposRef = getAppointmentTypesPath(currentUserData);
+      const snapshot = await getDocs(query(tiposRef, orderBy("name"))); 
       const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
       
-      setAppointmentTypes(tipos.length > 0 ? tipos : fallbackAppointmentTypesData);
-    } catch (error) {
+      const fallbackWithTempIds = fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }));
+      const finalTypes = tipos.length > 0 ? tipos : fallbackWithTempIds;
+      setAppointmentTypes(finalTypes.sort((a, b) => a.name.localeCompare(b.name)));
+
+    } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      toast({ title: "Erro ao buscar tipos", description: "Não foi possível carregar os tipos de atendimento.", variant: "destructive" });
-      setAppointmentTypes(fallbackAppointmentTypesData); 
+      let description = "Não foi possível carregar os tipos de atendimento. Verifique sua conexão ou tente mais tarde.";
+      if (error.code === 'failed-precondition') {
+        description = "A busca por tipos de atendimento pode requerer um índice no Firestore. Verifique o console do Firebase para mais detalhes.";
+      }
+      toast({ title: "Erro ao buscar tipos", description: description, variant: "warning", duration: 7000 });
+      const fallbackWithTempIds = fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }));
+      setAppointmentTypes(fallbackWithTempIds.sort((a, b) => a.name.localeCompare(b.name)));
+    } finally {
+      setIsLoadingTypes(false);
     }
-  }, [fetchCurrentUserData, toast]);
+  }, [currentUserData, toast]);
 
   const fetchAppointments = useCallback(async (user: FirebaseUser) => {
     if (!user) return;
     setIsLoadingAppointments(true);
     try {
       const apptsRef = collection(db, 'agendamentos');
+      // Query for appointments that are not 'cancelado' OR where the status field doesn't exist (for older data)
       const q = query(apptsRef, where('uid', '==', user.uid));
       const querySnapshot = await getDocs(q);
       const fetchedAppointmentsData: AppointmentsData = {};
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        const apptStatus = data.status as Appointment['status'];
+
+        // Only include if not cancelled
+        if (apptStatus === 'cancelado') {
+          return; 
+        }
+
         const apptDateKey = data.date; // 'yyyy-MM-dd' string from Firestore
 
         const appointmentItem: Appointment = {
@@ -196,6 +228,7 @@ export default function AgendaPage() {
           type: data.type,
           notes: data.notes,
           date: apptDateKey,
+          status: apptStatus || 'agendado', // Default to 'agendado' if status is missing
         };
         
         if (!fetchedAppointmentsData[apptDateKey]) {
@@ -220,20 +253,32 @@ export default function AgendaPage() {
   }, [toast]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
-      if (!user) {
+      if (user) {
+        const uData = await fetchCurrentUserData(user);
+        setCurrentUserData(uData); // Set currentUserData here
+        // fetchAppointmentTypes will be called in the useEffect that depends on currentUserData
+        fetchAppointments(user);
+      } else {
         setFirebasePatients([]);
         setIsLoadingPatients(false);
         setAppointments({});
         setIsLoadingAppointments(false);
-      } else {
-        fetchAppointmentTypes();
-        fetchAppointments(user);
+        setCurrentUserData(null);
+        setAppointmentTypes(fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }))); // Reset types on logout
+        setIsLoadingTypes(false);
       }
     });
     return () => unsubscribe();
-  }, [fetchAppointmentTypes, fetchAppointments]);
+  }, [fetchCurrentUserData, fetchAppointments]); // fetchCurrentUserData is stable
+  
+  useEffect(() => {
+    if (currentUserData) { // Now fetch types when currentUserData is available
+      fetchAppointmentTypes();
+    }
+  }, [currentUserData, fetchAppointmentTypes]);
+
 
   useEffect(() => {
     if (currentUser) {
@@ -286,13 +331,13 @@ export default function AgendaPage() {
     const initialDateStr = format(now, 'yyyy-MM-dd');
 
     setNewAppointmentForm(prev => ({
-      ...initialAppointmentFormValues, // Reset other fields
+      ...initialAppointmentFormValues, 
       date: initialDateStr,
-      type: prev.type || firstActiveType || '', // Keep existing type if valid, else first active
+      type: prev.type || firstActiveType || '', 
     }));
     setEditAppointmentForm(prev => ({ 
-      ...initialAppointmentFormValues, // Reset other fields
-      type: prev.type || firstActiveType || '', // Keep existing type if valid, else first active
+      ...initialAppointmentFormValues, 
+      type: prev.type || firstActiveType || '', 
     }));
   }, [getFirstActiveTypeName]);
 
@@ -341,11 +386,9 @@ export default function AgendaPage() {
   const isDateTimeInPast = (dateTime: Date): boolean => {
     if (!clientToday || !clientNow) return true; // Should ideally not happen if client dates are set
     
-    // Check if the date part is before today
     if (isBefore(startOfDay(dateTime), clientToday)) {
       return true;
     }
-    // If it's today, check if the time is before now
     if (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow)) {
       return true;
     }
@@ -355,7 +398,7 @@ export default function AgendaPage() {
 
   const isTimeSlotOccupied = (dateKey: string, time: string, excludingAppointmentId?: string): boolean => {
     const appointmentsOnDay = appointments[dateKey] || [];
-    return appointmentsOnDay.some(appt => appt.time === time && (!excludingAppointmentId || appt.id !== excludingAppointmentId));
+    return appointmentsOnDay.some(appt => appt.time === time && (!excludingAppointmentId || appt.id !== excludingAppointmentId) && appt.status !== 'cancelado');
   };
 
   const handleAddAppointment = async (e: FormEvent<HTMLFormElement>) => {
@@ -398,19 +441,20 @@ export default function AgendaPage() {
     try {
       await addDoc(collection(db, 'agendamentos'), {
         uid: currentUser.uid,
-        date: date, // Save as 'yyyy-MM-dd' string
+        date: date, 
         time,
         patientId,
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         type,
         notes,
+        status: 'agendado', // Default status
         createdAt: serverTimestamp(),
       });
 
       setNewAppointmentForm({
         ...initialAppointmentFormValues,
-        date: newAppointmentForm.date, // Keep current date in form
+        date: newAppointmentForm.date, 
         type: getFirstActiveTypeName(),
       });
       setIsNewAppointmentDialogOpen(false);
@@ -481,6 +525,7 @@ export default function AgendaPage() {
         patientSlug: selectedPatient.slug,
         type,
         notes,
+        // status remains unchanged on edit unless specifically handled
       });
 
       setIsEditAppointmentDialogOpen(false);
@@ -493,25 +538,29 @@ export default function AgendaPage() {
     }
   };
 
-  const handleOpenDeleteApptDialog = (appointmentId: string, dateKey: string, patientName: string, time: string) => {
-    setAppointmentToDeleteInfo({ appointmentId, dateKey, patientName, time });
-    setIsDeleteApptConfirmOpen(true);
+  const handleOpenCancelApptDialog = (appointmentId: string, dateKey: string, patientName: string, time: string) => {
+    setAppointmentToCancelInfo({ appointmentId, dateKey, patientName, time });
+    setIsCancelApptConfirmOpen(true);
   };
 
-  const handleConfirmDeleteAppt = async () => {
-    if (!appointmentToDeleteInfo || !currentUser) return;
-    const { appointmentId } = appointmentToDeleteInfo;
+  const handleConfirmCancelAppt = async () => {
+    if (!appointmentToCancelInfo || !currentUser) return;
+    const { appointmentId } = appointmentToCancelInfo;
 
     try {
-      await deleteDoc(doc(db, 'agendamentos', appointmentId));
+      const apptRef = doc(db, 'agendamentos', appointmentId);
+      await updateDoc(apptRef, {
+        status: 'cancelado',
+        cancelledAt: serverTimestamp() 
+      });
       
-      setIsDeleteApptConfirmOpen(false);
-      setAppointmentToDeleteInfo(null);
-      toast({ title: "Agendamento Excluído", description: "O agendamento foi removido.", variant: "success" });
-      await fetchAppointments(currentUser);
+      setIsCancelApptConfirmOpen(false);
+      setAppointmentToCancelInfo(null);
+      toast({ title: "Agendamento Cancelado", description: "O agendamento foi marcado como cancelado.", variant: "success" });
+      await fetchAppointments(currentUser); // Refresh to remove from view
     } catch (error) {
-       console.error("Erro ao excluir agendamento:", error);
-       toast({ title: "Erro", description: "Não foi possível excluir o agendamento.", variant: "destructive" });
+       console.error("Erro ao cancelar agendamento:", error);
+       toast({ title: "Erro", description: "Não foi possível cancelar o agendamento.", variant: "destructive" });
     }
   };
 
@@ -519,9 +568,13 @@ export default function AgendaPage() {
   const goToNextDay = () => setSelectedDate(prev => prev ? addDays(prev, 1) : (clientToday ? addDays(clientToday, 1) : undefined));
 
   const handleAddCustomType = async () => {
+    if (!currentUserData) {
+      toast({ title: 'Erro', description: 'Dados do usuário não carregados.', variant: 'destructive' });
+      return;
+    }
     const trimmedName = newCustomTypeName.trim();
     if (!trimmedName) {
-      toast({ title: 'Erro', description: 'Nome não pode ser vazio.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Nome do tipo não pode ser vazio.', variant: 'destructive' });
       return;
     }
     if (appointmentTypes.some(type => type.name.toLowerCase() === trimmedName.toLowerCase())) {
@@ -530,16 +583,15 @@ export default function AgendaPage() {
     }
 
     try {
-      const userProfile = await fetchCurrentUserData();
-      const tiposRef = getAppointmentTypesPath(userProfile);
+      const tiposRef = getAppointmentTypesPath(currentUserData);
       
       await addDoc(tiposRef, {
         name: trimmedName,
         status: 'active',
-        createdAt: serverTimestamp(),
+        createdAt: serverTimestamp(), // Optional: track creation time
       });
 
-      toast({ title: 'Sucesso', description: 'Tipo adicionado.' });
+      toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
       fetchAppointmentTypes(); 
@@ -550,7 +602,10 @@ export default function AgendaPage() {
   };
 
   const handleSaveEditedTypeName = async () => {
-    if (!editingTypeInfo || !editingTypeInfo.type.id) return;
+    if (!editingTypeInfo || !editingTypeInfo.type.id || !currentUserData) {
+      toast({ title: 'Erro', description: 'Informações para edição incompletas.', variant: 'destructive' });
+      return;
+    }
     const { type: originalType, currentName } = editingTypeInfo;
     const newNameTrimmed = currentName.trim();
   
@@ -558,15 +613,16 @@ export default function AgendaPage() {
       toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
       return;
     }
-    if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() && appointmentTypes.some(type => type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
+    // Check if new name duplicates another existing type's name (excluding itself)
+    if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() && 
+        appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
   
     try {
-      const userProfile = await fetchCurrentUserData();
-      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
-      const docToUpdateRef = doc(tiposCollectionRef, originalType.id); // Use the stored ID
+      const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
+      const docToUpdateRef = doc(tiposCollectionRef, originalType.id);
       
       await updateDoc(docToUpdateRef, { name: newNameTrimmed });
   
@@ -589,20 +645,30 @@ export default function AgendaPage() {
   };
 
   const handleToggleTypeStatus = async (typeToToggle: AppointmentTypeObject) => {
-    if (!typeToToggle || !typeToToggle.id) return;
-
-    const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
-
-    const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
-    if (newStatus === 'inactive' && activeTypesCount <= 1 && appointmentTypes.length > 1) {
-      toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo quando outros tipos inativos existem.", variant: "warning" });
+    if (!typeToToggle || !typeToToggle.id || !currentUserData) {
+       toast({ title: 'Erro', description: 'Informações do tipo ou usuário incompletas.', variant: 'destructive' });
       setTypeToToggleStatusConfirm(null);
       return;
     }
 
+    const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
+
+    // Prevent deactivating the last active type if other inactive types exist
+    const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
+    if (newStatus === 'inactive' && activeTypesCount <= 1 && appointmentTypes.some(t => t.status === 'inactive' && t.id !== typeToToggle.id)) {
+      toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo se existirem outros tipos inativos.", variant: "warning" });
+      setTypeToToggleStatusConfirm(null);
+      return;
+    }
+     if (newStatus === 'inactive' && activeTypesCount === 1 && appointmentTypes.length === 1) {
+       toast({ title: "Atenção", description: "Não é possível desativar o único tipo de atendimento existente.", variant: "warning" });
+       setTypeToToggleStatusConfirm(null);
+       return;
+    }
+
+
     try {
-      const userProfile = await fetchCurrentUserData();
-      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+      const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToUpdateRef = doc(tiposCollectionRef, typeToToggle.id);
       
       await updateDoc(docToUpdateRef, { status: newStatus });
@@ -615,8 +681,9 @@ export default function AgendaPage() {
       setTypeToToggleStatusConfirm(null);
       await fetchAppointmentTypes(); 
 
+      // If the currently toggled type was selected in a form and became inactive, update the form
       if (newStatus === 'inactive') {
-        const firstActive = getFirstActiveTypeName(); 
+        const firstActive = getFirstActiveTypeName(); // This will re-evaluate based on the new state of appointmentTypes
         if (newAppointmentForm.type === typeToToggle.name) {
           setNewAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
         }
@@ -637,11 +704,15 @@ export default function AgendaPage() {
   };
 
   const handleConfirmDeleteType = async () => {
-    if (!typeToDelete || !typeToDelete.id) return;
+    if (!typeToDelete || !typeToDelete.id || !currentUserData) {
+      toast({ title: 'Erro', description: 'Informações para exclusão incompletas.', variant: 'destructive' });
+      setIsDeleteTypeConfirmOpen(false);
+      setTypeToDelete(null);
+      return;
+    }
 
     try {
-      const userProfile = await fetchCurrentUserData();
-      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+      const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id);
       await deleteDoc(docToDeleteRef);
 
@@ -659,7 +730,7 @@ export default function AgendaPage() {
       
     } catch (error) {
       console.error("Erro ao excluir tipo:", error);
-      toast({ title: "Erro", description: "Falha ao excluir o tipo.", variant: "destructive" });
+      toast({ title: "Erro ao Excluir", description: `Não foi possível excluir o tipo "${typeToDelete.name}". Verifique se ele está em uso.`, variant: "destructive" });
     } finally {
       setIsDeleteTypeConfirmOpen(false);
       setTypeToDelete(null);
@@ -669,7 +740,7 @@ export default function AgendaPage() {
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
 
-  if (!clientToday || !selectedDate || !clientNow || isLoadingAppointments) {
+  if (!clientToday || !selectedDate || !clientNow || isLoadingAppointments || isLoadingTypes) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <p className="text-xl text-muted-foreground">Carregando agenda...</p>
@@ -682,15 +753,24 @@ export default function AgendaPage() {
   const isSelectedDatePast = selectedDate && clientToday ? isBefore(startOfDay(selectedDate), clientToday) : false;
 
   const apptDateTimeForEditButton = (apptTime: string) => formattedDateKey ? parse(`${formattedDateKey} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date()) : null;
-  const disableEditButton = (apptTime: string) => {
+  const disableEditButton = (apptTime: string, apptStatus?: Appointment['status']) => {
+    if (apptStatus === 'cancelado') return true;
     const apptDT = apptDateTimeForEditButton(apptTime);
     return !clientNow || !apptDT || isBefore(apptDT, clientNow);
+  };
+  const disableCancelButton = (apptTime: string, apptStatus?: Appointment['status']) => {
+      if (apptStatus === 'cancelado') return true; // Already cancelled
+      // Optionally, allow cancelling past appointments that weren't marked (e.g. no-shows)
+      // For now, same logic as edit: disable if appointment time is in the past
+      // const apptDT = apptDateTimeForEditButton(apptTime);
+      // return !clientNow || !apptDT || isBefore(apptDT, clientNow);
+      return false; // Allow cancelling anytime until explicitly marked 'realizado'
   };
 
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
         <h1 className="text-3xl font-bold text-foreground">Agenda</h1>
         <Dialog open={isNewAppointmentDialogOpen} onOpenChange={(isOpen) => {
           setIsNewAppointmentDialogOpen(isOpen);
@@ -736,7 +816,7 @@ export default function AgendaPage() {
                   <Select value={newAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'type', value)} required>
                     <SelectTrigger id="newType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                     <SelectContent>
-                      {activeAppointmentTypes.map((type) => <SelectItem key={type.name} value={type.name}>{type.name}</SelectItem>)}
+                      {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
                       {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
                     </SelectContent>
                   </Select>
@@ -789,7 +869,7 @@ export default function AgendaPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Agendamentos para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'Data Selecionada'}</CardTitle>
+                <CardTitle>Compromissos para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'Data Selecionada'}</CardTitle>
                 <CardDescription>Compromissos do dia.</CardDescription>
               </div>
               <div className="flex items-center gap-2">
@@ -820,7 +900,7 @@ export default function AgendaPage() {
                       className="h-8 w-8 text-blue-500 hover:bg-blue-100"
                       onClick={() => handleOpenEditDialog(appt, formattedDateKey)}
                       title="Editar Agendamento"
-                      disabled={disableEditButton(appt.time)}
+                      disabled={disableEditButton(appt.time, appt.status)}
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -828,8 +908,9 @@ export default function AgendaPage() {
                         variant="ghost" 
                         size="icon" 
                         className="h-8 w-8 text-red-500 hover:bg-red-100" 
-                        title="Excluir Agendamento"
-                        onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)}
+                        title="Cancelar Agendamento"
+                        onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)}
+                        disabled={disableCancelButton(appt.time, appt.status)}
                     >
                         <Trash2 className="h-4 w-4" />
                     </Button>
@@ -886,7 +967,7 @@ export default function AgendaPage() {
                 <Select value={editAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'type', value)} required>
                   <SelectTrigger id="editType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
                   <SelectContent>
-                    {activeAppointmentTypes.map((type) => <SelectItem key={type.name} value={type.name}>{type.name}</SelectItem>)}
+                    {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
                     {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
                   </SelectContent>
                 </Select>
@@ -957,7 +1038,7 @@ export default function AgendaPage() {
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
              {appointmentTypes.map((type) => (
               <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
-                {editingTypeInfo?.type.id === type.id ? (
+                {editingTypeInfo && editingTypeInfo.type && editingTypeInfo.type.id === type.id ? (
                   <div className="flex-grow flex items-center gap-2 mr-2">
                     <Input
                       value={editingTypeInfo.currentName}
@@ -971,7 +1052,7 @@ export default function AgendaPage() {
                   <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
-                  {editingTypeInfo?.type.id !== type.id && (
+                  {(!editingTypeInfo || !editingTypeInfo.type || editingTypeInfo.type.id !== type.id) && (
                     <>
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentName: type.name })} title="Editar Nome">
                         <Pencil className="h-4 w-4" />
@@ -1039,28 +1120,25 @@ export default function AgendaPage() {
       </AlertDialog>
 
 
-      <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={(isOpen) => {
+      <AlertDialog open={isCancelApptConfirmOpen} onOpenChange={(isOpen) => {
         if (!isOpen) {
-          setAppointmentToDeleteInfo(null);
+          setAppointmentToCancelInfo(null);
         }
-        setIsDeleteApptConfirmOpen(isOpen);
+        setIsCancelApptConfirmOpen(isOpen);
       }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Exclusão de Agendamento</AlertDialogTitle>
+            <AlertDialogTitle>Confirmar Cancelamento</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir o agendamento para {appointmentToDeleteInfo?.patientName} às {appointmentToDeleteInfo?.time}? Esta ação não pode ser desfeita.
+              Tem certeza que deseja cancelar o agendamento para {appointmentToCancelInfo?.patientName} às {appointmentToCancelInfo?.time}?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDeleteAppt} className="bg-destructive hover:bg-destructive/90">Excluir Agendamento</AlertDialogAction>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmCancelAppt} className="bg-destructive hover:bg-destructive/90">Cancelar Agendamento</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
-
-
-    
