@@ -194,7 +194,7 @@ export default function DashboardPage() {
           }
         } else {
           console.warn(`Tipo de createdAt ausente ou não tratado para alerta ${docSnap.id}, usando data atual como fallback.`);
-          createdAtDate = new Date();
+          createdAtDate = new Date(); 
         }
 
         fetchedAlerts.push({
@@ -209,7 +209,7 @@ export default function DashboardPage() {
       });
       setAlerts(fetchedAlerts);
     } catch (error: any) {
-      console.error("Erro detalhado ao buscar alertas:", error);
+      console.error("Erro ao buscar alertas:", error);
       let description = "Não foi possível carregar os alertas. Tente recarregar a página.";
       if (error.code === 'permission-denied') {
         description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
@@ -388,6 +388,7 @@ export default function DashboardPage() {
                     name: data.name as string,
                     dob: data.dob as string,
                     slug: data.slug as string,
+                    phone: data.phone as string, // Ensure phone is included
                   });
                 }
               } catch (e) {
@@ -778,7 +779,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        /* CARD DE ANIVERSARIANTES */
+        {/* CARD DE ANIVERSARIANTES */}
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-1">
@@ -799,7 +800,8 @@ export default function DashboardPage() {
             ) : birthdayPatients.length > 0 ? (
               birthdayPatients.map((patient) => {
                 const message = `Olá ${patient.name}! Parabéns pelo seu aniversário 🎉 Desejamos muita saúde e felicidades!`;
-                const whatsappLink = `https://wa.me/55${patient.phone}?text=${encodeURIComponent(message)}`;
+                const cleanPhone = patient.phone ? patient.phone.replace(/\D/g, '') : '';
+                const whatsappLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}` : '#';
 
                 return (
                   <div
@@ -815,14 +817,21 @@ export default function DashboardPage() {
                     <div className="flex gap-1">
                       <Link
                         href={whatsappLink}
-                        target="_blank"
+                        target={patient.phone ? "_blank" : "_self"}
                         className="shrink-0"
+                        onClick={(e) => {
+                          if (!patient.phone) {
+                            e.preventDefault();
+                            toast({ title: "Telefone Indisponível", description: `Telefone de ${patient.name} não cadastrado.`, variant: "warning" });
+                          }
+                        }}
                       >
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-auto p-1 text-green-600 hover:text-green-700"
-                          title="Enviar mensagem no WhatsApp"
+                          title={patient.phone ? "Enviar mensagem no WhatsApp" : "Telefone não disponível"}
+                          disabled={!patient.phone}
                         >
                           <MessageCircle className="h-4 w-4" />
                         </Button>
