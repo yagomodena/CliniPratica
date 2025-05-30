@@ -20,7 +20,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -36,18 +35,18 @@ import { UserForm, type UserFormData, type User, menuItemsConfig } from '@/compo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { auth, db } from '@/firebase';
-import { User as FirebaseUser } from 'firebase/auth';
-import {
-  createUserWithEmailAndPassword, // Importar
-  updateProfile as updateAuthProfile, // Renomear para evitar conflito com o estado `profile`
-  getAuth,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-  updatePassword,
-  onAuthStateChanged,
-} from 'firebase/auth';
+import { auth, db, firebaseConfig } from '@/firebase'; // Import firebaseConfig
+import { User as FirebaseUser, updateProfile as updateAuthProfile, EmailAuthProvider, reauthenticateWithCredential, updatePassword, onAuthStateChanged } from 'firebase/auth';
 import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc, query, where, getDocs, orderBy } from "firebase/firestore";
+
+// For secondary app instance user creation
+import { initializeApp as initializeSecondaryApp, deleteApp as deleteSecondaryApp } from "firebase/app";
+import { 
+  getAuth as getAuthForSecondaryInstance, 
+  createUserWithEmailAndPassword as createUserInSecondaryInstance,
+  updateProfile // Regular updateProfile from firebase/auth
+} from "firebase/auth";
+
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
@@ -160,13 +159,14 @@ export default function ConfiguracoesPage() {
     setIsLoadingUsers(true);
     try {
       const usersRef = collection(db, 'usuarios');
+      // Fetch users that belong to the same company, excluding the admin themselves
       const q = query(usersRef, where('nomeEmpresa', '==', profile.nomeEmpresa), where('email', '!=', auth.currentUser.email), orderBy('nomeCompleto'));
       const querySnapshot = await getDocs(q);
       const clinicUsers: User[] = [];
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
         clinicUsers.push({
-          id: docSnap.id,
+          id: docSnap.id, // This is the Firebase Auth UID of the sub-user
           nomeCompleto: data.nomeCompleto || '',
           email: data.email || '',
           cargo: data.cargo || '',
@@ -174,7 +174,7 @@ export default function ConfiguracoesPage() {
           areaAtuacao: data.areaAtuacao || '',
           criadoEm: data.criadoEm?.toDate()?.toISOString() || new Date().toISOString(),
           fotoPerfilUrl: data.fotoPerfilUrl || '',
-          nomeEmpresa: data.nomeEmpresa || '',
+          nomeEmpresa: data.nomeEmpresa || '', // Should be same as admin's
           plano: data.plano || '', 
           telefone: data.telefone || '',
         });
@@ -188,6 +188,7 @@ export default function ConfiguracoesPage() {
       setIsLoadingUsers(false);
     }
   }, [currentUserPlan, profile.nomeEmpresa, toast]);
+
 
   useEffect(() => {
     if (currentUserPlan === 'Clínica' && profile.nomeEmpresa) {
@@ -209,7 +210,7 @@ export default function ConfiguracoesPage() {
         return;
       }
 
-      await updateAuthProfile(user, { // Usar updateAuthProfile aqui
+      await updateAuthProfile(user, { 
         displayName: profile.nomeCompleto,
         photoURL: profile.fotoPerfilUrl,
       });
@@ -347,7 +348,7 @@ export default function ConfiguracoesPage() {
   };
 
   const handleUserFormSubmit = async (data: UserFormData) => {
-    const mainAuthUser = auth.currentUser;
+    const mainAuthUser = auth.currentUser; // This is the Admin
     if (!mainAuthUser) {
       toast({ title: "Erro de Autenticação", description: "Usuário principal (admin) não autenticado.", variant: "destructive" });
       return;
@@ -357,9 +358,11 @@ export default function ConfiguracoesPage() {
         return;
     }
 
+    let tempApp; // For secondary app instance
+
     try {
       if (editingUser) {
-        // Editing existing user
+        // Editing existing user (only Firestore data)
         const userDocRef = doc(db, 'usuarios', editingUser.id);
         const userDataToUpdate: Partial<User> = {
           email: data.email,
@@ -368,7 +371,6 @@ export default function ConfiguracoesPage() {
           nomeCompleto: data.nomeCompleto || '',
           telefone: data.telefone || '',
           areaAtuacao: data.areaAtuacao || '',
-          // nomeEmpresa is not changed here for sub-users
         };
         await updateDoc(userDocRef, userDataToUpdate);
         toast({ title: "Usuário Atualizado", description: `Dados de ${data.email} atualizados.`, variant: "success" });
@@ -383,13 +385,17 @@ export default function ConfiguracoesPage() {
           return;
         }
 
-        // 1. Create user in Firebase Auth
-        const newUserCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        // Use a secondary Firebase app instance for user creation to avoid affecting admin's session
+        tempApp = initializeSecondaryApp(firebaseConfig, `userCreation-${Date.now()}`);
+        const tempAuthInstance = getAuthForSecondaryInstance(tempApp);
+
+        // 1. Create user in Firebase Auth using the secondary instance
+        const newUserCredential = await createUserInSecondaryInstance(tempAuthInstance, data.email, data.password);
         const newAuthUser = newUserCredential.user;
 
         // 2. Update profile in Firebase Auth (optional, but good practice)
         if (data.nomeCompleto) {
-          await updateAuthProfile(newAuthUser, { displayName: data.nomeCompleto });
+          await updateProfile(newAuthUser, { displayName: data.nomeCompleto }); // Use global updateProfile
         }
 
         // 3. Prepare user document for Firestore
@@ -399,15 +405,15 @@ export default function ConfiguracoesPage() {
           permissoes: data.permissoes,
           nomeCompleto: data.nomeCompleto || '',
           ownerId: mainAuthUser.uid, // UID of the admin who created this user
-          nomeEmpresa: profile.nomeEmpresa, // Admin's company name
+          nomeEmpresa: profile.nomeEmpresa || '', // Admin's company name
           plano: 'Clínica', // Sub-users are part of the clinic's plan context
           createdAt: serverTimestamp(),
-          fotoPerfilUrl: '', // Default
+          fotoPerfilUrl: '', 
           telefone: data.telefone || '',
           areaAtuacao: data.areaAtuacao || '',
         };
 
-        // 4. Save user data to Firestore using the Auth UID as document ID
+        // 4. Save user data to Firestore using the new Auth UID as document ID
         await setDoc(doc(db, 'usuarios', newAuthUser.uid), newUserDoc);
         
         toast({ title: "Usuário Adicionado", description: `${data.email} adicionado com sucesso.`, variant: "success" });
@@ -415,7 +421,7 @@ export default function ConfiguracoesPage() {
       setIsUserFormOpen(false);
       setEditingUser(null);
       if (currentUserPlan === 'Clínica') {
-        fetchClinicUsers(); // Refresh user list
+        fetchClinicUsers(); 
       }
     } catch (error: any) {
       console.error("Erro no formulário de usuário:", error);
@@ -428,6 +434,10 @@ export default function ConfiguracoesPage() {
         message = 'A senha fornecida é muito fraca.';
       }
       toast({ title: "Erro", description: message, variant: "destructive" });
+    } finally {
+      if (tempApp) {
+        await deleteSecondaryApp(tempApp); // Clean up the temporary app instance
+      }
     }
   };
 
@@ -438,9 +448,6 @@ export default function ConfiguracoesPage() {
 
   const handleConfirmDeleteUser = async () => {
     if (userToDelete) {
-      // Note: Deleting a user from Firebase Auth client-side is complex and often requires admin privileges.
-      // For now, we'll just delete the Firestore document.
-      // True deletion of the Auth account would need an Admin SDK on a backend or a more involved process.
       try {
         const userDocRef = doc(db, 'usuarios', userToDelete.id);
         await deleteDoc(userDocRef);
@@ -869,9 +876,3 @@ export default function ConfiguracoesPage() {
     </div>
   );
 }
-
-    
-    
-    
-
-    
