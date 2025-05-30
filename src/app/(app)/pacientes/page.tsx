@@ -28,7 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -79,13 +79,8 @@ type PatientObjectiveObject = {
   status: 'active' | 'inactive';
 };
 
-const initialPatientObjectivesData: PatientObjectiveObject[] = [
-  { name: 'Perda de Peso', status: 'active' },
-  { name: 'Ganho de Massa Muscular', status: 'active' },
-  { name: 'Reeducação Alimentar', status: 'active' },
-  { name: 'Controle de Ansiedade', status: 'active' },
-  { name: 'Outro', status: 'active' },
-];
+const initialPatientObjectivesData: PatientObjectiveObject[] = []; // Starts empty
+
 
 const getPatientObjectivesPath = (userData: any) => {
   const isClinica = userData?.plano === 'Clínica';
@@ -353,10 +348,17 @@ export default function PacientesPage() {
     if (!objectiveToToggle || !objectiveToToggle.id || !currentUserData) return;
     const newStatus = objectiveToToggle.status === 'active' ? 'inactive' : 'active';
     const activeObjectivesCount = patientObjectives.filter(o => o.status === 'active').length;
-    if (newStatus === 'inactive' && activeObjectivesCount <= 1 && patientObjectives.length > 1) {
-      toast({ title: "Atenção", description: "Não é possível desativar o último objetivo ativo quando outros objetivos inativos existem.", variant: "warning" });
-      setObjectiveToToggleStatusConfirm(null);
-      return;
+    if (newStatus === 'inactive') {
+        if (activeObjectivesCount <= 1 && patientObjectives.length > 1 && patientObjectives.some(o => o.status === 'inactive' && o.id !== objectiveToToggle.id)) {
+            toast({ title: "Atenção", description: "Não é possível desativar o último objetivo ativo quando outros objetivos inativos existem.", variant: "warning" });
+            setObjectiveToToggleStatusConfirm(null);
+            return;
+        }
+         if (activeObjectivesCount === 1 && patientObjectives.length === 1) {
+           toast({ title: "Atenção", description: "Não é possível desativar o único objetivo existente.", variant: "warning" });
+           setObjectiveToToggleStatusConfirm(null);
+           return;
+        }
     }
     try {
       const objectivesCollectionRef = getPatientObjectivesPath(currentUserData);

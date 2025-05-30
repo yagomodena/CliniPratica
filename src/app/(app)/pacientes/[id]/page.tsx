@@ -97,13 +97,8 @@ type PatientObjectiveObject = {
   status: 'active' | 'inactive';
 };
 
-const initialPatientObjectivesData: PatientObjectiveObject[] = [
-  { name: 'Perda de Peso', status: 'active' },
-  { name: 'Ganho de Massa Muscular', status: 'active' },
-  { name: 'Reeducação Alimentar', status: 'active' },
-  { name: 'Controle de Ansiedade', status: 'active' },
-  { name: 'Outro', status: 'active' },
-];
+const initialPatientObjectivesData: PatientObjectiveObject[] = []; // Starts empty
+
 
 const getAppointmentTypesPath = (userData: any) => {
   if (!userData) {
@@ -175,18 +170,6 @@ export default function PacienteDetalhePage() {
   const [firebaseUserAuth, setFirebaseUserAuth] = useState<FirebaseUser | null>(null);
 
 
-  useEffect(() => {
-    setIsClient(true);
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setFirebaseUserAuth(user);
-      if (!user && !isLoading) { // Ensure isLoading check to prevent premature redirect
-        router.push('/login');
-      }
-    });
-    return () => unsubscribe();
-  }, [router, isLoading]);
-
-
   const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null): Promise<any | null> => {
     if (!user) {
       console.warn("fetchCurrentUserData: No user provided.");
@@ -222,7 +205,7 @@ export default function PacienteDetalhePage() {
     }
     try {
       const tiposRef = getAppointmentTypesPath(userDataForPath);
-      const snapshot = await getDocs(query(tiposRef, orderBy("name")));
+      const snapshot = await getDocs(query(tiposRef, orderBy("name"))); // Fetch all, filter client-side or rely on Firestore rules for security
       const allFetchedTypes: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         name: docSnap.data().name as string,
@@ -262,76 +245,94 @@ export default function PacienteDetalhePage() {
       setPatientObjectives(fallback);
     }
   }, [toast]);
-  
+
+
   useEffect(() => {
-    const loadPageData = async () => {
-      if (!patientSlug || !firebaseUserAuth) {
-        setIsLoading(!!patientSlug); // Only set loading if slug is present but user is not
+    setIsClient(true);
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setFirebaseUserAuth(user);
+    });
+    return () => unsubscribeAuth();
+  }, []);
+
+  const loadPageData = useCallback(async () => {
+    if (!patientSlug || !firebaseUserAuth) {
+      setIsLoading(!!patientSlug);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const uData = await fetchCurrentUserData(firebaseUserAuth);
+      if (!uData) {
+        setIsLoading(false);
+        router.push('/login'); // Redirect if user data can't be fetched
         return;
       }
-      setIsLoading(true);
-      try {
-        const uData = await fetchCurrentUserData(firebaseUserAuth); // Fetch and set currentUserData
-        if (!uData) {
-          setIsLoading(false);
-          return; 
-        }
-        
-        // Fetch types and objectives after user data is confirmed
-        await Promise.all([
-          fetchAppointmentTypes(uData),
-          fetchPatientObjectives(uData)
-        ]);
 
-        // Fetch patient details
-        const patientsRef = collection(db, 'pacientes');
-        const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', firebaseUserAuth.uid));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-          const docSnap = querySnapshot.docs[0];
-          const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>; // Ensure type matches Firestore structure initially
-          
-          let uniqueIdCounter = 0;
-          const processedHistory = (data.history || []).map((histItem, index) => ({
-            ...histItem,
-            id: histItem.id || `hist-load-${docSnap.id}-${index}-${uniqueIdCounter++}`
-          }));
+      await Promise.all([
+        fetchAppointmentTypes(uData),
+        fetchPatientObjectives(uData)
+      ]);
 
-          const fetchedPatient: Patient = {
-            ...data,
-            internalId: docSnap.id,
-            slug: patientSlug,
-            history: processedHistory,
-            documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
-            objetivoPaciente: data.objetivoPaciente || '',
-            name: data.name || '',
-            email: data.email || '',
-            phone: data.phone || '',
-            dob: data.dob || '',
-            address: data.address || '',
-            status: data.status || 'Ativo',
-            avatar: data.avatar || `https://placehold.co/100x100.png`,
-            lastVisit: data.lastVisit || '',
-            nextVisit: data.nextVisit || '',
-          };
-          setPatient(fetchedPatient);
-        } else {
-          toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
-          setPatient(undefined);
-          router.push('/pacientes');
-        }
-      } catch (error: any) {
-        console.error("Erro ao carregar dados da página do paciente:", error);
-        toast({ title: "Erro", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
+      const patientsRef = collection(db, 'pacientes');
+      const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', firebaseUserAuth.uid));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const docSnap = querySnapshot.docs[0];
+        const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>;
+        
+        let uniqueIdCounter = 0;
+        const processedHistory = (data.history || []).map((histItem, index) => ({
+          ...histItem,
+          id: histItem.id || `hist-load-${docSnap.id}-${index}-${uniqueIdCounter++}`
+        }));
+
+        const fetchedPatient: Patient = {
+          ...data,
+          internalId: docSnap.id,
+          slug: patientSlug,
+          history: processedHistory,
+          documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
+          objetivoPaciente: data.objetivoPaciente || '',
+          name: data.name || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          dob: data.dob || '',
+          address: data.address || '',
+          status: data.status || 'Ativo',
+          avatar: data.avatar || `https://placehold.co/100x100.png`,
+          lastVisit: data.lastVisit || '',
+          nextVisit: data.nextVisit || '',
+        };
+        setPatient(fetchedPatient);
+      } else {
+        toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
         setPatient(undefined);
-      } finally {
-        setIsLoading(false);
+        router.push('/pacientes');
       }
-    };
-
-    loadPageData();
+    } catch (error: any) {
+      console.error("Erro ao carregar dados da página do paciente:", error);
+      if (error.message === "Usuário não autenticado" || error.message === "Dados do usuário não encontrados") {
+        toast({ title: "Erro de Sessão", description: "Por favor, faça login novamente.", variant: "destructive" });
+        router.push('/login');
+      } else {
+        toast({ title: "Erro ao Carregar Dados", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
+      }
+      setPatient(undefined);
+    } finally {
+      setIsLoading(false);
+    }
   }, [patientSlug, firebaseUserAuth, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
+
+  useEffect(() => {
+    if (firebaseUserAuth && patientSlug) {
+      loadPageData();
+    } else if (!firebaseUserAuth && !isLoading && patientSlug) {
+      // If user is not authenticated but we have a slug and are not loading, it's a redirect case
+      router.push('/login');
+    }
+  }, [firebaseUserAuth, patientSlug, loadPageData, router, isLoading]);
 
 
   const getFirstActiveTypeName = useCallback(() => {
@@ -344,31 +345,46 @@ export default function PacienteDetalhePage() {
 
   useEffect(() => {
     if (patient && (appointmentTypes.length > 0 || patientObjectives.length > 0)) {
-        const firstActiveObjective = getFirstActiveObjectiveName();
-        const currentPatientObjective = patient.objetivoPaciente;
-        let finalObjective = currentPatientObjective;
+      const firstActiveObjective = getFirstActiveObjectiveName();
+      const currentPatientObjective = patient.objetivoPaciente;
+      let finalObjective = currentPatientObjective;
 
-        if (!currentPatientObjective || !patientObjectives.some(po => po.name === currentPatientObjective && po.status === 'active')) {
-            finalObjective = firstActiveObjective || '';
+      if (!currentPatientObjective || !patientObjectives.some(po => po.name === currentPatientObjective && po.status === 'active')) {
+        finalObjective = firstActiveObjective || '';
+      }
+    
+      setEditedPatient(prev => {
+        // Only spread previous editedPatient data if it's for the same patient and edit mode is active
+        const basePatientData = {
+          ...patient,
+          objetivoPaciente: finalObjective,
+        };
+        if (isEditing && prev && prev.internalId === patient.internalId) {
+          return {
+            ...basePatientData, // Start with current patient data and the determined objective
+            name: prev.name, // Keep existing edits
+            email: prev.email,
+            phone: prev.phone,
+            dob: prev.dob,
+            address: prev.address,
+            status: prev.status,
+            // Ensure 'objetivoPaciente' from prev is considered if it was changed during edit
+            objetivoPaciente: prev.objetivoPaciente !== undefined ? prev.objetivoPaciente : finalObjective,
+          };
         }
-      
-        setEditedPatient(prev => ({
-            ...patient,
-            objetivoPaciente: finalObjective,
-            ...(isEditing && prev && prev.internalId === patient.internalId ? {
-               name: prev.name, email: prev.email, phone: prev.phone, dob: prev.dob, address: prev.address, status: prev.status,
-            } : {})
-        }));
+        return basePatientData; // If not editing or different patient, reset to current patient data
+      });
 
-        const firstActiveType = getFirstActiveTypeName();
-        if (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active')) {
-            setNewHistoryType(firstActiveType || '');
-        }
+
+      const firstActiveType = getFirstActiveTypeName();
+      if (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active')) {
+          setNewHistoryType(firstActiveType || '');
+      }
     } else if (patient) { 
-        setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || '' });
-        if (!newHistoryType && appointmentTypes.length > 0) setNewHistoryType(getFirstActiveTypeName() || '');
+      setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || '' });
+      if (!newHistoryType && appointmentTypes.length > 0) setNewHistoryType(getFirstActiveTypeName() || '');
     }
-  }, [patient, appointmentTypes, patientObjectives, getFirstActiveTypeName, getFirstActiveObjectiveName, isEditing, newHistoryType]); 
+  }, [patient, appointmentTypes, patientObjectives, getFirstActiveTypeName, getFirstActiveObjectiveName, isEditing, newHistoryType]); // Added isEditing, newHistoryType
 
 
   const handleSaveEditedPatient = async () => {
