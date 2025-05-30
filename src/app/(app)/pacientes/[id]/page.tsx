@@ -60,7 +60,7 @@ type DocumentItem = { id: string; name: string; uploadDate: string; url: string;
 
 type Patient = {
   internalId: string;
-  id: string; 
+  id: string;
   name: string;
   email: string;
   phone: string;
@@ -72,8 +72,8 @@ type Patient = {
   documents: DocumentItem[];
   slug: string;
   objetivoPaciente?: string;
-  lastVisit?: string; 
-  nextVisit?: string; 
+  lastVisit?: string;
+  nextVisit?: string;
 };
 
 type AppointmentTypeObject = {
@@ -168,15 +168,15 @@ export default function PacienteDetalhePage() {
 
   const [isDeleteHistoryConfirmOpen, setIsDeleteHistoryConfirmOpen] = useState(false);
   const [historyItemToDelete, setHistoryItemToDelete] = useState<HistoryItem | null>(null);
-  
-  const [currentUserData, setCurrentUserData] = useState<any>(null); 
+
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [firebaseUserAuth, setFirebaseUserAuth] = useState<FirebaseUser | null>(null);
 
 
   const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null): Promise<any | null> => {
     if (!user) {
       console.warn("fetchCurrentUserData: No user provided.");
-      setCurrentUserData(null); 
+      setCurrentUserData(null);
       return null;
     }
     try {
@@ -184,37 +184,37 @@ export default function PacienteDetalhePage() {
       const userDocSnap = await getDoc(userDocRef);
       if (userDocSnap.exists()) {
         const data = { ...userDocSnap.data(), uid: user.uid };
-        setCurrentUserData(data);
-        return data;
+        setCurrentUserData(data); // Set state here
+        return data; // Return the data for immediate use
       }
       console.warn("fetchCurrentUserData: User data not found for UID:", user.uid);
       toast({ title: "Erro de Autenticação", description: "Dados do usuário não encontrados.", variant: "destructive" });
-      setCurrentUserData(null); 
+      setCurrentUserData(null);
     } catch (error) {
       console.error("Error fetching user data:", error);
       toast({ title: "Erro de Autenticação", description: "Não foi possível carregar dados do usuário.", variant: "destructive" });
-      setCurrentUserData(null); 
+      setCurrentUserData(null);
     }
     return null;
-  }, [toast]);
+  }, [toast, setCurrentUserData]);
 
 
   const fetchAppointmentTypes = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
-      console.warn("fetchAppointmentTypes: User data not available. Using fallback.");
+      console.warn("fetchAppointmentTypes: User data for path not available. Using fallback.");
       const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
       return;
     }
     try {
       const tiposRef = getAppointmentTypesPath(userDataForPath);
-      const snapshot = await getDocs(query(tiposRef, orderBy("name"))); 
+      const snapshot = await getDocs(query(tiposRef, orderBy("name")));
       const allFetchedTypes: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
-      
+
       const fallbackTypesWithIds = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(allFetchedTypes.length > 0 ? allFetchedTypes : fallbackTypesWithIds);
 
@@ -228,7 +228,7 @@ export default function PacienteDetalhePage() {
 
   const fetchPatientObjectives = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
-      console.warn("fetchPatientObjectives: User data not available. Using fallback.");
+      console.warn("fetchPatientObjectives: User data for path not available. Using fallback.");
       const fallback = initialPatientObjectivesData.map(o => ({ ...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
       return;
@@ -251,17 +251,20 @@ export default function PacienteDetalhePage() {
     }
   }, [toast, setPatientObjectives]);
 
+
   useEffect(() => {
     setIsClient(true);
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setFirebaseUserAuth(user);
+      setFirebaseUserAuth(user); // Set Firebase user auth state
     });
     return () => unsubscribeAuth();
   }, []);
 
+
   const loadPageData = useCallback(async () => {
     if (!patientSlug || !firebaseUserAuth) {
-      setIsLoading(!!patientSlug); 
+      console.warn("loadPageData: patientSlug or firebaseUserAuth missing.");
+      setIsLoading(!!patientSlug); // Set loading based on if slug exists
       return;
     }
     setIsLoading(true);
@@ -269,7 +272,7 @@ export default function PacienteDetalhePage() {
       const uData = await fetchCurrentUserData(firebaseUserAuth);
       if (!uData) {
         setIsLoading(false);
-        router.push('/login'); 
+        router.push('/login');
         return;
       }
 
@@ -285,7 +288,7 @@ export default function PacienteDetalhePage() {
       if (!querySnapshot.empty) {
         const docSnap = querySnapshot.docs[0];
         const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>;
-        
+
         let uniqueIdCounter = 0;
         const processedHistory = (data.history || []).map((histItem, index) => ({
           ...histItem,
@@ -327,15 +330,16 @@ export default function PacienteDetalhePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [patientSlug, firebaseUserAuth, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
+  }, [patientSlug, firebaseUserAuth, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives, setIsLoading, setPatient, setCurrentUserData, setAppointmentTypes, setPatientObjectives]);
+
 
   useEffect(() => {
     if (firebaseUserAuth && patientSlug) {
       loadPageData();
-    } else if (!firebaseUserAuth && !isLoading && patientSlug) {
+    } else if (!firebaseUserAuth && patientSlug) { // Removed !isLoading here
       router.push('/login');
     }
-  }, [firebaseUserAuth, patientSlug, loadPageData, router, isLoading]);
+  }, [firebaseUserAuth, patientSlug, loadPageData, router]);
 
 
   const getFirstActiveTypeName = useCallback(() => {
@@ -347,39 +351,31 @@ export default function PacienteDetalhePage() {
   }, [patientObjectives]);
 
   useEffect(() => {
-    if (patient && (appointmentTypes.length > 0 || patientObjectives.length > 0)) {
+    if (patient) { // Check if patient data is loaded
       const firstActiveObjective = getFirstActiveObjectiveName();
       const firstActiveType = getFirstActiveTypeName();
-      
-      const currentPatientObjective = patient.objetivoPaciente;
-      let finalObjective = currentPatientObjective;
 
-      if (!currentPatientObjective || !patientObjectives.some(po => po.name === currentPatientObjective && po.status === 'active')) {
-        finalObjective = firstActiveObjective || '';
-      }
-    
-      setEditedPatient(prev => {
+      // Initialize or update editedPatient
+      setEditedPatient(prevEditedPatient => {
         const basePatientData = {
           ...patient,
-          objetivoPaciente: finalObjective,
+          objetivoPaciente: patient.objetivoPaciente || firstActiveObjective || '',
         };
-        if (isEditing && prev && prev.internalId === patient.internalId) {
+        if (isEditing && prevEditedPatient && prevEditedPatient.internalId === patient.internalId) {
           return {
-            ...prev, // Keep existing edits from the form
-            objetivoPaciente: prev.objetivoPaciente !== undefined ? prev.objetivoPaciente : finalObjective, // Prioritize form edit
+            ...prevEditedPatient, // Keep existing form edits
+            objetivoPaciente: prevEditedPatient.objetivoPaciente !== undefined ? prevEditedPatient.objetivoPaciente : (patient.objetivoPaciente || firstActiveObjective || ''),
           };
         }
         return basePatientData;
       });
 
+      // Initialize or update newHistoryType
       if (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active')) {
-          setNewHistoryType(firstActiveType || '');
+        setNewHistoryType(firstActiveType || '');
       }
-    } else if (patient) { 
-      setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || '' });
-      if (!newHistoryType && appointmentTypes.length > 0) setNewHistoryType(getFirstActiveTypeName() || '');
     }
-  }, [patient, appointmentTypes, patientObjectives, getFirstActiveTypeName, getFirstActiveObjectiveName, isEditing]);
+  }, [patient, appointmentTypes, patientObjectives, isEditing, getFirstActiveTypeName, getFirstActiveObjectiveName]);
 
 
   const handleSaveEditedPatient = async () => {
@@ -407,7 +403,7 @@ export default function PacienteDetalhePage() {
         objetivoPaciente: editedPatient.objetivoPaciente || '',
       };
       await updateDoc(patientRef, dataToSave);
-      setPatient(prev => prev ? { ...prev, ...dataToSave } : undefined); 
+      setPatient(prev => prev ? { ...prev, ...dataToSave } : undefined);
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -420,8 +416,8 @@ export default function PacienteDetalhePage() {
     if (isEditing) {
       handleSaveEditedPatient();
     } else if (patient) {
-      setEditedPatient({ 
-        ...patient, 
+      setEditedPatient({
+        ...patient,
         objetivoPaciente: patient.objetivoPaciente || getFirstActiveObjectiveName() || ''
       });
       setIsEditing(true);
@@ -430,7 +426,7 @@ export default function PacienteDetalhePage() {
 
   const handleCancelEdit = () => {
     if (patient) {
-      setEditedPatient({ ...patient }); 
+      setEditedPatient({ ...patient });
     }
     setIsEditing(false);
   };
@@ -440,7 +436,7 @@ export default function PacienteDetalhePage() {
     const { name, value } = e.target;
     setEditedPatient(prev => prev ? { ...prev, [name]: value } : undefined);
   };
-  
+
   const handleSelectChange = (name: keyof Patient, value: string) => {
     if (!editedPatient) return;
     setEditedPatient(prev => prev ? { ...prev, [name]: value } : undefined);
@@ -453,7 +449,7 @@ export default function PacienteDetalhePage() {
       const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
       await updateDoc(patientRef, { status: newStatus });
       setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
-      if (editedPatient) { 
+      if (editedPatient) {
         setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
       }
       toast({ title: `Paciente ${newStatus === 'Ativo' ? 'ativado' : 'inativado'}`, description: `O status de ${patient.name} foi atualizado com sucesso.`, variant: newStatus === 'Ativo' ? 'success' : 'warning', });
@@ -476,24 +472,24 @@ export default function PacienteDetalhePage() {
     }
     const newEntry: HistoryItem = {
       id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      date: new Date().toISOString().split('T')[0], 
+      date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
       notes: newHistoryNote,
     };
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
-      
+
       const currentPatientDoc = await getDoc(patientRef);
       const currentPatientData = currentPatientDoc.data() as Patient | undefined;
       const currentHistory = currentPatientData?.history || [];
-      
-      const updatedHistory = [newEntry, ...currentHistory]; 
+
+      const updatedHistory = [newEntry, ...currentHistory];
 
       await updateDoc(patientRef, { history: updatedHistory });
 
       const updatedPatientState = { ...patient, history: updatedHistory };
       setPatient(updatedPatientState);
-      if(isEditing) setEditedPatient(updatedPatientState); 
+      if(isEditing) setEditedPatient(updatedPatientState);
 
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName() || '');
@@ -531,12 +527,12 @@ export default function PacienteDetalhePage() {
       return;
     }
     try {
-      const tiposRef = getAppointmentTypesPath(currentUserData); 
+      const tiposRef = getAppointmentTypesPath(currentUserData);
       await addDoc(tiposRef, { name: trimmedName, status: 'active', createdAt: serverTimestamp() });
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
       setNewCustomTypeName('');
       setIsAddTypeDialogOpen(false);
-      await fetchAppointmentTypes(currentUserData); 
+      await fetchAppointmentTypes(currentUserData);
     } catch (error) {
       console.error("Erro ao adicionar tipo:", error);
       toast({ title: 'Erro', description: 'Não foi possível adicionar o tipo de atendimento.', variant: 'destructive' });
@@ -581,7 +577,7 @@ export default function PacienteDetalhePage() {
       setTypeToToggleStatusConfirm(null);
       return;
     }
-    
+
     const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
     const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
 
@@ -627,7 +623,7 @@ export default function PacienteDetalhePage() {
       setTypeToDelete(null);
       return;
     }
-    
+
     try {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id);
@@ -792,10 +788,10 @@ export default function PacienteDetalhePage() {
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth() - 20; 
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 20;
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      let position = 10; 
-      pdf.addImage(imgData, 'PNG', 10, position, pdfWidth, pdfHeight); 
+      let position = 10;
+      pdf.addImage(imgData, 'PNG', 10, position, pdfWidth, pdfHeight);
       pdf.save(`evolucao-${patient.name.replace(/\s+/g, '_')}-${selectedHistoryNote.date}.pdf`);
       toast({ title: "PDF Exportado", description: "O PDF da nota foi baixado.", variant: "success" });
     } catch (error) {
@@ -805,7 +801,7 @@ export default function PacienteDetalhePage() {
   };
 
   const handleTabChange = (value: string) => {
-    setActiveTab(value); 
+    setActiveTab(value);
     if (value === "documentos") {
       toast({
         title: "Funcionalidade em Desenvolvimento",
@@ -827,15 +823,15 @@ export default function PacienteDetalhePage() {
     }
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
-      
+
       const currentPatientDoc = await getDoc(patientRef);
       const currentPatientData = currentPatientDoc.data() as Patient | undefined;
-      
+
       if (!currentPatientData) {
         toast({ title: "Erro", description: "Paciente não encontrado para atualizar histórico.", variant: "destructive" });
         return;
       }
-      
+
       const currentHistory = currentPatientData.history || [];
       const updatedHistory = currentHistory.filter(item => item.id !== historyItemToDelete.id);
       await updateDoc(patientRef, { history: updatedHistory });
@@ -856,7 +852,7 @@ export default function PacienteDetalhePage() {
 
   if (isLoading) return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando dados do paciente...</p></div>;
   if (!patient && !isLoading) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button></div>;
-  
+
   const displayPatient = isEditing ? editedPatient : patient;
   if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
 
@@ -879,7 +875,7 @@ export default function PacienteDetalhePage() {
     try {
       return format(parseISO(dateString), formatStr, { locale: ptBR });
     } catch (error) {
-      return dateString; 
+      return dateString;
     }
   };
 
@@ -1041,8 +1037,8 @@ export default function PacienteDetalhePage() {
 
               <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
               {displayPatient?.history && displayPatient.history.length > 0 ? (
-                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item) => (
-                  <Card key={item.id} className="bg-muted/50">
+                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
+                  <Card key={`${item.id || 'fallbackID'}-${index}`} className="bg-muted/50">
                     <CardHeader className="pb-3 flex flex-row justify-between items-start">
                       <div>
                         <CardTitle className="text-base"> {item.type} </CardTitle>
@@ -1307,7 +1303,7 @@ export default function PacienteDetalhePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
+
         <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}>
         <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
           <DialogHeader>
