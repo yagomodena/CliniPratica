@@ -45,8 +45,9 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
+  onAuthStateChanged, // Added onAuthStateChanged here
 } from 'firebase/auth';
-import { collection, setDoc, getDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc } from "firebase/firestore"; // Added updateDoc and deleteDoc
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
@@ -402,6 +403,15 @@ export default function ConfiguracoesPage() {
       return;
     }
     setActiveTab(value);
+  };
+
+  const handleOpenUserForm = (user?: User) => {
+    if (user) {
+      setEditingUser(user);
+    } else {
+      setEditingUser(null);
+    }
+    setIsUserFormOpen(true);
   };
 
 
@@ -791,3 +801,4 @@ export default function ConfiguracoesPage() {
     </div>
   );
 }
+
