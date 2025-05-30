@@ -77,14 +77,14 @@ export async function submitRegistrationForm(
       telefone: phone,
       nomeEmpresa: companyName || '',
       areaAtuacao: area || '',
-      plano: plan || 'essencial',
+      plano: plan || 'Gratuito', // Default to Gratuito if plan is not passed
       fotoPerfilUrl: '', // Pode ser atualizado depois
       cargo: 'Administrador',
       permissoes: {
         dashboard: true,
         pacientes: true,
         agendas: true,
-        mensagens: true,
+        // mensagens: true, // Mensagens removido
         financeiro: true,
         relatorios: true,
         configuracoes: true,
@@ -125,12 +125,4 @@ export async function submitRegistrationForm(
       status: 'error',
     };
   }
-
-  // Simulate success for now
-  await new Promise(resolve => setTimeout(resolve, 1000));
-
-  return {
-    message: 'Cadastro realizado com sucesso! Você será redirecionado para o login em breve.',
-    status: 'success',
-  };
 }

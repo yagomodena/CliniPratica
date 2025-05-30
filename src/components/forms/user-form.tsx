@@ -9,15 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { DialogFooter, DialogClose } from '@/components/ui/dialog'; // Added DialogClose
-import { LayoutDashboard, Users, Calendar, MessageSquare, BarChart, Settings, Landmark, UsersRound as UsersIcon } from 'lucide-react'; // Added UsersRound
+import { DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { LayoutDashboard, Users, Calendar, BarChart, Settings, Landmark, UsersRound as UsersIcon } from 'lucide-react';
 
 // Define menu items with their IDs and labels for permissions
 export const menuItemsConfig = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'pacientes', label: 'Pacientes', icon: Users },
   { id: 'agenda', label: 'Agenda', icon: Calendar },
-  { id: 'mensagens', label: 'Mensagens', icon: MessageSquare },
+  // { id: 'mensagens', label: 'Mensagens', icon: MessageSquare }, // Removed Mensagens
   { id: 'financeiro', label: 'Financeiro', icon: Landmark },
   { id: 'relatorios', label: 'Relatórios', icon: BarChart },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
@@ -64,6 +64,11 @@ const userFormSchema = z.object({
       return acc;
     }, {} as Record<MenuItemId, z.ZodOptional<z.ZodBoolean>>)
   ).default({}),
+  // Add other fields from User interface that should be validated
+  nomeCompleto: z.string().min(3, { message: "Nome completo deve ter pelo menos 3 caracteres." }).optional().or(z.literal('')),
+  nomeEmpresa: z.string().optional().or(z.literal('')),
+  plano: z.string().optional().or(z.literal('')),
+  telefone: z.string().optional().or(z.literal('')),
 }).refine(data => {
   if (data.password && data.password.length > 0) {
     return data.password === data.confirmPassword;
@@ -121,24 +126,6 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
         <Label htmlFor="nomeCompleto" className="text-right">Nome Completo*</Label>
         <Input id="nomeCompleto" {...register('nomeCompleto')} className="col-span-3" />
         {errors.nomeCompleto && <p className="col-span-4 text-right text-sm text-destructive">{errors.nomeCompleto.message}</p>}
-      </div>
-
-      <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="nomeEmpresa" className="text-right">Nome Empresa*</Label>
-        <Input id="nomeEmpresa" {...register('nomeEmpresa')} className="col-span-3" />
-        {errors.nomeEmpresa && <p className="col-span-4 text-right text-sm text-destructive">{errors.nomeEmpresa.message}</p>}
-      </div>
-
-      <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="plano" className="text-right">Plano</Label>
-        <Input id="plano" {...register('plano')} className="col-span-3" />
-        {errors.plano && <p className="col-span-4 text-right text-sm text-destructive">{errors.plano.message}</p>}
-      </div>
-
-      <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="telefone" className="text-right">Telefone*</Label>
-        <Input id="telefone" {...register('telefone')} className="col-span-3" />
-        {errors.telefone && <p className="col-span-4 text-right text-sm text-destructive">{errors.telefone.message}</p>}
       </div>
 
       <div className="grid grid-cols-4 items-center gap-4">
