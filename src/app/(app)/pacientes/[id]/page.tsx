@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -21,7 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
-import { db, storage, auth } from '@/firebase'; 
+import { db, storage, auth } from '@/firebase';
 import {
   addDoc,
   collection,
@@ -36,19 +36,26 @@ import {
   deleteDoc,
   arrayUnion,
   arrayRemove,
-  orderBy 
+  orderBy
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 
 const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod => mod.TiptapEditor), {
   ssr: false,
   loading: () => <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><p className="text-muted-foreground">Carregando editor...</p></div>,
 });
 
-type HistoryItem = { id?: string; date: string; type: string; notes: string };
-type DocumentItem = { name: string; uploadDate: string; url: string; storagePath: string; };
+type HistoryItem = { id: string; date: string; type: string; notes: string }; // Ensured id is not optional
+type DocumentItem = { name: string; uploadDate: string; url: string; storagePath: string; }; // Added id if needed for key
 type Patient = {
   internalId: string;
   id: string;
@@ -62,7 +69,7 @@ type Patient = {
   history: HistoryItem[];
   documents: DocumentItem[];
   slug: string;
-  objetivoPaciente?: string; // Added patient objective
+  objetivoPaciente?: string;
 };
 
 type AppointmentTypeObject = {
@@ -79,7 +86,6 @@ const initialAppointmentTypesData: AppointmentTypeObject[] = [
   { name: 'Outro', status: 'active' },
 ];
 
-// For Patient Objectives
 type PatientObjectiveObject = {
   id?: string;
   name: string;
@@ -138,7 +144,6 @@ export default function PacienteDetalhePage() {
   const [isDeleteTypeConfirmOpen, setIsDeleteTypeConfirmOpen] = useState(false);
   const [typeToDelete, setTypeToDelete] = useState<AppointmentTypeObject | null>(null);
 
-  // State for Patient Objectives
   const [patientObjectives, setPatientObjectives] = useState<PatientObjectiveObject[]>([]);
   const [isAddObjectiveDialogOpen, setIsAddObjectiveDialogOpen] = useState(false);
   const [newCustomObjectiveName, setNewCustomObjectiveName] = useState('');
@@ -151,6 +156,9 @@ export default function PacienteDetalhePage() {
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
   const [activeTab, setActiveTab] = useState("historico");
+
+  const [isDeleteHistoryConfirmOpen, setIsDeleteHistoryConfirmOpen] = useState(false);
+  const [historyItemToDelete, setHistoryItemToDelete] = useState<HistoryItem | null>(null);
 
   useEffect(() => {
     setIsClient(true);
@@ -175,12 +183,13 @@ export default function PacienteDetalhePage() {
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
-      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase()}` })).sort((a, b) => a.name.localeCompare(b.name));
+      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(allFetchedTypes.length > 0 ? allFetchedTypes : fallbackTypes);
+
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos de atendimento. Detalhe: ${error.message}`, variant: "warning", duration: 7000 });
-      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase()}` })).sort((a, b) => a.name.localeCompare(b.name));
+      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos de atendimento. Usando opções padrão. Detalhe: ${error.message}`, variant: "warning", duration: 7000 });
+      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
     }
   }, [fetchCurrentUserData, toast]);
@@ -195,12 +204,12 @@ export default function PacienteDetalhePage() {
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
-      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
+      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fetchedObjectives.length > 0 ? fetchedObjectives : fallback);
     } catch (error: any) {
       console.error("Erro ao buscar objetivos do paciente:", error);
       toast({ title: "Erro ao Carregar Objetivos", description: `Não foi possível carregar os objetivos. Usando opções padrão. Detalhe: ${error.message}`, variant: "warning" });
-      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name));
+      const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
     }
   }, [fetchCurrentUserData, toast]);
@@ -240,8 +249,8 @@ export default function PacienteDetalhePage() {
             ...data,
             internalId: docSnap.id,
             slug: patientSlug,
-            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}` })),
-            documents: (data.documents || []).map((doc, index) => ({ ...doc, id: doc.id || `doc-${index}`})) as DocumentItem[],
+            history: (data.history || []).map((item, index) => ({ ...item, id: item.id || `hist-${index}-${Date.now()}` })), // Ensure unique ID
+            documents: (data.documents || []).map((doc, index) => ({ ...doc, id: `doc-${index}`})) as DocumentItem[],
             objetivoPaciente: data.objetivoPaciente || '',
           };
           setPatient(fetchedPatient);
@@ -261,7 +270,7 @@ export default function PacienteDetalhePage() {
     if (patientSlug) {
       fetchPatientData();
     }
-  }, [patientSlug, router, toast, getFirstActiveObjectiveName]); // Added getFirstActiveObjectiveName to dependencies
+  }, [patientSlug, router, toast, getFirstActiveObjectiveName]);
 
   useEffect(() => {
     fetchAppointmentTypes();
@@ -295,7 +304,7 @@ export default function PacienteDetalhePage() {
         dob: editedPatient.dob || '',
         address: editedPatient.address || '',
         status: editedPatient.status || 'Ativo',
-        objetivoPaciente: editedPatient.objetivoPaciente || '', // Save objective
+        objetivoPaciente: editedPatient.objetivoPaciente || '',
       };
       await updateDoc(patientRef, dataToSave);
       setPatient({ ...editedPatient });
@@ -363,7 +372,7 @@ export default function PacienteDetalhePage() {
       return;
     }
     const newEntry: HistoryItem = {
-      id: `hist-${Date.now()}`,
+      id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`, // More unique ID
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
       notes: newHistoryNote,
@@ -396,18 +405,136 @@ export default function PacienteDetalhePage() {
     }
   };
 
-  const handleAddCustomType = async () => { /* ... (implementation as before, for appointment types) ... */ };
-  const handleSaveEditedTypeName = async () => { /* ... (implementation as before, for appointment types) ... */ };
-  const handleToggleTypeStatus = async (typeToToggle: AppointmentTypeObject) => { /* ... (implementation as before, for appointment types) ... */ };
-  const handleOpenDeleteTypeDialog = (type: AppointmentTypeObject) => { /* ... (implementation as before, for appointment types) ... */ };
-  const handleConfirmDeleteType = async () => { /* ... (implementation as before, for appointment types) ... */ };
+  const handleAddCustomType = async () => {
+    if (!auth.currentUser) return;
+    const userProfile = await fetchCurrentUserData();
+    if(!userProfile) return;
+    const trimmedName = newCustomTypeName.trim();
+    if (!trimmedName) {
+      toast({ title: 'Erro', description: 'Nome do tipo não pode ser vazio.', variant: 'destructive' });
+      return;
+    }
+    if (appointmentTypes.some(type => type.name.toLowerCase() === trimmedName.toLowerCase())) {
+      toast({ title: "Tipo Duplicado", description: `O tipo "${trimmedName}" já existe.`, variant: "destructive" });
+      return;
+    }
+    try {
+      const tiposRef = getAppointmentTypesPath(userProfile);
+      await addDoc(tiposRef, { name: trimmedName, status: 'active', createdAt: serverTimestamp() });
+      toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
+      setNewCustomTypeName('');
+      setIsAddTypeDialogOpen(false);
+      await fetchAppointmentTypes();
+    } catch (error) {
+      console.error("Erro ao adicionar tipo:", error);
+      toast({ title: 'Erro', description: 'Não foi possível adicionar o tipo de atendimento.', variant: 'destructive' });
+    }
+  };
 
-  // Objective Management Functions
+  const handleSaveEditedTypeName = async () => {
+    if (!editingTypeInfo || !editingTypeInfo.type.id || !auth.currentUser) return;
+    const userProfile = await fetchCurrentUserData();
+    if(!userProfile) return;
+    const { type: originalType, currentName } = editingTypeInfo;
+    const newNameTrimmed = currentName.trim();
+    if (!newNameTrimmed) {
+      toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
+      return;
+    }
+    if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() &&
+        appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
+      toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
+      return;
+    }
+    try {
+      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+      const docToUpdateRef = doc(tiposCollectionRef, originalType.id);
+      await updateDoc(docToUpdateRef, { name: newNameTrimmed });
+      setEditingTypeInfo(null);
+      toast({ title: "Sucesso", description: `Nome do tipo "${originalType.name}" atualizado para "${newNameTrimmed}".`, variant: "success" });
+      await fetchAppointmentTypes();
+      if (newHistoryType === originalType.name) {
+        setNewHistoryType(newNameTrimmed);
+      }
+    } catch (error) {
+      console.error("Erro ao editar nome do tipo:", error);
+      toast({ title: "Erro", description: "Falha ao atualizar o nome do tipo.", variant: "destructive" });
+    }
+  };
+
+  const handleToggleTypeStatus = async (typeToToggle: AppointmentTypeObject) => {
+     if (!typeToToggle || !typeToToggle.id || !auth.currentUser) {
+       toast({ title: 'Erro', description: 'Informações do tipo ou usuário incompletas.', variant: 'destructive' });
+      setTypeToToggleStatusConfirm(null);
+      return;
+    }
+    const userProfile = await fetchCurrentUserData();
+    if(!userProfile) return;
+    const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
+    const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
+    if (newStatus === 'inactive' && activeTypesCount <= 1 && appointmentTypes.length > 1) {
+        toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo quando outros tipos inativos existem.", variant: "warning" });
+        setTypeToToggleStatusConfirm(null);
+        return;
+    }
+     if (newStatus === 'inactive' && activeTypesCount === 1 && appointmentTypes.length === 1) {
+       toast({ title: "Atenção", description: "Não é possível desativar o único tipo de atendimento existente.", variant: "warning" });
+       setTypeToToggleStatusConfirm(null);
+       return;
+    }
+    try {
+      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+      const docToUpdateRef = doc(tiposCollectionRef, typeToToggle.id);
+      await updateDoc(docToUpdateRef, { status: newStatus });
+      toast({ title: "Status Alterado", description: `O tipo "${typeToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`, variant: "success" });
+      setTypeToToggleStatusConfirm(null);
+      await fetchAppointmentTypes();
+      if (newHistoryType === typeToToggle.name && newStatus === 'inactive') {
+        setNewHistoryType(getFirstActiveTypeName() || '');
+      }
+    } catch (error) {
+      console.error("Erro ao alterar status do tipo:", error);
+      toast({ title: "Erro", description: "Falha ao alterar o status do tipo.", variant: "destructive" });
+      setTypeToToggleStatusConfirm(null);
+    }
+  };
+
+  const handleOpenDeleteTypeDialog = (type: AppointmentTypeObject) => {
+    setTypeToDelete(type);
+    setIsDeleteTypeConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteType = async () => {
+     if (!typeToDelete || !typeToDelete.id || !auth.currentUser) {
+      toast({ title: 'Erro', description: 'Informações para exclusão incompletas.', variant: 'destructive' });
+      setIsDeleteTypeConfirmOpen(false);
+      setTypeToDelete(null);
+      return;
+    }
+    const userProfile = await fetchCurrentUserData();
+    if(!userProfile) return;
+    try {
+      const tiposCollectionRef = getAppointmentTypesPath(userProfile);
+      const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id);
+      await deleteDoc(docToDeleteRef);
+      toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
+      await fetchAppointmentTypes();
+      if (newHistoryType === typeToDelete.name) {
+        setNewHistoryType(getFirstActiveTypeName() || '');
+      }
+    } catch (error) {
+      console.error("Erro ao excluir tipo:", error);
+      toast({ title: "Erro ao Excluir", description: `Não foi possível excluir o tipo "${typeToDelete.name}". Verifique se ele está em uso.`, variant: "destructive" });
+    } finally {
+      setIsDeleteTypeConfirmOpen(false);
+      setTypeToDelete(null);
+    }
+  };
+
   const handleAddCustomObjective = async () => {
     if (!auth.currentUser) return;
     const userProfile = await fetchCurrentUserData();
     if(!userProfile) return;
-
     const trimmedName = newCustomObjectiveName.trim();
     if (!trimmedName) {
       toast({ title: "Nome Inválido", description: "O nome do objetivo não pode ser vazio.", variant: "destructive" });
@@ -434,7 +561,6 @@ export default function PacienteDetalhePage() {
     if (!editingObjectiveInfo || !editingObjectiveInfo.objective.id || !auth.currentUser) return;
     const userProfile = await fetchCurrentUserData();
      if(!userProfile) return;
-
     const { objective: originalObjective, currentName } = editingObjectiveInfo;
     const newNameTrimmed = currentName.trim();
     if (!newNameTrimmed) {
@@ -465,13 +591,17 @@ export default function PacienteDetalhePage() {
     if (!objectiveToToggle || !objectiveToToggle.id || !auth.currentUser) return;
      const userProfile = await fetchCurrentUserData();
      if(!userProfile) return;
-
     const newStatus = objectiveToToggle.status === 'active' ? 'inactive' : 'active';
     const activeObjectivesCount = patientObjectives.filter(o => o.status === 'active').length;
     if (newStatus === 'inactive' && activeObjectivesCount <= 1 && patientObjectives.length > 1) {
         toast({ title: "Atenção", description: "Não é possível desativar o último objetivo ativo.", variant: "warning" });
         setObjectiveToToggleStatusConfirm(null);
         return;
+    }
+     if (newStatus === 'inactive' && activeObjectivesCount === 1 && patientObjectives.length === 1) {
+       toast({ title: "Atenção", description: "Não é possível desativar o único objetivo existente.", variant: "warning" });
+       setObjectiveToToggleStatusConfirm(null);
+       return;
     }
     try {
         const objectivesCollectionRef = getPatientObjectivesPath(userProfile);
@@ -520,22 +650,107 @@ export default function PacienteDetalhePage() {
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
   const activePatientObjectives = patientObjectives.filter(o => o.status === 'active');
 
-  const handleOpenHistoryModal = (note: HistoryItem) => { /* ... (implementation as before) ... */ };
-  const handleExportPdf = async () => { /* ... (implementation as before) ... */ };
-  const handleTabChange = (value: string) => { /* ... (implementation as before) ... */ };
+  const handleOpenHistoryModal = (note: HistoryItem) => {
+    setSelectedHistoryNote(note);
+    setIsHistoryNoteModalOpen(true);
+  };
 
-  if (isLoading) return <div className="text-center py-10"><p>Carregando dados do paciente...</p></div>;
+  const handleExportPdf = async () => {
+    const contentElement = document.getElementById('historyNoteContentToExport');
+    if (!contentElement || !selectedHistoryNote || !patient) {
+      toast({ title: "Erro", description: "Não foi possível encontrar o conteúdo para exportar.", variant: "destructive" });
+      return;
+    }
+    try {
+      const canvas = await html2canvas(contentElement, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 20; // A4 width in mm with margin
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      let position = 10; // Top margin
+      pdf.addImage(imgData, 'PNG', 10, position, pdfWidth, pdfHeight); // Left margin
+      pdf.save(`evolucao-${patient.name.replace(/\s+/g, '_')}-${selectedHistoryNote.date}.pdf`);
+      toast({ title: "PDF Exportado", description: "O PDF da nota foi baixado.", variant: "success" });
+    } catch (error) {
+      console.error("Erro ao exportar PDF:", error);
+      toast({ title: "Erro ao Exportar", description: "Não foi possível gerar o PDF.", variant: "destructive" });
+    }
+  };
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value); // Always update the active tab
+    if (value === "documentos") {
+      toast({
+        title: "Funcionalidade em Desenvolvimento",
+        description: "A gestão de documentos estará disponível em breve!",
+        variant: "default",
+      });
+    }
+  };
+
+  const handleOpenDeleteHistoryDialog = (historyItem: HistoryItem) => {
+    setHistoryItemToDelete(historyItem);
+    setIsDeleteHistoryConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteHistory = async () => {
+    if (!patient || !patient.internalId || !historyItemToDelete) {
+      toast({ title: "Erro", description: "Não foi possível identificar o registro para excluir.", variant: "destructive" });
+      return;
+    }
+    try {
+      const patientRef = doc(db, 'pacientes', patient.internalId);
+      // Filter out the item to delete. Ensure we are comparing by a unique ID.
+      const updatedHistory = patient.history.filter(item => item.id !== historyItemToDelete.id);
+      await updateDoc(patientRef, { history: updatedHistory });
+
+      const updatedPatientData = { ...patient, history: updatedHistory };
+      setPatient(updatedPatientData);
+      if(isEditing) setEditedPatient(updatedPatientData);
+
+      toast({ title: "Registro Excluído", description: "O registro do histórico foi removido.", variant: "success" });
+    } catch (error) {
+      console.error("Erro ao excluir registro do histórico:", error);
+      toast({ title: "Erro", description: "Não foi possível excluir o registro.", variant: "destructive" });
+    } finally {
+      setIsDeleteHistoryConfirmOpen(false);
+      setHistoryItemToDelete(null);
+    }
+  };
+
+
+  if (isLoading) return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando dados do paciente...</p></div>;
   if (!patient && !isLoading) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button></div>;
   
   const displayPatient = isEditing ? editedPatient : patient;
   if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
 
-  const calculateAge = (dob: string) => { /* ... (implementation as before) ... */ };
-  const formatDate = (dateString: string, formatStr = 'PPP') => { /* ... (implementation as before) ... */ };
+  const calculateAge = (dob: string) => {
+    if (!dob) return '-';
+    try {
+      const birthDate = parseISO(dob);
+      const age = new Date().getFullYear() - birthDate.getFullYear();
+      const m = new Date().getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && new Date().getDate() < birthDate.getDate())) {
+        return age - 1;
+      }
+      return age;
+    } catch (error) {
+      return '-';
+    }
+  };
+  const formatDate = (dateString: string, formatStr = 'PPP') => {
+    if (!dateString) return '-';
+    try {
+      return format(parseISO(dateString), formatStr, { locale: ptBR });
+    } catch (error) {
+      return dateString; // Return original string if parsing fails
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* ... (Header buttons for Edit, Activate/Inactivate, Delete Patient as before) ... */}
       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <Button variant="outline" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Voltar
@@ -616,7 +831,6 @@ export default function PacienteDetalhePage() {
       </div>
 
       <Card className="shadow-md overflow-hidden">
-        {/* ... (CardHeader with patient info as before) ... */}
          <CardHeader className="bg-muted/30 p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Avatar className="h-20 w-20 border">
@@ -648,7 +862,6 @@ export default function PacienteDetalhePage() {
             </TabsList>
 
             <TabsContent value="historico" className="p-6 space-y-6 mt-0">
-              {/* ... (Content for Histórico as before, including TiptapEditor and history list) ... */}
                 <Card>
                 <CardHeader>
                   <CardTitle className="text-lg font-semibold flex items-center"><CalendarPlus className="mr-2 h-5 w-5 text-primary" /> Novo Registro de Atendimento</CardTitle>
@@ -695,10 +908,31 @@ export default function PacienteDetalhePage() {
               <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
               {displayPatient?.history && displayPatient.history.length > 0 ? (
                 [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item) => (
-                  <Card key={item.id || item.date} className="bg-muted/50">
-                    <CardHeader className="pb-3 flex flex-row justify-between items-center">
-                      <CardTitle className="text-base"> {item.type} </CardTitle>
-                      <span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span>
+                  <Card key={item.id} className="bg-muted/50">
+                    <CardHeader className="pb-3 flex flex-row justify-between items-start">
+                      <div>
+                        <CardTitle className="text-base"> {item.type} </CardTitle>
+                        <span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
+                            <span className="sr-only">Mais opções</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleOpenHistoryModal(item)}>
+                            <Eye className="mr-2 h-4 w-4" /> Ver Detalhes
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleOpenDeleteHistoryDialog(item)}
+                            className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive-foreground"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> Excluir Registro
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </CardHeader>
                     <CardContent>
                       <div
@@ -717,7 +951,6 @@ export default function PacienteDetalhePage() {
             </TabsContent>
 
             <TabsContent value="documentos" className="p-6 space-y-6 mt-0">
-              {/* ... (Content for Documentos as before - placeholder) ... */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg font-semibold">Documentos do Paciente</CardTitle>
@@ -734,14 +967,11 @@ export default function PacienteDetalhePage() {
               <h3 className="text-lg font-semibold">Informações Pessoais</h3>
               {isEditing ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                  {/* ... (Nome, Nascimento, Email, Telefone, Endereço as before) ... */}
                    <div className="space-y-1"> <Label htmlFor="edit-name">Nome Completo</Label> <Input id="edit-name" name="name" value={editedPatient?.name || ''} onChange={handleInputChange} /> </div>
                   <div className="space-y-1"> <Label htmlFor="edit-dob">Data de Nascimento</Label> <Input id="edit-dob" name="dob" type="date" value={editedPatient?.dob || ''} onChange={handleInputChange} /> </div>
                   <div className="space-y-1"> <Label htmlFor="edit-email">Email</Label> <Input id="edit-email" name="email" type="email" value={editedPatient?.email || ''} onChange={handleInputChange} /> </div>
                   <div className="space-y-1"> <Label htmlFor="edit-phone">Telefone</Label> <Input id="edit-phone" name="phone" type="tel" value={editedPatient?.phone || ''} onChange={handleInputChange} /> </div>
                   <div className="md:col-span-2 space-y-1"> <Label htmlFor="edit-address">Endereço</Label> <Input id="edit-address" name="address" value={editedPatient?.address || ''} onChange={handleInputChange} /> </div>
-
-                  {/* Patient Objective Field - Edit Mode */}
                   <div className="space-y-1">
                     <Label htmlFor="edit-objetivoPaciente">Objetivo do Paciente</Label>
                     <div className="flex items-center gap-1">
@@ -764,8 +994,7 @@ export default function PacienteDetalhePage() {
                         </Button>
                     </div>
                   </div>
-
-                  <div className="space-y-1"> {/* Status field */}
+                  <div className="space-y-1">
                     <Label htmlFor="edit-status">Status</Label>
                     <select id="edit-status" name="status" value={editedPatient?.status || 'Ativo'} onChange={handleInputChange} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                       <option value="Ativo">Ativo</option>
@@ -775,13 +1004,11 @@ export default function PacienteDetalhePage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                  {/* ... (Display mode: Nome, Nascimento, Email, Telefone, Endereço as before) ... */}
                    <div><strong>Nome Completo:</strong> {patient?.name}</div>
                   <div><strong>Data de Nascimento:</strong> {formatDate(patient?.dob || '')}</div>
                   <div><strong>Email:</strong> {patient?.email}</div>
                   <div><strong>Telefone:</strong> {patient?.phone || '-'}</div>
                   <div className="md:col-span-2"><strong>Endereço:</strong> {patient?.address || '-'}</div>
-                  {/* Patient Objective Field - Display Mode */}
                   <div><strong>Objetivo do Paciente:</strong> {patient?.objetivoPaciente || '-'}</div>
                   <div><strong>Status:</strong> <Badge variant={patient?.status === 'Ativo' ? 'default' : 'secondary'} className={`ml-2 px-2 py-0.5 text-xs ${patient?.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{patient?.status}</Badge></div>
                 </div>
@@ -791,8 +1018,6 @@ export default function PacienteDetalhePage() {
         </CardContent>
       </Card>
 
-      {/* Dialogs for Appointment Type Management (as before) */}
-      {/* ... */}
         <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -819,7 +1044,7 @@ export default function PacienteDetalhePage() {
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
               <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
-                {editingTypeInfo?.type.id === type.id ? (
+                {editingTypeInfo && editingTypeInfo.type && editingTypeInfo.type.id === type.id ? (
                   <div className="flex-grow flex items-center gap-2 mr-2">
                     <Input value={editingTypeInfo.currentName} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" />
                     <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar Nome"><Save className="h-4 w-4" /></Button>
@@ -829,7 +1054,7 @@ export default function PacienteDetalhePage() {
                   <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
-                  {editingTypeInfo?.type.id !== type.id && (
+                  {(!editingTypeInfo || !editingTypeInfo.type || editingTypeInfo.type.id !== type.id) && (
                     <>
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentName: type.name })} title="Editar Nome">
                         <Pencil className="h-4 w-4" />
@@ -857,7 +1082,6 @@ export default function PacienteDetalhePage() {
         <AlertDialogContent> <AlertDialogHeader> <AlertDialogTitle>Confirmar Exclusão de Tipo</AlertDialogTitle> <AlertDialogDescription> Tem certeza que deseja excluir o tipo de atendimento "<strong>{typeToDelete?.name}</strong>"? Esta ação não pode ser desfeita. Registros de histórico existentes com este tipo não serão alterados, mas o tipo não estará mais disponível para seleção. </AlertDialogDescription> </AlertDialogHeader> <AlertDialogFooter> <AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel> <AlertDialogAction onClick={handleConfirmDeleteType} className="bg-destructive hover:bg-destructive/90" > Excluir Tipo </AlertDialogAction> </AlertDialogFooter> </AlertDialogContent>
       </AlertDialog>
 
-      {/* Dialogs for Patient Objective Management */}
       <Dialog open={isAddObjectiveDialogOpen} onOpenChange={setIsAddObjectiveDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -884,7 +1108,7 @@ export default function PacienteDetalhePage() {
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {patientObjectives.map((obj) => (
               <div key={obj.id || obj.name} className="flex items-center justify-between p-2 border rounded-md">
-                {editingObjectiveInfo?.objective.id === obj.id ? (
+                {editingObjectiveInfo && editingObjectiveInfo.objective && editingObjectiveInfo.objective.id === obj.id ? (
                   <div className="flex-grow flex items-center gap-2 mr-2">
                     <Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" />
                     <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedObjectiveName} title="Salvar Nome"><Save className="h-4 w-4" /></Button>
@@ -894,7 +1118,7 @@ export default function PacienteDetalhePage() {
                   <span className={`flex-grow ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
-                  {editingObjectiveInfo?.objective.id !== obj.id && (
+                  {(!editingObjectiveInfo || !editingObjectiveInfo.objective || editingObjectiveInfo.objective.id !== obj.id) && (
                     <>
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar Nome">
                         <Pencil className="h-4 w-4" />
@@ -949,7 +1173,7 @@ export default function PacienteDetalhePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-       {/* History Note Detail Modal - as before */}
+      
         <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}>
         <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
           <DialogHeader>
@@ -965,6 +1189,28 @@ export default function PacienteDetalhePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={isDeleteHistoryConfirmOpen} onOpenChange={(isOpen) => {
+        if (!isOpen) setHistoryItemToDelete(null);
+        setIsDeleteHistoryConfirmOpen(isOpen);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão de Registro</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este registro do histórico de <strong>{historyItemToDelete?.type}</strong> em {historyItemToDelete ? formatDate(historyItemToDelete.date) : ''}? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setHistoryItemToDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteHistory} className="bg-destructive hover:bg-destructive/90">
+              Excluir Registro
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
+
