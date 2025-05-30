@@ -706,7 +706,7 @@ export default function AgendaPage() {
                   updatedAt: serverTimestamp(),
               });
              }
-          } else if (newStatus === 'cancelado') {
+          } else if (newStatus === 'cancelado') { // Changed from delete to cancel
             await updateDoc(financeDocRef, {
               status: 'Cancelado',
               updatedAt: serverTimestamp(),
@@ -732,7 +732,12 @@ export default function AgendaPage() {
   const handleConfirmDeleteAppt = async () => {
     if (!appointmentToDeleteInfo || !currentUser || !currentUserData) return;
     try {
-      await deleteDoc(doc(db, 'agendamentos', appointmentToDeleteInfo.appointmentId));
+      // Instead of deleting, mark as cancelled
+      const apptRef = doc(db, 'agendamentos', appointmentToDeleteInfo.appointmentId);
+      await updateDoc(apptRef, {
+        status: 'cancelado',
+        updatedAt: serverTimestamp()
+      });
   
       if (currentUserData.plano !== 'Gratuito') {
         const financialTransactionsRef = collection(db, 'financialTransactions');
@@ -749,11 +754,11 @@ export default function AgendaPage() {
         }
       }
   
-      toast({ title: "Agendamento Excluído", description: `Agendamento para ${appointmentToDeleteInfo.patientName} foi excluído.`, variant: "success" });
+      toast({ title: "Agendamento Cancelado", description: `Agendamento para ${appointmentToDeleteInfo.patientName} foi cancelado.`, variant: "success" });
       await fetchAppointments(currentUser);
     } catch (error) {
-      console.error(`Erro ao excluir agendamento:`, error);
-      toast({ title: "Erro", description: `Não foi possível excluir o agendamento.`, variant: "destructive" });
+      console.error(`Erro ao cancelar agendamento:`, error);
+      toast({ title: "Erro", description: `Não foi possível cancelar o agendamento.`, variant: "destructive" });
     } finally {
       setIsDeleteApptConfirmOpen(false);
       setAppointmentToDeleteInfo(null);
@@ -781,7 +786,6 @@ export default function AgendaPage() {
     const typeDataToSave: Partial<AppointmentTypeObject> = {
         name: trimmedName,
         status: 'active',
-        createdAt: serverTimestamp(),
     };
 
     if (currentUserData.plano !== 'Gratuito') {
@@ -795,7 +799,7 @@ export default function AgendaPage() {
 
     try {
       const tiposRef = getAppointmentTypesPath(currentUserData);
-      await addDoc(tiposRef, typeDataToSave);
+      await addDoc(tiposRef, typeDataToSave); // Removed serverTimestamp from here as it's not in the schema
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
       setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
@@ -1187,7 +1191,9 @@ export default function AgendaPage() {
                   </div>
                   <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap justify-end">
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditDialog(appt, formattedDateKey)} title="Editar" disabled={appt.status === 'cancelado' || appt.status === 'realizado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}><Edit className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:bg-green-100" onClick={() => openConfirmWhatsAppDialog(appt)} title="Mensagem" disabled={appt.status !== 'agendado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}><MessageSquare className="h-4 w-4" /></Button>
+                    {currentUserData?.plano !== 'Gratuito' && (
+                       <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:bg-green-100" onClick={() => openConfirmWhatsAppDialog(appt)} title="Mensagem" disabled={appt.status !== 'agendado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}><MessageSquare className="h-4 w-4" /></Button>
+                    )}
                      <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4"/></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -1403,7 +1409,7 @@ export default function AgendaPage() {
       <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setAppointmentToDeleteInfo(null); setIsDeleteApptConfirmOpen(isOpen); }}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir o agendamento para {appointmentToDeleteInfo?.patientName} às {appointmentToDeleteInfo?.time}?</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteAppt} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteAppt} className="bg-destructive hover:bg-destructive/90">Excluir Agendamento</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
