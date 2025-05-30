@@ -50,7 +50,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-
 const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod => mod.TiptapEditor), {
   ssr: false,
   loading: () => <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><p className="text-muted-foreground">Carregando editor...</p></div>,
@@ -61,7 +60,7 @@ type DocumentItem = { id: string; name: string; uploadDate: string; url: string;
 
 type Patient = {
   internalId: string;
-  id: string; // slug or Firestore ID. For this context, mostly Firestore ID (internalId).
+  id: string; 
   name: string;
   email: string;
   phone: string;
@@ -73,8 +72,8 @@ type Patient = {
   documents: DocumentItem[];
   slug: string;
   objetivoPaciente?: string;
-  lastVisit?: string; // Added from pacientes/page.tsx for consistency
-  nextVisit?: string; // Added from pacientes/page.tsx for consistency
+  lastVisit?: string; 
+  nextVisit?: string; 
 };
 
 type AppointmentTypeObject = {
@@ -97,16 +96,18 @@ type PatientObjectiveObject = {
   status: 'active' | 'inactive';
 };
 
-const initialPatientObjectivesData: PatientObjectiveObject[] = []; // Starts empty
+const initialPatientObjectivesData: PatientObjectiveObject[] = [];
 
 
 const getAppointmentTypesPath = (userData: any) => {
   if (!userData) {
+    console.warn("getAppointmentTypesPath: No user data, using fallback path.");
     return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos');
   }
   const isClinica = userData.plano === 'Clínica';
   const identifier = isClinica ? userData.nomeEmpresa : userData.uid;
   if (!identifier) {
+    console.warn("getAppointmentTypesPath: User/Company identifier not found, using fallback path.");
     return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos');
   }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
@@ -114,11 +115,13 @@ const getAppointmentTypesPath = (userData: any) => {
 
 const getPatientObjectivesPath = (userData: any) => {
   if (!userData) {
+    console.warn("getPatientObjectivesPath: No user data, using fallback path.");
     return collection(db, 'patientObjectives', 'default_fallback_objectives', 'objetivos');
   }
   const isClinica = userData.plano === 'Clínica';
   const identifier = isClinica ? userData.nomeEmpresa : userData.uid;
   if (!identifier) {
+    console.warn("getPatientObjectivesPath: User/Company identifier not found, using fallback path.");
     return collection(db, 'patientObjectives', 'default_fallback_objectives', 'objetivos');
   }
   return collection(db, 'patientObjectives', identifier, 'objetivos');
@@ -173,7 +176,7 @@ export default function PacienteDetalhePage() {
   const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null): Promise<any | null> => {
     if (!user) {
       console.warn("fetchCurrentUserData: No user provided.");
-      setCurrentUserData(null);
+      setCurrentUserData(null); 
       return null;
     }
     try {
@@ -181,16 +184,16 @@ export default function PacienteDetalhePage() {
       const userDocSnap = await getDoc(userDocRef);
       if (userDocSnap.exists()) {
         const data = { ...userDocSnap.data(), uid: user.uid };
-        setCurrentUserData(data); // Set state
-        return data; // Return data for immediate use
+        setCurrentUserData(data);
+        return data;
       }
-      console.warn("fetchCurrentUserData: User data not found in Firestore for UID:", user.uid);
+      console.warn("fetchCurrentUserData: User data not found for UID:", user.uid);
       toast({ title: "Erro de Autenticação", description: "Dados do usuário não encontrados.", variant: "destructive" });
-      setCurrentUserData(null);
+      setCurrentUserData(null); 
     } catch (error) {
       console.error("Error fetching user data:", error);
       toast({ title: "Erro de Autenticação", description: "Não foi possível carregar dados do usuário.", variant: "destructive" });
-      setCurrentUserData(null);
+      setCurrentUserData(null); 
     }
     return null;
   }, [toast]);
@@ -205,21 +208,23 @@ export default function PacienteDetalhePage() {
     }
     try {
       const tiposRef = getAppointmentTypesPath(userDataForPath);
-      const snapshot = await getDocs(query(tiposRef, orderBy("name"))); // Fetch all, filter client-side or rely on Firestore rules for security
+      const snapshot = await getDocs(query(tiposRef, orderBy("name"))); 
       const allFetchedTypes: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
       }));
-      const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
-      setAppointmentTypes(allFetchedTypes.length > 0 ? allFetchedTypes : fallbackTypes);
+      
+      const fallbackTypesWithIds = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
+      setAppointmentTypes(allFetchedTypes.length > 0 ? allFetchedTypes : fallbackTypesWithIds);
+
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
       toast({ title: "Erro ao Carregar Tipos", description: "Não foi possível carregar os tipos de atendimento. Usando padrões.", variant: "warning", duration: 4000 });
       const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
     }
-  }, [toast]);
+  }, [toast, setAppointmentTypes]);
 
   const fetchPatientObjectives = useCallback(async (userDataForPath: any) => {
     if (!userDataForPath) {
@@ -244,8 +249,7 @@ export default function PacienteDetalhePage() {
       const fallback = initialPatientObjectivesData.map(o => ({ ...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
     }
-  }, [toast]);
-
+  }, [toast, setPatientObjectives]);
 
   useEffect(() => {
     setIsClient(true);
@@ -257,7 +261,7 @@ export default function PacienteDetalhePage() {
 
   const loadPageData = useCallback(async () => {
     if (!patientSlug || !firebaseUserAuth) {
-      setIsLoading(!!patientSlug);
+      setIsLoading(!!patientSlug); 
       return;
     }
     setIsLoading(true);
@@ -265,7 +269,7 @@ export default function PacienteDetalhePage() {
       const uData = await fetchCurrentUserData(firebaseUserAuth);
       if (!uData) {
         setIsLoading(false);
-        router.push('/login'); // Redirect if user data can't be fetched
+        router.push('/login'); 
         return;
       }
 
@@ -329,7 +333,6 @@ export default function PacienteDetalhePage() {
     if (firebaseUserAuth && patientSlug) {
       loadPageData();
     } else if (!firebaseUserAuth && !isLoading && patientSlug) {
-      // If user is not authenticated but we have a slug and are not loading, it's a redirect case
       router.push('/login');
     }
   }, [firebaseUserAuth, patientSlug, loadPageData, router, isLoading]);
@@ -346,6 +349,8 @@ export default function PacienteDetalhePage() {
   useEffect(() => {
     if (patient && (appointmentTypes.length > 0 || patientObjectives.length > 0)) {
       const firstActiveObjective = getFirstActiveObjectiveName();
+      const firstActiveType = getFirstActiveTypeName();
+      
       const currentPatientObjective = patient.objetivoPaciente;
       let finalObjective = currentPatientObjective;
 
@@ -354,29 +359,19 @@ export default function PacienteDetalhePage() {
       }
     
       setEditedPatient(prev => {
-        // Only spread previous editedPatient data if it's for the same patient and edit mode is active
         const basePatientData = {
           ...patient,
           objetivoPaciente: finalObjective,
         };
         if (isEditing && prev && prev.internalId === patient.internalId) {
           return {
-            ...basePatientData, // Start with current patient data and the determined objective
-            name: prev.name, // Keep existing edits
-            email: prev.email,
-            phone: prev.phone,
-            dob: prev.dob,
-            address: prev.address,
-            status: prev.status,
-            // Ensure 'objetivoPaciente' from prev is considered if it was changed during edit
-            objetivoPaciente: prev.objetivoPaciente !== undefined ? prev.objetivoPaciente : finalObjective,
+            ...prev, // Keep existing edits from the form
+            objetivoPaciente: prev.objetivoPaciente !== undefined ? prev.objetivoPaciente : finalObjective, // Prioritize form edit
           };
         }
-        return basePatientData; // If not editing or different patient, reset to current patient data
+        return basePatientData;
       });
 
-
-      const firstActiveType = getFirstActiveTypeName();
       if (!newHistoryType || !appointmentTypes.find(at => at.name === newHistoryType && at.status === 'active')) {
           setNewHistoryType(firstActiveType || '');
       }
@@ -384,7 +379,7 @@ export default function PacienteDetalhePage() {
       setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || '' });
       if (!newHistoryType && appointmentTypes.length > 0) setNewHistoryType(getFirstActiveTypeName() || '');
     }
-  }, [patient, appointmentTypes, patientObjectives, getFirstActiveTypeName, getFirstActiveObjectiveName, isEditing, newHistoryType]); // Added isEditing, newHistoryType
+  }, [patient, appointmentTypes, patientObjectives, getFirstActiveTypeName, getFirstActiveObjectiveName, isEditing]);
 
 
   const handleSaveEditedPatient = async () => {
@@ -1046,8 +1041,8 @@ export default function PacienteDetalhePage() {
 
               <h3 className="text-lg font-semibold pt-6 border-t">Evolução do Paciente</h3>
               {displayPatient?.history && displayPatient.history.length > 0 ? (
-                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
-                  <Card key={`${item.id || 'fallbackID'}-${index}`} className="bg-muted/50">
+                [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item) => (
+                  <Card key={item.id} className="bg-muted/50">
                     <CardHeader className="pb-3 flex flex-row justify-between items-start">
                       <div>
                         <CardTitle className="text-base"> {item.type} </CardTitle>
