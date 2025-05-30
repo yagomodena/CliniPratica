@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserPlus, History, DollarSign, CalendarClock, Send, CheckCircle } from 'lucide-react';
+import { UserPlus, History, DollarSign, CalendarClock, BarChart, CheckCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface Benefit {
@@ -31,9 +31,9 @@ const benefits: Benefit[] = [
     description: 'Gerencie seus horários e receba alertas para não perder compromissos.',
   },
   {
-    icon: Send,
-    title: 'Envio Automático de Mensagens',
-    description: 'Configure lembretes e mensagens automáticas para seus pacientes.',
+    icon: BarChart,
+    title: 'Relatórios Inteligentes',
+    description: 'Obtenha insights valiosos sobre seu desempenho, acompanhe o progresso e tome decisões baseadas em dados.',
   },
   {
     icon: CheckCircle,
@@ -69,4 +69,3 @@ export function BenefitsSection() {
     </section>
   );
 }
-
