@@ -39,8 +39,8 @@ import { cn } from '@/lib/utils';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
 import {
-  createUserWithEmailAndPassword,
-  updateProfile,
+  createUserWithEmailAndPassword, // Importar
+  updateProfile as updateAuthProfile, // Renomear para evitar conflito com o estado `profile`
   getAuth,
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -86,7 +86,7 @@ export default function ConfiguracoesPage() {
     areaAtuacao: '',
     plano: '',
     fotoPerfilUrl: '',
-    nomeEmpresa: '', // Added nomeEmpresa to profile state
+    nomeEmpresa: '',
   });
 
   const [currentUserPlan, setCurrentUserPlan] = useState<string>('Gratuito');
@@ -117,7 +117,7 @@ export default function ConfiguracoesPage() {
       const userDocRef = doc(db, 'usuarios', user.uid);
       const userDocSnap = await getDoc(userDocRef);
       
-      let data: any = {}; // Define 'any' here or a more specific type if available
+      let data: any = {}; 
       if (userDocSnap.exists()) {
         data = userDocSnap.data();
       } else {
@@ -130,7 +130,7 @@ export default function ConfiguracoesPage() {
       const areaAtuacao = data.areaAtuacao || '';
       const plano = data.plano || 'Gratuito';
       const fotoPerfilUrl = user.photoURL || data.fotoPerfilUrl || '';
-      const nomeEmpresa = data.nomeEmpresa || ''; // Fetch nomeEmpresa
+      const nomeEmpresa = data.nomeEmpresa || ''; 
 
       setProfile({ nomeCompleto, email, telefone, areaAtuacao, plano, fotoPerfilUrl, nomeEmpresa });
       setCurrentUserPlan(plano);
@@ -160,7 +160,6 @@ export default function ConfiguracoesPage() {
     setIsLoadingUsers(true);
     try {
       const usersRef = collection(db, 'usuarios');
-      // Fetch users of the same clinic, excluding the admin themselves
       const q = query(usersRef, where('nomeEmpresa', '==', profile.nomeEmpresa), where('email', '!=', auth.currentUser.email), orderBy('nomeCompleto'));
       const querySnapshot = await getDocs(q);
       const clinicUsers: User[] = [];
@@ -176,7 +175,7 @@ export default function ConfiguracoesPage() {
           criadoEm: data.criadoEm?.toDate()?.toISOString() || new Date().toISOString(),
           fotoPerfilUrl: data.fotoPerfilUrl || '',
           nomeEmpresa: data.nomeEmpresa || '',
-          plano: data.plano || '', // Or derive from clinic plan
+          plano: data.plano || '', 
           telefone: data.telefone || '',
         });
       });
@@ -210,7 +209,7 @@ export default function ConfiguracoesPage() {
         return;
       }
 
-      await updateProfile(user, {
+      await updateAuthProfile(user, { // Usar updateAuthProfile aqui
         displayName: profile.nomeCompleto,
         photoURL: profile.fotoPerfilUrl,
       });
@@ -221,7 +220,7 @@ export default function ConfiguracoesPage() {
         telefone: profile.telefone,
         areaAtuacao: profile.areaAtuacao,
         fotoPerfilUrl: profile.fotoPerfilUrl,
-        nomeEmpresa: profile.nomeEmpresa, // Save nomeEmpresa
+        nomeEmpresa: profile.nomeEmpresa, 
       };
       
       Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
@@ -348,59 +347,87 @@ export default function ConfiguracoesPage() {
   };
 
   const handleUserFormSubmit = async (data: UserFormData) => {
-    try {
-      const mainAuthUser = auth.currentUser;
-      if (!mainAuthUser) {
-        toast({ title: "Erro de Autenticação", description: "Usuário principal não autenticado.", variant: "destructive" });
+    const mainAuthUser = auth.currentUser;
+    if (!mainAuthUser) {
+      toast({ title: "Erro de Autenticação", description: "Usuário principal (admin) não autenticado.", variant: "destructive" });
+      return;
+    }
+    if (!profile.nomeEmpresa && currentUserPlan === 'Clínica') {
+        toast({ title: "Erro", description: "Nome da empresa do administrador não encontrado. Atualize o perfil.", variant: "destructive" });
         return;
-      }
+    }
 
+    try {
       if (editingUser) {
+        // Editing existing user
         const userDocRef = doc(db, 'usuarios', editingUser.id);
         const userDataToUpdate: Partial<User> = {
           email: data.email,
           cargo: data.cargo,
           permissoes: data.permissoes,
           nomeCompleto: data.nomeCompleto || '',
-          // nomeEmpresa is not typically changed for sub-users here, it's set at creation.
+          telefone: data.telefone || '',
+          areaAtuacao: data.areaAtuacao || '',
+          // nomeEmpresa is not changed here for sub-users
         };
         await updateDoc(userDocRef, userDataToUpdate);
-        setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...userDataToUpdate } : u));
         toast({ title: "Usuário Atualizado", description: `Dados de ${data.email} atualizados.`, variant: "success" });
       } else {
-        // New User Creation
-        const newUserId = doc(collection(db, 'usuarios')).id;
+        // Adding New User
+        if (!data.password || data.password.length < 6) {
+          toast({ title: "Erro de Validação", description: "A senha é obrigatória e deve ter pelo menos 6 caracteres.", variant: "destructive" });
+          return;
+        }
+        if (data.password !== data.confirmPassword) {
+          toast({ title: "Erro de Validação", description: "As senhas não coincidem.", variant: "destructive" });
+          return;
+        }
+
+        // 1. Create user in Firebase Auth
+        const newUserCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+        const newAuthUser = newUserCredential.user;
+
+        // 2. Update profile in Firebase Auth (optional, but good practice)
+        if (data.nomeCompleto) {
+          await updateAuthProfile(newAuthUser, { displayName: data.nomeCompleto });
+        }
+
+        // 3. Prepare user document for Firestore
         const newUserDoc = {
           email: data.email,
-          cargo: data.cargo,
+          cargo: data.cargo || 'Colaborador',
           permissoes: data.permissoes,
           nomeCompleto: data.nomeCompleto || '',
-          ownerId: mainAuthUser.uid,
-          nomeEmpresa: profile.nomeEmpresa || '', // Assign admin's company name
-          plano: 'Clínica', // Sub-users of a clinic are part of the clinic's plan context
+          ownerId: mainAuthUser.uid, // UID of the admin who created this user
+          nomeEmpresa: profile.nomeEmpresa, // Admin's company name
+          plano: 'Clínica', // Sub-users are part of the clinic's plan context
           createdAt: serverTimestamp(),
           fotoPerfilUrl: '', // Default
-          telefone: data.telefone || '', // Use phone from form if available
-          areaAtuacao: data.areaAtuacao || '', // Use area from form if available
+          telefone: data.telefone || '',
+          areaAtuacao: data.areaAtuacao || '',
         };
-        await setDoc(doc(db, 'usuarios', newUserId), newUserDoc);
 
-        const newUserForState: User = {
-          id: newUserId,
-          ...newUserDoc,
-          criadoEm: new Date().toISOString(),
-        };
-        delete (newUserForState as any).createdAt; // Remove Firestore timestamp for local state
-
-        setUsers([...users, newUserForState]);
+        // 4. Save user data to Firestore using the Auth UID as document ID
+        await setDoc(doc(db, 'usuarios', newAuthUser.uid), newUserDoc);
+        
         toast({ title: "Usuário Adicionado", description: `${data.email} adicionado com sucesso.`, variant: "success" });
       }
       setIsUserFormOpen(false);
       setEditingUser(null);
-      fetchClinicUsers(); // Refresh user list
+      if (currentUserPlan === 'Clínica') {
+        fetchClinicUsers(); // Refresh user list
+      }
     } catch (error: any) {
       console.error("Erro no formulário de usuário:", error);
-      toast({ title: "Erro", description: `Falha ao processar usuário: ${error.message}`, variant: "destructive" });
+      let message = `Falha ao processar usuário: ${error.message}`;
+      if (error.code === 'auth/email-already-in-use') {
+        message = 'Este e-mail já está em uso por outra conta.';
+      } else if (error.code === 'auth/invalid-email') {
+        message = 'O formato do e-mail é inválido.';
+      } else if (error.code === 'auth/weak-password') {
+        message = 'A senha fornecida é muito fraca.';
+      }
+      toast({ title: "Erro", description: message, variant: "destructive" });
     }
   };
 
@@ -411,11 +438,14 @@ export default function ConfiguracoesPage() {
 
   const handleConfirmDeleteUser = async () => {
     if (userToDelete) {
+      // Note: Deleting a user from Firebase Auth client-side is complex and often requires admin privileges.
+      // For now, we'll just delete the Firestore document.
+      // True deletion of the Auth account would need an Admin SDK on a backend or a more involved process.
       try {
         const userDocRef = doc(db, 'usuarios', userToDelete.id);
         await deleteDoc(userDocRef);
         setUsers(users.filter(u => u.id !== userToDelete.id));
-        toast({ title: "Usuário Excluído", description: `${userToDelete.email} foi removido.`, variant: "destructive" });
+        toast({ title: "Usuário Excluído", description: `${userToDelete.email} foi removido do Firestore. (Conta de autenticação não afetada).`, variant: "destructive" });
       } catch (error) {
         console.error("Erro ao excluir usuário do Firestore:", error);
         toast({ title: "Erro", description: "Não foi possível excluir o usuário do Firestore.", variant: "destructive" });
@@ -743,19 +773,19 @@ export default function ConfiguracoesPage() {
                       {users.map((user) => (
                         <TableRow key={user.id} className="block sm:table-row mb-4 sm:mb-0 border sm:border-0 rounded-lg sm:rounded-none shadow-md sm:shadow-none p-4 sm:p-0">
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4 font-medium">
-                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Nome: </span>
+                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Nome: </span> 
                             {user.nomeCompleto}
                           </TableCell>
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
-                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Email: </span>
+                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Email: </span> 
                             {user.email}
                           </TableCell>
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
-                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Cargo: </span>
+                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Cargo: </span> 
                             {user.cargo}
                           </TableCell>
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
-                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground block mb-1">Permissões: </span>
+                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground block mb-1">Permissões: </span> 
                             <div className="flex flex-wrap gap-1">
                               {menuItemsConfig.filter(item => user.permissoes[item.id]).map(item => (
                                 <Badge key={item.id} variant="secondary" className="text-xs">{item.label}</Badge>
@@ -840,3 +870,8 @@ export default function ConfiguracoesPage() {
   );
 }
 
+    
+    
+    
+
+    
