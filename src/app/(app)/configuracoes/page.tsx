@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CreditCard, User, Bell, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye } from "lucide-react";
+import { Check, CreditCard, User, Newspaper, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye, ListChecks } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
 import {
@@ -39,48 +39,40 @@ import { cn } from '@/lib/utils';
 import { useEffect } from 'react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
-import { 
-  createUserWithEmailAndPassword, 
+import {
+  createUserWithEmailAndPassword,
   updateProfile,
-  getAuth 
+  getAuth
 } from 'firebase/auth';
 import { collection, setDoc, getDoc, doc } from "firebase/firestore";
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
-// Initial User Data for User Management (placeholder)
-/*const initialUsers: User[] = [
+type UpdateEntry = {
+  version: string;
+  date: string;
+  title: string;
+  description: string;
+  details?: string[];
+};
+
+const initialUpdates: UpdateEntry[] = [
   {
-    id: 'usr_001',
-    email: 'medico.chefe@clinipratica.com.br',
-    role: 'Administrador',
-    permissions: {
-      dashboard: true,
-      pacientes: true,
-      agenda: true,
-      mensagens: true,
-      financeiro: true,
-      relatorios: true,
-      configuracoes: true,
-      usuarios: true,
-    },
+    version: '1.0.0',
+    date: new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' }),
+    title: 'Lançamento Oficial do Sistema CliniPrática!',
+    description: 'Bem-vindo à primeira versão do CliniPrática! Estamos entusiasmados em apresentar uma plataforma completa para otimizar a gestão do seu consultório e atendimentos.',
+    details: [
+      'Cadastro e gerenciamento de pacientes com prontuário detalhado e objetivos personalizáveis.',
+      'Agenda inteligente com agendamentos, visualização diária e tipos de atendimento personalizáveis.',
+      'Módulo financeiro para controle de lançamentos e visualização de faturamento.',
+      'Relatórios de atendimentos, novos pacientes, e status de pacientes (ativos/inativos).',
+      'Gestão de perfil e configuração de planos.',
+      'Funcionalidade "Esqueci minha senha".',
+      'Criação de conta simplificada com seleção de plano.',
+    ],
   },
-  {
-    id: 'usr_002',
-    email: 'secretaria@clinipratica.com.br',
-    role: 'Secretária',
-    permissions: {
-      dashboard: true,
-      pacientes: true,
-      agenda: true,
-      mensagens: true,
-      financeiro: false,
-      relatorios: false,
-      configuracoes: false,
-      usuarios: false,
-    },
-  },
-];*/
+];
 
 
 export default function ConfiguracoesPage() {
@@ -216,41 +208,48 @@ export default function ConfiguracoesPage() {
       if (editingUser) {
         // Aqui pode implementar edição no Firestore, se desejar atualizar info do usuário
         // Edição de usuário Firebase Auth é mais limitada (ex: para email, precisa reautenticar, etc)
-        
+
         // Atualiza usuário localmente
         setUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...data, id: editingUser.id } : u));
         toast({ title: "Usuário Atualizado", description: `Dados de ${data.email} atualizados.`, variant: "success" });
-  
+
         setIsUserFormOpen(false);
         setEditingUser(null);
         return;
       }
-  
+
       // Cadastro novo usuário no Firebase Authentication com email e senha
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-  
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password as string);
+
       // userCredential.user contém o usuário criado no Firebase
       const firebaseUser = userCredential.user;
-  
+
       // Opcional: atualize o displayName se tiver um campo de nome no formulário
       // await updateProfile(firebaseUser, { displayName: data.nomeCompleto });
-  
+
       // Salva dados extras no Firestore, coleção 'usuarios' com o uid do firebase
       await setDoc(doc(db, 'usuarios', firebaseUser.uid), {
         email: data.email,
-        role: data.role,
-        permissions: data.permissions,
+        role: data.cargo,
+        permissions: data.permissoes,
         createdAt: new Date(),
       });
-  
+
       // Atualiza lista local de usuários com o novo usuário (id será o uid do Firebase)
       const newUser: User = {
         id: firebaseUser.uid,
         email: data.email,
-        role: data.role,
-        permissions: data.permissions,
+        cargo: data.cargo,
+        permissoes: data.permissoes,
+        nomeCompleto: data.nomeCompleto || '',
+        areaAtuacao: data.areaAtuacao || '',
+        criadoEm: new Date().toISOString(),
+        fotoPerfilUrl: '',
+        nomeEmpresa: data.nomeEmpresa || '',
+        plano: data.plano || '',
+        telefone: data.telefone || '',
       };
-  
+
       setUsers([...users, newUser]);
       toast({ title: "Usuário Adicionado", description: `${data.email} adicionado com sucesso.`, variant: "success" });
       setIsUserFormOpen(false);
@@ -284,16 +283,7 @@ export default function ConfiguracoesPage() {
   };
 
   const handleTabChange = (value: string) => {
-    if (value === "notificacoes" && currentUserPlan === "Gratuito") {
-      toast({
-        title: "Plano necessário",
-        description: "Essa funcionalidade está disponível apenas para planos Essencial, Profissional ou Clínica.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (value == "usuarios" && currentUserPlan !== "Clínica") {
+    if (value === "usuarios" && currentUserPlan !== "Clínica") {
       toast({
         title: "Plano necessário",
         description: "Essa funcionalidade está disponível apenas para planos Clínica.",
@@ -301,7 +291,6 @@ export default function ConfiguracoesPage() {
       });
       return;
     }
-
     setActiveTab(value);
   };
 
@@ -316,7 +305,7 @@ export default function ConfiguracoesPage() {
         )}>
           <TabsTrigger value="perfil"><User className="mr-2 h-4 w-4 sm:inline hidden" />Perfil</TabsTrigger>
           <TabsTrigger value="plano"><CreditCard className="mr-2 h-4 w-4 sm:inline hidden" />Plano e Assinatura</TabsTrigger>
-          <TabsTrigger value="notificacoes"><Bell className="mr-2 h-4 w-4 sm:inline hidden" />Notificações</TabsTrigger>
+          <TabsTrigger value="mural-atualizacoes"><Newspaper className="mr-2 h-4 w-4 sm:inline hidden" />Mural de Atualizações</TabsTrigger>
           <TabsTrigger value="seguranca"><KeyRound className="mr-2 h-4 w-4 sm:inline hidden" />Segurança</TabsTrigger>
           <TabsTrigger value="usuarios"><UsersRound className="mr-2 h-4 w-4 sm:inline hidden" />Usuários</TabsTrigger>
         </TabsList>
@@ -331,7 +320,7 @@ export default function ConfiguracoesPage() {
             <CardContent className="space-y-6">
               <div className="flex items-center space-x-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarImage src={profile.email === 'usuario@clinipratica.com.br' ? "https://picsum.photos/100/100" : undefined} alt="User Avatar" data-ai-hint="user avatar" />
+                  <AvatarImage src={profile.email === 'usuario@clinipratica.com.br' ? "https://placehold.co/100x100.png" : undefined} alt="User Avatar" data-ai-hint="user avatar" />
                   <AvatarFallback>{profile.nomeCompleto?.split(' ').map(n => n[0]).join('').toUpperCase() || 'CP'}</AvatarFallback>
                 </Avatar>
                 <Button variant="outline" onClick={handleChangePhoto}>Alterar Foto</Button>
@@ -439,17 +428,38 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
 
-        {/* Notificações Tab */}
-        <TabsContent value="notificacoes">
+        {/* Mural de Atualizações Tab */}
+        <TabsContent value="mural-atualizacoes">
           <Card className="shadow-md">
             <CardHeader>
-              <CardTitle>Preferências de Notificação</CardTitle>
-              <CardDescription>Escolha como você deseja ser notificado.</CardDescription>
+              <CardTitle>Mural de Atualizações</CardTitle>
+              <CardDescription>Fique por dentro das últimas novidades e melhorias do CliniPrática.</CardDescription>
             </CardHeader>
-            <CardContent className="text-center py-16 text-muted-foreground">
-              <Bell className="mx-auto h-12 w-12 mb-4 opacity-50" />
-              <p>Configurações de notificação (em breve).</p>
-              <p className="text-sm">Você poderá escolher receber notificações por email ou dentro do app.</p>
+            <CardContent className="space-y-6">
+              {initialUpdates.map((update, index) => (
+                <Card key={index} className="bg-muted/30">
+                  <CardHeader>
+                    <CardTitle className="text-xl flex items-center justify-between">
+                      <span>{update.title}</span>
+                      <Badge variant="secondary" className="text-xs">{update.version}</Badge>
+                    </CardTitle>
+                    <CardDescription>{update.date}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="mb-3">{update.description}</p>
+                    {update.details && update.details.length > 0 && (
+                      <div>
+                        <h4 className="font-semibold mb-1.5 text-sm">Detalhes desta versão:</h4>
+                        <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                          {update.details.map((detail, idx) => (
+                            <li key={idx}>{detail}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
             </CardContent>
           </Card>
         </TabsContent>
@@ -516,15 +526,15 @@ export default function ConfiguracoesPage() {
                           </TableCell>
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
                             <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Cargo: </span>
-                            {user.role}
+                            {user.cargo}
                           </TableCell>
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
                             <span className="font-semibold sm:hidden mr-2 text-muted-foreground block mb-1">Permissões: </span>
                             <div className="flex flex-wrap gap-1">
-                              {menuItemsConfig.filter(item => user.permissions[item.id]).map(item => (
+                              {menuItemsConfig.filter(item => user.permissoes[item.id]).map(item => (
                                 <Badge key={item.id} variant="secondary" className="text-xs">{item.label}</Badge>
                               ))}
-                              {menuItemsConfig.filter(item => user.permissions[item.id]).length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma permissão específica</span>}
+                              {menuItemsConfig.filter(item => user.permissoes[item.id]).length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma permissão específica</span>}
                             </div>
                           </TableCell>
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4 text-left sm:text-right">
