@@ -1,6 +1,6 @@
 
 import Link from 'next/link';
-import { Facebook, Instagram, Linkedin, Twitter } from 'lucide-react';
+import { Facebook, Instagram, Linkedin, Twitter, Youtube } from 'lucide-react';
 import { Logo } from '@/components/icons/logo';
 
 export function Footer() {
@@ -44,16 +44,10 @@ export function Footer() {
           <div>
             <h3 className="text-lg font-semibold mb-4 text-foreground">Siga-nos</h3>
             <div className="flex space-x-4">
-              <Link href="#" aria-label="Facebook" className="text-muted-foreground hover:text-primary transition-colors">
-                <Facebook className="h-6 w-6" />
-              </Link>
               <Link href="https://www.instagram.com/clinipratica/" aria-label="Instagram" className="text-muted-foreground hover:text-primary transition-colors">
                 <Instagram className="h-6 w-6" />
               </Link>
-              <Link href="#" aria-label="LinkedIn" className="text-muted-foreground hover:text-primary transition-colors">
-                <Linkedin className="h-6 w-6" />
-              </Link>
-              <Link href="#" aria-label="Twitter" className="text-muted-foreground hover:text-primary transition-colors">
+              <Link href="https://www.youtube.com/@CliniPratica" aria-label="Youtube" className="text-muted-foreground hover:text-primary transition-colors">
                 <Twitter className="h-6 w-6" />
               </Link>
             </div>
