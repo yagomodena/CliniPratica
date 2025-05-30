@@ -168,8 +168,8 @@ export default function AgendaPage() {
   const [editingAppointmentInfo, setEditingAppointmentInfo] = useState<{ appointment: Appointment; dateKey: string } | null>(null);
   const [editAppointmentForm, setEditAppointmentForm] = useState<AppointmentFormValues>(initialAppointmentFormValues);
 
-  const [isCancelApptConfirmOpen, setIsCancelApptConfirmOpen] = useState(false);
-  const [appointmentToCancelInfo, setAppointmentToCancelInfo] = useState<{ appointmentId: string; dateKey: string, patientName: string, time: string } | null>(null);
+  const [isDeleteApptConfirmOpen, setIsDeleteApptConfirmOpen] = useState(false);
+  const [appointmentToDeleteInfo, setAppointmentToDeleteInfo] = useState<{ appointmentId: string; dateKey: string, patientName: string, time: string } | null>(null);
 
   const [isConfirmWhatsAppDialogOpen, setIsConfirmWhatsAppDialogOpen] = useState(false);
   const [selectedApptForWhatsApp, setSelectedApptForWhatsApp] = useState<Appointment | null>(null);
@@ -713,16 +713,40 @@ export default function AgendaPage() {
   };
 
 
-  const handleOpenCancelApptDialog = (appointmentId: string, dateKey: string, patientName: string, time: string) => {
-    setAppointmentToCancelInfo({ appointmentId, dateKey, patientName, time });
-    setIsCancelApptConfirmOpen(true);
+  const handleOpenDeleteApptDialog = (appointmentId: string, dateKey: string, patientName: string, time: string) => {
+    setAppointmentToDeleteInfo({ appointmentId, dateKey, patientName, time });
+    setIsDeleteApptConfirmOpen(true);
   };
 
-  const handleConfirmCancelAppt = async () => {
-    if (!appointmentToCancelInfo || !currentUser) return;
-    await updateAppointmentStatus(appointmentToCancelInfo.appointmentId, 'cancelado');
-    setIsCancelApptConfirmOpen(false);
-    setAppointmentToCancelInfo(null);
+  const handleConfirmDeleteAppt = async () => {
+    if (!appointmentToDeleteInfo || !currentUser) return;
+    try {
+      // Delete the appointment document
+      await deleteDoc(doc(db, 'agendamentos', appointmentToDeleteInfo.appointmentId));
+  
+      // Find and update (cancel) any linked financial transaction
+      const financialTransactionsRef = collection(db, 'financialTransactions');
+      const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentToDeleteInfo.appointmentId));
+      const financeSnapshot = await getDocs(qFinance);
+  
+      if (!financeSnapshot.empty) {
+        const financeDocId = financeSnapshot.docs[0].id;
+        const financeDocRef = doc(db, 'financialTransactions', financeDocId);
+        await updateDoc(financeDocRef, {
+          status: 'Cancelado', // Mark as cancelled, don't delete, to maintain audit trail
+          updatedAt: serverTimestamp(),
+        });
+      }
+  
+      toast({ title: "Agendamento Excluído", description: `Agendamento para ${appointmentToDeleteInfo.patientName} foi excluído.`, variant: "success" });
+      await fetchAppointments(currentUser);
+    } catch (error) {
+      console.error(`Erro ao excluir agendamento:`, error);
+      toast({ title: "Erro", description: `Não foi possível excluir o agendamento.`, variant: "destructive" });
+    } finally {
+      setIsDeleteApptConfirmOpen(false);
+      setAppointmentToDeleteInfo(null);
+    }
   };
 
   const goToPreviousDay = () => setSelectedDate(prev => prev ? subDays(prev, 1) : (clientToday ? subDays(clientToday, 1) : undefined));
@@ -1139,7 +1163,7 @@ export default function AgendaPage() {
                         <DropdownMenuContent align="end">
                             {appt.status === 'agendado' && !(clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow)) && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}><CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Realizado</DropdownMenuItem>}
                             {appt.status === 'realizado' && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}><RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Agendado</DropdownMenuItem>}
-                            {(appt.status === 'agendado' || appt.status === 'realizado') && <DropdownMenuItem onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive"><XCircle className="mr-2 h-4 w-4"/> Cancelar</DropdownMenuItem>}
+                            {(appt.status === 'agendado' || appt.status === 'realizado') && <DropdownMenuItem onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive"><XCircle className="mr-2 h-4 w-4"/> Excluir Agendamento</DropdownMenuItem>}
                         </DropdownMenuContent>
                     </DropdownMenu>
                      <Button variant="outline" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3" title="Atendimento" disabled={appt.status === 'cancelado' || appt.status === 'realizado'} onClick={() => handleOpenRecordAttendanceDialog(appt)}><FileText className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Reg. Atend.</span><span className="sm:hidden">Atend.</span></Button>
@@ -1332,10 +1356,10 @@ export default function AgendaPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={isCancelApptConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setAppointmentToCancelInfo(null); setIsCancelApptConfirmOpen(isOpen); }}>
+      <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setAppointmentToDeleteInfo(null); setIsDeleteApptConfirmOpen(isOpen); }}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Confirmar Cancelamento</AlertDialogTitle><AlertDialogDescription>Deseja cancelar o agendamento para {appointmentToCancelInfo?.patientName} às {appointmentToCancelInfo?.time}?</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmCancelAppt} className="bg-destructive hover:bg-destructive/90">Cancelar</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir o agendamento para {appointmentToDeleteInfo?.patientName} às {appointmentToDeleteInfo?.time}?</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteAppt} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
