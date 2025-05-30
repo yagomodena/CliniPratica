@@ -1,14 +1,14 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CreditCard, User, Newspaper, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye, ListChecks } from "lucide-react";
+import { Check, CreditCard, User, Newspaper, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye, EyeOff, ListChecks, Loader2 } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
 import {
@@ -36,15 +36,17 @@ import { UserForm, type UserFormData, type User, menuItemsConfig } from '@/compo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { useEffect } from 'react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
 import {
   createUserWithEmailAndPassword,
   updateProfile,
-  getAuth
+  getAuth,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
 } from 'firebase/auth';
-import { collection, setDoc, getDoc, doc } from "firebase/firestore";
+import { collection, setDoc, getDoc, doc, serverTimestamp } from "firebase/firestore";
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
@@ -82,43 +84,70 @@ export default function ConfiguracoesPage() {
     telefone: '',
     areaAtuacao: '',
     plano: '',
+    fotoPerfilUrl: '',
   });
 
   const [currentUserPlan, setCurrentUserPlan] = useState<string>('Gratuito');
-
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
-        const data = userDoc.data();
-
-        const nomeCompleto = user.displayName || '';
-        const email = user.email || '';
-        const telefone = data?.telefone || user.phoneNumber || '';
-        const areaAtuacao = data?.areaAtuacao || '';
-        const plano = data?.plano || 'Gratuito';
-
-        setProfile({ nomeCompleto, email, telefone, areaAtuacao, plano });
-        setCurrentUserPlan(plano);
-      }
-    };
-
-    fetchUserProfile();
-  }, []);
-
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("perfil");
 
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
 
   // State for User Management
-  const [users, setUsers] = useState<User[]>([]); // vazio inicialmente
+  const [users, setUsers] = useState<User[]>([]);
   const [isUserFormOpen, setIsUserFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDeleteUserConfirmOpen, setIsDeleteUserConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const userDocRef = doc(db, 'usuarios', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        
+        let data = {};
+        if (userDocSnap.exists()) {
+          data = userDocSnap.data();
+        } else {
+          // Se não houver dados no Firestore, usar dados do Auth e padrões
+          console.warn(`Dados do usuário ${user.uid} não encontrados no Firestore. Usando dados do Auth.`);
+        }
+
+        const nomeCompleto = user.displayName || (data as any).nomeCompleto || '';
+        const email = user.email || (data as any).email || '';
+        const telefone = (data as any).telefone || user.phoneNumber || '';
+        const areaAtuacao = (data as any).areaAtuacao || '';
+        const plano = (data as any).plano || 'Gratuito';
+        const fotoPerfilUrl = user.photoURL || (data as any).fotoPerfilUrl || '';
+
+        setProfile({ nomeCompleto, email, telefone, areaAtuacao, plano, fotoPerfilUrl });
+        setCurrentUserPlan(plano);
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        fetchUserProfile();
+      } else {
+        // Reset profile if user logs out
+        setProfile({ nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '' });
+        setCurrentUserPlan('Gratuito');
+      }
+    });
+    
+    return () => unsubscribe();
+  }, []);
 
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,22 +158,30 @@ export default function ConfiguracoesPage() {
   const handleSaveChanges = async () => {
     try {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) {
+        toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive"});
+        return;
+      }
 
-      // Atualiza o nome no Firebase Auth
       await updateProfile(user, {
         displayName: profile.nomeCompleto,
+        photoURL: profile.fotoPerfilUrl,
       });
 
-      // Atualiza os dados no Firestore com os nomes corretos
-      await setDoc(
-        doc(db, "usuarios", user.uid),
-        {
-          nomeCompleto: profile.nomeCompleto,
-          telefone: profile.telefone,
-          areaAtuacao: profile.areaAtuacao,
-        },
-        { merge: true }
+      const userDocRef = doc(db, "usuarios", user.uid);
+      const dataToUpdate: any = {
+        nomeCompleto: profile.nomeCompleto,
+        telefone: profile.telefone,
+        areaAtuacao: profile.areaAtuacao,
+        fotoPerfilUrl: profile.fotoPerfilUrl,
+        // email e plano não são atualizados aqui diretamente pelo perfil
+      };
+      
+      // Remove campos indefinidos para não sobrescrever com undefined no Firestore
+      Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
+
+
+      await setDoc(userDocRef, dataToUpdate, { merge: true }
       );
 
       toast({
@@ -171,102 +208,168 @@ export default function ConfiguracoesPage() {
     console.log("Attempted to change photo");
   };
 
-  const handleChangePassword = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleChangePassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    toast({
-      title: "Funcionalidade Indisponível",
-      description: "A alteração de senha ainda não está implementada.",
-      variant: "default",
-    });
-    console.log("Attempted to change password");
+    setIsChangingPassword(true);
+
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      toast({ title: "Campos Obrigatórios", description: "Por favor, preencha todos os campos de senha.", variant: "destructive" });
+      setIsChangingPassword(false);
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast({ title: "Erro de Validação", description: "A nova senha e a confirmação não coincidem.", variant: "destructive" });
+      setIsChangingPassword(false);
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast({ title: "Senha Fraca", description: "A nova senha deve ter pelo menos 6 caracteres.", variant: "destructive" });
+      setIsChangingPassword(false);
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user || !user.email) {
+      toast({ title: "Erro", description: "Usuário não autenticado ou e-mail não encontrado.", variant: "destructive" });
+      setIsChangingPassword(false);
+      return;
+    }
+
+    try {
+      const credential = EmailAuthProvider.credential(user.email, currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+
+      toast({ title: "Sucesso!", description: "Sua senha foi alterada com sucesso.", variant: "success" });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+    } catch (error: any) {
+      console.error("Erro ao alterar senha:", error);
+      let message = "Ocorreu um erro ao tentar alterar sua senha.";
+      if (error.code === 'auth/wrong-password') {
+        message = "A senha atual informada está incorreta.";
+      } else if (error.code === 'auth/weak-password') {
+        message = "A nova senha é muito fraca. Escolha uma senha mais forte.";
+      } else if (error.code === 'auth/too-many-requests') {
+        message = "Muitas tentativas de reautenticação. Tente novamente mais tarde.";
+      }
+      toast({ title: "Erro ao Alterar Senha", description: message, variant: "destructive" });
+    } finally {
+      setIsChangingPassword(false);
+    }
   }
 
   const handleSelectPlan = (planName: PlanName) => {
     console.log("Updating plan to:", planName);
     setCurrentUserPlan(planName);
+    // TODO: Add logic to update plan in Firestore
+    const user = auth.currentUser;
+    if (user) {
+        const userDocRef = doc(db, "usuarios", user.uid);
+        setDoc(userDocRef, { plano: planName }, { merge: true })
+            .then(() => {
+                console.log("Plano atualizado no Firestore para:", planName);
+            })
+            .catch((error) => {
+                console.error("Erro ao atualizar plano no Firestore:", error);
+            });
+    }
   };
 
-  const handleCancelSubscription = () => {
+  const handleCancelSubscription = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive"});
+      setIsCancelConfirmOpen(false);
+      return;
+    }
     console.log("Cancelling subscription for plan:", currentUserPlan);
-    setCurrentUserPlan('Gratuito');
-    setIsCancelConfirmOpen(false);
-    toast({
-      title: "Assinatura Cancelada",
-      description: "Sua assinatura foi cancelada e você foi movido para o plano Gratuito.",
-      variant: "default",
-    });
-  };
-
-  // User Management Handlers
-  const handleOpenUserForm = (user: User | null = null) => {
-    setEditingUser(user);
-    setIsUserFormOpen(true);
+    try {
+      const userDocRef = doc(db, "usuarios", user.uid);
+      await updateDoc(userDocRef, { plano: "Gratuito" });
+      setCurrentUserPlan('Gratuito');
+      setProfile(prev => ({ ...prev, plano: 'Gratuito' }));
+      setIsCancelConfirmOpen(false);
+      toast({
+        title: "Assinatura Cancelada",
+        description: "Sua assinatura foi cancelada e você foi movido para o plano Gratuito.",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("Erro ao cancelar assinatura:", error);
+      toast({ title: "Erro", description: "Não foi possível cancelar a assinatura.", variant: "destructive"});
+    }
   };
 
   const handleUserFormSubmit = async (data: UserFormData) => {
     try {
-      if (editingUser) {
-        // Aqui pode implementar edição no Firestore, se desejar atualizar info do usuário
-        // Edição de usuário Firebase Auth é mais limitada (ex: para email, precisa reautenticar, etc)
-
-        // Atualiza usuário localmente
-        setUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...data, id: editingUser.id } : u));
-        toast({ title: "Usuário Atualizado", description: `Dados de ${data.email} atualizados.`, variant: "success" });
-
-        setIsUserFormOpen(false);
-        setEditingUser(null);
+      const mainAuthUser = auth.currentUser;
+      if (!mainAuthUser) {
+        toast({ title: "Erro de Autenticação", description: "Usuário principal não autenticado.", variant: "destructive" });
         return;
       }
 
-      // Cadastro novo usuário no Firebase Authentication com email e senha
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password as string);
+      if (editingUser) {
+        // Edição de usuário: Atualizar no Firestore (não no Auth primário)
+        const userDocRef = doc(db, 'usuarios', editingUser.id); // Assume 'id' is the UID
+        const userDataToUpdate = {
+          email: data.email, // Email não pode ser alterado no Auth sem reautenticação, mas podemos atualizar no Firestore
+          cargo: data.cargo,
+          permissoes: data.permissoes,
+          nomeCompleto: data.nomeCompleto || '',
+          // Não atualizamos a senha aqui. Se for necessário, deve ser um processo separado.
+          // Adicione outros campos conforme necessário: nomeEmpresa, plano, telefone, etc.
+        };
+        await updateDoc(userDocRef, userDataToUpdate);
+        setUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...userDataToUpdate } : u));
+        toast({ title: "Usuário Atualizado", description: `Dados de ${data.email} atualizados.`, variant: "success" });
+      } else {
+        // Cadastro de novo usuário:
+        // Criar no Firebase Auth - Idealmente, isso exigiria uma instância de Auth secundária ou uma função de back-end
+        // Para esta versão simplificada, vamos focar em salvar no Firestore sob a estrutura da clínica/usuário principal
+        // A senha não será usada para login direto deste sub-usuário sem uma lógica de Auth mais complexa.
 
-      // userCredential.user contém o usuário criado no Firebase
-      const firebaseUser = userCredential.user;
+        // Gerar um ID único para o novo usuário (pode ser o UID de uma conta Auth secundária ou um ID gerado)
+        // Por enquanto, vamos usar um ID gerado, mas o ideal seria um UID do Firebase Auth
+        const newUserId = doc(collection(db, 'usuarios')).id; // Gera um ID único de documento
 
-      // Opcional: atualize o displayName se tiver um campo de nome no formulário
-      // await updateProfile(firebaseUser, { displayName: data.nomeCompleto });
+        const newUserDoc = {
+          email: data.email,
+          cargo: data.cargo,
+          permissoes: data.permissoes,
+          nomeCompleto: data.nomeCompleto || '',
+          // Para 'Clínica', associar ao 'ownerId' ou 'companyId' do usuário principal
+          // Este campo 'ownerId' ou 'clinicId' seria crucial para buscar usuários da mesma clínica
+          ownerId: mainAuthUser.uid, // Exemplo de como associar ao admin/dono da clínica
+          createdAt: serverTimestamp(),
+        };
+        await setDoc(doc(db, 'usuarios', newUserId), newUserDoc);
 
-      // Salva dados extras no Firestore, coleção 'usuarios' com o uid do firebase
-      await setDoc(doc(db, 'usuarios', firebaseUser.uid), {
-        email: data.email,
-        role: data.cargo,
-        permissions: data.permissoes,
-        createdAt: new Date(),
-      });
-
-      // Atualiza lista local de usuários com o novo usuário (id será o uid do Firebase)
-      const newUser: User = {
-        id: firebaseUser.uid,
-        email: data.email,
-        cargo: data.cargo,
-        permissoes: data.permissoes,
-        nomeCompleto: data.nomeCompleto || '',
-        areaAtuacao: data.areaAtuacao || '',
-        criadoEm: new Date().toISOString(),
-        fotoPerfilUrl: '',
-        nomeEmpresa: data.nomeEmpresa || '',
-        plano: data.plano || '',
-        telefone: data.telefone || '',
-      };
-
-      setUsers([...users, newUser]);
-      toast({ title: "Usuário Adicionado", description: `${data.email} adicionado com sucesso.`, variant: "success" });
+        const newUserForState: User = {
+          id: newUserId,
+          email: data.email,
+          cargo: data.cargo,
+          permissoes: data.permissoes,
+          nomeCompleto: data.nomeCompleto || '',
+          areaAtuacao: '',
+          criadoEm: new Date().toISOString(),
+          fotoPerfilUrl: '',
+          nomeEmpresa: '',
+          plano: '', // Ou o plano da clínica
+          telefone: '',
+        };
+        setUsers([...users, newUserForState]);
+        toast({ title: "Usuário Adicionado", description: `${data.email} adicionado com sucesso.`, variant: "success" });
+      }
       setIsUserFormOpen(false);
       setEditingUser(null);
     } catch (error: any) {
-      // Tratamento de erro do Firebase
-      let errorMessage = "Erro ao criar usuário.";
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "Esse email já está sendo usado.";
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = "Email inválido.";
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = "Senha muito fraca.";
-      }
-      toast({ title: "Erro", description: errorMessage, variant: "destructive" });
+      console.error("Erro no formulário de usuário:", error);
+      toast({ title: "Erro", description: `Falha ao processar usuário: ${error.message}`, variant: "destructive" });
     }
   };
+
 
   const handleOpenDeleteUserDialog = (user: User) => {
     setUserToDelete(user);
@@ -275,8 +378,15 @@ export default function ConfiguracoesPage() {
 
   const handleConfirmDeleteUser = () => {
     if (userToDelete) {
-      setUsers(users.filter(u => u.id !== userToDelete.id));
-      toast({ title: "Usuário Excluído", description: `${userToDelete.email} foi removido da equipe.`, variant: "destructive" });
+      // Lógica para remover usuário do Firestore. A remoção do Firebase Auth é mais complexa e requer backend.
+      const userDocRef = doc(db, 'usuarios', userToDelete.id);
+      deleteDoc(userDocRef).then(() => {
+        setUsers(users.filter(u => u.id !== userToDelete.id));
+        toast({ title: "Usuário Excluído", description: `${userToDelete.email} foi removido.`, variant: "destructive" });
+      }).catch(error => {
+        console.error("Erro ao excluir usuário do Firestore:", error);
+        toast({ title: "Erro", description: "Não foi possível excluir o usuário do Firestore.", variant: "destructive" });
+      });
       setUserToDelete(null);
     }
     setIsDeleteUserConfirmOpen(false);
@@ -320,7 +430,7 @@ export default function ConfiguracoesPage() {
             <CardContent className="space-y-6">
               <div className="flex items-center space-x-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarImage src={profile.email === 'usuario@clinipratica.com.br' ? "https://placehold.co/100x100.png" : undefined} alt="User Avatar" data-ai-hint="user avatar" />
+                  <AvatarImage src={profile.fotoPerfilUrl || undefined} alt="User Avatar" data-ai-hint="user avatar" />
                   <AvatarFallback>{profile.nomeCompleto?.split(' ').map(n => n[0]).join('').toUpperCase() || 'CP'}</AvatarFallback>
                 </Avatar>
                 <Button variant="outline" onClick={handleChangePhoto}>Alterar Foto</Button>
@@ -343,10 +453,12 @@ export default function ConfiguracoesPage() {
                   <Input id="areaAtuacao" name="areaAtuacao" placeholder="Ex: Nutricionista" value={profile.areaAtuacao} onChange={handleProfileChange} />
                 </div>
               </div>
-              <Button onClick={handleSaveChanges}>
-                <Save className="mr-2 h-4 w-4" /> Salvar Alterações
-              </Button>
             </CardContent>
+            <CardFooter>
+                <Button onClick={handleSaveChanges}>
+                    <Save className="mr-2 h-4 w-4" /> Salvar Alterações
+                </Button>
+            </CardFooter>
           </Card>
         </TabsContent>
 
@@ -359,18 +471,18 @@ export default function ConfiguracoesPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <Card className="bg-muted/50">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-lg">Plano Atual: {currentUserPlan}</CardTitle>
+                <CardHeader className="pb-4 pt-6">
+                  <CardTitle className="text-lg">Plano Atual: {profile.plano || 'Não definido'}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {currentUserPlan === 'Gratuito' && (
+                  {profile.plano === 'Gratuito' && (
                     <>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Até 10 pacientes ativos</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Agenda básica</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte comunitário</div>
                     </>
                   )}
-                  {currentUserPlan === 'Essencial' && (
+                  {profile.plano === 'Essencial' && (
                     <>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Até 50 pacientes</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Agenda completa com alertas</div>
@@ -378,7 +490,7 @@ export default function ConfiguracoesPage() {
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte por e-mail</div>
                     </>
                   )}
-                  {currentUserPlan === 'Profissional' && (
+                  {profile.plano === 'Profissional' && (
                     <>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Pacientes ilimitados</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Todas as funcionalidades Essencial</div>
@@ -386,7 +498,7 @@ export default function ConfiguracoesPage() {
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte prioritário</div>
                     </>
                   )}
-                  {currentUserPlan === 'Clínica' && (
+                  {profile.plano === 'Clínica' && (
                     <>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Múltiplos profissionais</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Todas as funcionalidades Profissional</div>
@@ -400,7 +512,7 @@ export default function ConfiguracoesPage() {
                 <Button onClick={() => setIsPlansModalOpen(true)} className="w-full sm:w-auto">
                   Ver Planos e Fazer Upgrade
                 </Button>
-                {currentUserPlan !== 'Gratuito' && (
+                {profile.plano !== 'Gratuito' && (
                   <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
                     <AlertDialogTrigger asChild>
                       <Button variant="outline" className="w-full sm:w-auto text-destructive hover:bg-destructive/10 border-destructive/50 hover:border-destructive/80">
@@ -411,7 +523,7 @@ export default function ConfiguracoesPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Confirmar Cancelamento</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Tem certeza que deseja cancelar sua assinatura do plano {currentUserPlan}? Você será movido para o plano Gratuito e perderá acesso às funcionalidades pagas ao final do ciclo de cobrança atual.
+                          Tem certeza que deseja cancelar sua assinatura do plano {profile.plano}? Você será movido para o plano Gratuito e perderá acesso às funcionalidades pagas ao final do ciclo de cobrança atual.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -469,23 +581,86 @@ export default function ConfiguracoesPage() {
           <Card className="shadow-md">
             <CardHeader>
               <CardTitle>Segurança</CardTitle>
-              <CardDescription>Gerencie sua senha e configurações de segurança.</CardDescription>
+              <CardDescription>Gerencie sua senha.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <form onSubmit={handleChangePassword} className="space-y-4">
-                <div className="space-y-2">
+              <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
+                <div>
                   <Label htmlFor="current-password">Senha Atual</Label>
-                  <Input id="current-password" type="password" />
+                  <div className="relative">
+                    <Input 
+                      id="current-password" 
+                      type={showCurrentPassword ? 'text' : 'password'} 
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="pr-10"
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute inset-y-0 right-0 h-full w-10 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      aria-label={showCurrentPassword ? "Ocultar senha atual" : "Mostrar senha atual"}
+                    >
+                      {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
-                <div className="space-y-2">
+                <div>
                   <Label htmlFor="new-password">Nova Senha</Label>
-                  <Input id="new-password" type="password" />
+                   <div className="relative">
+                    <Input 
+                      id="new-password" 
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="pr-10"
+                      minLength={6}
+                      required
+                    />
+                     <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute inset-y-0 right-0 h-full w-10 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      aria-label={showNewPassword ? "Ocultar nova senha" : "Mostrar nova senha"}
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                   {newPassword.length > 0 && newPassword.length < 6 && <p className="text-sm text-destructive mt-1">A nova senha deve ter pelo menos 6 caracteres.</p>}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
-                  <Input id="confirm-password" type="password" />
+                <div>
+                  <Label htmlFor="confirm-new-password">Confirmar Nova Senha</Label>
+                  <div className="relative">
+                    <Input 
+                      id="confirm-new-password" 
+                      type={showConfirmNewPassword ? 'text' : 'password'} 
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      className="pr-10"
+                      minLength={6}
+                      required
+                    />
+                     <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute inset-y-0 right-0 h-full w-10 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                      aria-label={showConfirmNewPassword ? "Ocultar confirmação da nova senha" : "Mostrar confirmação da nova senha"}
+                    >
+                      {showConfirmNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  {newPassword && confirmNewPassword && newPassword !== confirmNewPassword && <p className="text-sm text-destructive mt-1">As senhas não coincidem.</p>}
                 </div>
-                <Button type="submit">Alterar Senha</Button>
+                <Button type="submit" disabled={isChangingPassword}>
+                  {isChangingPassword ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Alterando...</> : 'Alterar Senha'}
+                </Button>
               </form>
             </CardContent>
           </Card>
@@ -568,7 +743,7 @@ export default function ConfiguracoesPage() {
       <PlansModal
         isOpen={isPlansModalOpen}
         onOpenChange={setIsPlansModalOpen}
-        currentPlanName={currentUserPlan}
+        currentPlanName={profile.plano}
         onSelectPlan={handleSelectPlan}
       />
 
@@ -616,4 +791,3 @@ export default function ConfiguracoesPage() {
     </div>
   );
 }
-
