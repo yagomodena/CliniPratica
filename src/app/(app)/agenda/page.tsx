@@ -4,7 +4,7 @@
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send, FileText, Loader2 } from "lucide-react";
+import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send, FileText, Loader2, DollarSign } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -48,12 +48,12 @@ import dynamic from 'next/dynamic';
 
 
 import { getAuth, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  addDoc, 
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
   serverTimestamp,
   doc,
   getDoc,
@@ -71,44 +71,50 @@ const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod
 
 
 type PatientFromFirebase = {
-  id: string; 
+  id: string;
   name: string;
   status: string;
   slug: string;
-  phone?: string; // Added phone
-  history?: any[]; // To store history items
+  phone?: string;
+  history?: any[];
 };
 
 type Appointment = {
   id: string; // Firestore document ID
   time: string;
-  patientId: string; 
+  patientId: string;
   patientName: string;
-  patientSlug: string; 
-  type: string; 
+  patientSlug: string;
+  type: string;
+  appointmentTypeId?: string; // Store the ID of the appointment type for reference
   notes?: string;
   date: string; // 'yyyy-MM-dd'
-  status: 'agendado' | 'cancelado' | 'realizado'; // Ensure status is always one of these
+  status: 'agendado' | 'cancelado' | 'realizado';
+  naoLancarFinanceiro?: boolean; // User override for auto financial launch
 };
 
 type AppointmentsData = {
-  [dateKey: string]: Appointment[]; // dateKey is 'yyyy-MM-dd'
+  [dateKey: string]: Appointment[];
 };
 
 const initialAppointmentFormValues = {
   patientId: '',
-  type: '', 
+  type: '',
   date: '',
   time: '',
   notes: '',
+  naoLancarFinanceiro: false, // Initialize new field
+  appointmentTypeId: '', // Added to store the ID
 };
 
 type AppointmentFormValues = typeof initialAppointmentFormValues;
 
 type AppointmentTypeObject = {
-  id?: string; // Firestore document ID for the type itself
+  id?: string;
   name: string;
   status: 'active' | 'inactive';
+  valor?: number;
+  lancarFinanceiroAutomatico?: boolean;
 };
 
 const fallbackAppointmentTypesData: AppointmentTypeObject[] = [];
@@ -119,7 +125,7 @@ const getAppointmentTypesPath = (userData: any) => {
   const identifier = isClinica ? userData.nomeEmpresa : userData.uid;
   if (!identifier) {
     console.error("Identificador do usuário ou empresa não encontrado para tipos de atendimento.", userData);
-    return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos'); 
+    return collection(db, 'appointmentTypes', 'default_fallback_types', 'tipos');
   }
   return collection(db, 'appointmentTypes', identifier, 'tipos');
 };
@@ -129,23 +135,28 @@ export default function AgendaPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [clientToday, setClientToday] = useState<Date | undefined>(undefined);
   const [clientNow, setClientNow] = useState<Date | undefined>(undefined);
-  const [isClient, setIsClient] = useState(false); // For Tiptap
+  const [isClient, setIsClient] = useState(false);
 
   const [appointments, setAppointments] = useState<AppointmentsData>({});
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
   const { toast } = useToast();
 
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null); 
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [firebasePatients, setFirebasePatients] = useState<PatientFromFirebase[]>([]);
   const [isLoadingPatients, setIsLoadingPatients] = useState(true);
 
   const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]);
   const [isLoadingTypes, setIsLoadingTypes] = useState(true);
   const [isAddTypeDialogOpen, setIsAddTypeDialogOpen] = useState(false);
-  const [newCustomTypeName, setNewCustomTypeName] = useState('');
+  const [newCustomType, setNewCustomType] = useState<Partial<AppointmentTypeObject>>({
+    name: '',
+    valor: 0,
+    lancarFinanceiroAutomatico: false,
+    status: 'active',
+  });
   const [isManageTypesDialogOpen, setIsManageTypesDialogOpen] = useState(false);
-  const [editingTypeInfo, setEditingTypeInfo] = useState<{ type: AppointmentTypeObject, currentName: string } | null>(null);
+  const [editingTypeInfo, setEditingTypeInfo] = useState<{ type: AppointmentTypeObject, currentData: Partial<AppointmentTypeObject> } | null>(null);
   const [typeToToggleStatusConfirm, setTypeToToggleStatusConfirm] = useState<AppointmentTypeObject | null>(null);
   const [isDeleteTypeConfirmOpen, setIsDeleteTypeConfirmOpen] = useState(false);
   const [typeToDelete, setTypeToDelete] = useState<AppointmentTypeObject | null>(null);
@@ -160,20 +171,22 @@ export default function AgendaPage() {
   const [isCancelApptConfirmOpen, setIsCancelApptConfirmOpen] = useState(false);
   const [appointmentToCancelInfo, setAppointmentToCancelInfo] = useState<{ appointmentId: string; dateKey: string, patientName: string, time: string } | null>(null);
 
-  // State for WhatsApp Confirmation Message Dialog
   const [isConfirmWhatsAppDialogOpen, setIsConfirmWhatsAppDialogOpen] = useState(false);
   const [selectedApptForWhatsApp, setSelectedApptForWhatsApp] = useState<Appointment | null>(null);
   const [whatsAppMsgType, setWhatsAppMsgType] = useState<'predefined' | 'custom'>('predefined');
   const [customWhatsAppMsg, setCustomWhatsAppMsg] = useState('');
-  const [whatsAppPatientDetails, setWhatsAppPatientDetails] = useState<{name: string; phone: string | null}>({name: '', phone: null});
+  const [whatsAppPatientDetails, setWhatsAppPatientDetails] = useState<{ name: string; phone: string | null }>({ name: '', phone: null });
   const [isFetchingPatientPhone, setIsFetchingPatientPhone] = useState(false);
 
-  // State for Record Attendance Dialog
   const [isRecordAttendanceDialogOpen, setIsRecordAttendanceDialogOpen] = useState(false);
   const [appointmentToRecordAttendance, setAppointmentToRecordAttendance] = useState<Appointment | null>(null);
   const [attendanceNote, setAttendanceNote] = useState('');
   const [attendanceType, setAttendanceType] = useState('');
   const [isSavingAttendance, setIsSavingAttendance] = useState(false);
+
+  // For conditional "Gerar Lançamento Financeiro?" Switch
+  const [showNaoLancarFinanceiroSwitch, setShowNaoLancarFinanceiroSwitch] = useState(false);
+
 
   useEffect(() => {
     setIsClient(true);
@@ -184,7 +197,7 @@ export default function AgendaPage() {
     const userDocRef = doc(db, 'usuarios', user.uid);
     const userDocSnap = await getDoc(userDocRef);
     if (userDocSnap.exists()) {
-      return { ...userDocSnap.data(), uid: user.uid }; 
+      return { ...userDocSnap.data(), uid: user.uid };
     }
     console.warn("User data not found in Firestore for UID:", user.uid);
     return null;
@@ -193,7 +206,6 @@ export default function AgendaPage() {
 
   const fetchAppointmentTypes = useCallback(async () => {
     if (!currentUserData) {
-      console.log("User data not available for fetching appointment types. Using fallback (empty).");
       const fallbackWithTempIds = fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }));
       setAppointmentTypes(fallbackWithTempIds.sort((a, b) => a.name.localeCompare(b.name)));
       setIsLoadingTypes(false);
@@ -202,24 +214,22 @@ export default function AgendaPage() {
     setIsLoadingTypes(true);
     try {
       const tiposRef = getAppointmentTypesPath(currentUserData);
-      const snapshot = await getDocs(query(tiposRef, orderBy("name"))); 
+      const snapshot = await getDocs(query(tiposRef, orderBy("name")));
       const tipos: AppointmentTypeObject[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         name: docSnap.data().name as string,
         status: docSnap.data().status as 'active' | 'inactive',
+        valor: docSnap.data().valor as number | undefined,
+        lancarFinanceiroAutomatico: docSnap.data().lancarFinanceiroAutomatico as boolean | undefined,
       }));
-      
+
       const fallbackWithTempIds = fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }));
       const finalTypes = tipos.length > 0 ? tipos : fallbackWithTempIds;
       setAppointmentTypes(finalTypes.sort((a, b) => a.name.localeCompare(b.name)));
 
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      let description = "Não foi possível carregar os tipos de atendimento. Verifique sua conexão ou tente mais tarde.";
-      if (error.code === 'failed-precondition') {
-        description = "A busca por tipos de atendimento pode requerer um índice no Firestore. Verifique o console do Firebase para mais detalhes.";
-      }
-      toast({ title: "Erro ao buscar tipos", description: description, variant: "warning", duration: 7000 });
+      toast({ title: "Erro ao buscar tipos", description: "Não foi possível carregar os tipos.", variant: "warning" });
       const fallbackWithTempIds = fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` }));
       setAppointmentTypes(fallbackWithTempIds.sort((a, b) => a.name.localeCompare(b.name)));
     } finally {
@@ -238,9 +248,8 @@ export default function AgendaPage() {
 
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        const apptStatus = (data.status as Appointment['status']) || 'agendado'; // Default to 'agendado'
-
-        const apptDateKey = data.date; 
+        const apptStatus = (data.status as Appointment['status']) || 'agendado';
+        const apptDateKey = data.date;
 
         const appointmentItem: Appointment = {
           id: docSnap.id,
@@ -249,11 +258,13 @@ export default function AgendaPage() {
           patientName: data.patientName,
           patientSlug: data.patientSlug,
           type: data.type,
+          appointmentTypeId: data.appointmentTypeId,
           notes: data.notes,
           date: apptDateKey,
           status: apptStatus,
+          naoLancarFinanceiro: data.naoLancarFinanceiro
         };
-        
+
         if (!fetchedAppointmentsData[apptDateKey]) {
           fetchedAppointmentsData[apptDateKey] = [];
         }
@@ -263,12 +274,10 @@ export default function AgendaPage() {
       for (const dateKey in fetchedAppointmentsData) {
         fetchedAppointmentsData[dateKey].sort((a, b) => a.time.localeCompare(b.time));
       }
-
       setAppointments(fetchedAppointmentsData);
     } catch (error) {
       console.error("Erro ao buscar agendamentos:", error);
       toast({ title: "Erro ao buscar agendamentos", description: "Não foi possível carregar os agendamentos.", variant: "destructive" });
-      setAppointments({});
     } finally {
       setIsLoadingAppointments(false);
     }
@@ -279,7 +288,7 @@ export default function AgendaPage() {
       setCurrentUser(user);
       if (user) {
         const uData = await fetchCurrentUserData(user);
-        setCurrentUserData(uData); 
+        setCurrentUserData(uData);
         fetchAppointments(user);
       } else {
         setFirebasePatients([]);
@@ -292,10 +301,10 @@ export default function AgendaPage() {
       }
     });
     return () => unsubscribe();
-  }, [fetchCurrentUserData, fetchAppointments]); 
-  
+  }, [fetchCurrentUserData, fetchAppointments]);
+
   useEffect(() => {
-    if (currentUserData) { 
+    if (currentUserData) {
       fetchAppointmentTypes();
     }
   }, [currentUserData, fetchAppointmentTypes]);
@@ -316,7 +325,7 @@ export default function AgendaPage() {
               id: docSnap.id,
               name: data.name as string,
               status: data.status as string,
-              slug: data.slug as string, 
+              slug: data.slug as string,
               phone: data.phone as string | undefined,
               history: data.history || [],
             });
@@ -325,7 +334,6 @@ export default function AgendaPage() {
         } catch (error) {
           console.error("Erro ao buscar pacientes:", error);
           toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes.", variant: "destructive" });
-          setFirebasePatients([]);
         } finally {
           setIsLoadingPatients(false);
         }
@@ -338,32 +346,33 @@ export default function AgendaPage() {
   }, [currentUser, toast]);
 
 
-  const getFirstActiveTypeName = useCallback(() => {
-    return appointmentTypes.find(t => t.status === 'active')?.name || '';
+  const getFirstActiveTypeNameAndId = useCallback(() => {
+    const firstActive = appointmentTypes.find(t => t.status === 'active');
+    return { name: firstActive?.name || '', id: firstActive?.id || '' };
   }, [appointmentTypes]);
-  
+
   useEffect(() => {
     const now = new Date();
-    const todayForClient = startOfDay(now);
-
-    setSelectedDate(now); 
-    setClientToday(todayForClient);
+    setSelectedDate(now);
+    setClientToday(startOfDay(now));
     setClientNow(now);
 
-    const firstActiveType = getFirstActiveTypeName();
+    const { name: firstActiveTypeName, id: firstActiveTypeId } = getFirstActiveTypeNameAndId();
     const initialDateStr = format(now, 'yyyy-MM-dd');
 
     setNewAppointmentForm(prev => ({
-      ...initialAppointmentFormValues, 
+      ...initialAppointmentFormValues,
       date: initialDateStr,
-      type: prev.type || firstActiveType || '', 
+      type: prev.type || firstActiveTypeName || '',
+      appointmentTypeId: prev.appointmentTypeId || firstActiveTypeId || '',
     }));
-    setEditAppointmentForm(prev => ({ 
-      ...initialAppointmentFormValues, 
-      type: prev.type || firstActiveType || '', 
+    setEditAppointmentForm(prev => ({
+      ...initialAppointmentFormValues,
+      type: prev.type || firstActiveTypeName || '',
+      appointmentTypeId: prev.appointmentTypeId || firstActiveTypeId || '',
     }));
-    setAttendanceType(firstActiveType || '');
-  }, [getFirstActiveTypeName]);
+    setAttendanceType(firstActiveTypeName || '');
+  }, [getFirstActiveTypeNameAndId]);
 
   useEffect(() => {
     if (selectedDate) {
@@ -371,53 +380,59 @@ export default function AgendaPage() {
       setNewAppointmentForm(prev => ({ ...prev, date: formattedDate }));
     }
   }, [selectedDate]);
-  
+
   useEffect(() => {
-    const firstActive = getFirstActiveTypeName();
-    if (firstActive) {
-      setNewAppointmentForm(prev => ({ ...prev, type: prev.type || firstActive }));
-      setEditAppointmentForm(prev => ({ ...prev, type: prev.type || firstActive }));
-      setAttendanceType(prev => prev || firstActive);
+    const { name: firstActiveName, id: firstActiveId } = getFirstActiveTypeNameAndId();
+    if (firstActiveName) {
+      setNewAppointmentForm(prev => ({ ...prev, type: prev.type || firstActiveName, appointmentTypeId: prev.appointmentTypeId || firstActiveId }));
+      setEditAppointmentForm(prev => ({ ...prev, type: prev.type || firstActiveName, appointmentTypeId: prev.appointmentTypeId || firstActiveId }));
+      setAttendanceType(prev => prev || firstActiveName);
     }
-  }, [appointmentTypes, getFirstActiveTypeName]);
+  }, [appointmentTypes, getFirstActiveTypeNameAndId]);
 
   const handleDateChange = (date: Date | undefined) => {
     setSelectedDate(date);
   };
 
-  const handleFormInputChange = (formSetter: React.Dispatch<React.SetStateAction<AppointmentFormValues>>, field: keyof AppointmentFormValues, value: string) => {
+  const handleFormInputChange = (formSetter: React.Dispatch<React.SetStateAction<AppointmentFormValues>>, field: keyof AppointmentFormValues, value: string | boolean) => {
     formSetter(prev => ({ ...prev, [field]: value }));
   };
-
+  
   const handleFormSelectChange = (formSetter: React.Dispatch<React.SetStateAction<AppointmentFormValues>>, field: keyof AppointmentFormValues, value: string) => {
     formSetter(prev => ({ ...prev, [field]: value }));
+  
+    if (field === 'type') {
+      const selectedType = appointmentTypes.find(t => t.name === value);
+      if (selectedType) {
+        formSetter(prev => ({ ...prev, appointmentTypeId: selectedType.id || '' }));
+        if (selectedType.lancarFinanceiroAutomatico && (selectedType.valor || 0) > 0) {
+          setShowNaoLancarFinanceiroSwitch(true);
+          formSetter(prev => ({ ...prev, naoLancarFinanceiro: false })); // Default to generating
+        } else {
+          setShowNaoLancarFinanceiroSwitch(false);
+          formSetter(prev => ({ ...prev, naoLancarFinanceiro: true })); // Default to not generating if not applicable
+        }
+      } else {
+        setShowNaoLancarFinanceiroSwitch(false);
+         formSetter(prev => ({ ...prev, naoLancarFinanceiro: true }));
+      }
+    }
   };
+
 
   const validateAppointmentDateTime = (dateStr: string, timeStr: string): Date | null => {
     const appointmentDateTimeString = `${dateStr} ${timeStr}`;
     try {
       const parsedDateTime = parse(appointmentDateTimeString, 'yyyy-MM-dd HH:mm', new Date());
-      if (isNaN(parsedDateTime.getTime())) {
-        throw new Error('Invalid date/time format');
-      }
-      return parsedDateTime;
+      return isNaN(parsedDateTime.getTime()) ? null : parsedDateTime;
     } catch (error) {
       console.error("Error parsing date/time:", error);
-      toast({ title: "Erro de Formato", description: "A data ou hora fornecida é inválida.", variant: "destructive" });
       return null;
     }
   };
 
   const isDateTimeInPast = (dateTime: Date): boolean => {
-    if (!clientToday || !clientNow) return true; 
-    
-    if (isBefore(startOfDay(dateTime), clientToday)) {
-      return true;
-    }
-    if (isSameDay(dateTime, clientToday) && isBefore(dateTime, clientNow)) {
-      return true;
-    }
-    return false;
+    return clientNow ? isBefore(dateTime, clientNow) : true;
   };
   
   const isAppointmentDateInFuture = (appointmentDate: string): boolean => {
@@ -426,7 +441,7 @@ export default function AgendaPage() {
         const apptDateObj = parse(appointmentDate, 'yyyy-MM-dd', new Date());
         return isFuture(startOfDay(apptDateObj));
     } catch {
-        return true; // Treat parse errors as future to be safe
+        return true;
     }
   };
 
@@ -438,24 +453,27 @@ export default function AgendaPage() {
 
   const handleAddAppointment = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!currentUser) {
+    if (!currentUser || !currentUserData) {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
     }
-    const { patientId, type, date, time, notes } = newAppointmentForm;
+    const { patientId, type, date, time, notes, naoLancarFinanceiro, appointmentTypeId } = newAppointmentForm;
 
-    if (!patientId || !date || !time || !type) {
+    if (!patientId || !date || !time || !type || !appointmentTypeId) {
       toast({ title: "Erro de Validação", description: "Paciente, Data, Hora e Tipo são obrigatórios.", variant: "destructive" });
       return;
     }
-    const activeAppointmentType = appointmentTypes.find(t => t.name === type && t.status === 'active');
-    if (!activeAppointmentType) {
-      toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo.", variant: "destructive" });
+    const selectedAppointmentType = appointmentTypes.find(t => t.id === appointmentTypeId && t.status === 'active');
+    if (!selectedAppointmentType) {
+      toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo ou não foi encontrado.", variant: "destructive" });
       return;
     }
 
     const appointmentDateTime = validateAppointmentDateTime(date, time);
-    if (!appointmentDateTime) return;
+    if (!appointmentDateTime) {
+      toast({ title: "Data/Hora Inválida", description: "Formato de data ou hora inválido.", variant: "destructive" });
+      return;
+    }
 
     if (isDateTimeInPast(appointmentDateTime)) {
       toast({ title: "Data/Hora Inválida", description: "Não é possível agendar em datas ou horários passados.", variant: "destructive" });
@@ -474,25 +492,46 @@ export default function AgendaPage() {
     }
 
     try {
-      await addDoc(collection(db, 'agendamentos'), {
+      const newApptRef = await addDoc(collection(db, 'agendamentos'), {
         uid: currentUser.uid,
-        date: date, 
+        date: date,
         time,
         patientId,
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         type,
+        appointmentTypeId,
         notes,
-        status: 'agendado', 
+        status: 'agendado',
+        naoLancarFinanceiro, // Store user's choice
         createdAt: serverTimestamp(),
       });
 
+      // Create financial transaction if applicable
+      if (selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro) {
+        await addDoc(collection(db, 'financialTransactions'), {
+          ownerId: currentUser.uid,
+          appointmentId: newApptRef.id,
+          date: Timestamp.fromDate(parseISO(date)),
+          description: `Consulta - ${type} - ${selectedPatient.name}`,
+          patientId: selectedPatient.id,
+          patientName: selectedPatient.name,
+          amount: selectedAppointmentType.valor,
+          paymentMethod: 'Pix', // Default, can be changed later
+          status: 'Pendente',
+          type: 'atendimento',
+          createdAt: serverTimestamp(),
+        });
+      }
+      const { name: firstActiveTypeName, id: firstActiveTypeId } = getFirstActiveTypeNameAndId();
       setNewAppointmentForm({
         ...initialAppointmentFormValues,
-        date: newAppointmentForm.date, 
-        type: getFirstActiveTypeName(),
+        date: newAppointmentForm.date,
+        type: firstActiveTypeName,
+        appointmentTypeId: firstActiveTypeId,
       });
       setIsNewAppointmentDialogOpen(false);
+      setShowNaoLancarFinanceiroSwitch(false);
       toast({ title: "Sucesso!", description: "Agendamento adicionado.", variant: "success" });
       await fetchAppointments(currentUser);
     } catch (error) {
@@ -503,13 +542,17 @@ export default function AgendaPage() {
 
   const handleOpenEditDialog = (appointment: Appointment, dateKey: string) => {
     setEditingAppointmentInfo({ appointment, dateKey });
+    const selectedType = appointmentTypes.find(t => t.id === appointment.appointmentTypeId);
     setEditAppointmentForm({
       patientId: appointment.patientId,
       type: appointment.type,
+      appointmentTypeId: appointment.appointmentTypeId || '',
       date: dateKey,
       time: appointment.time,
       notes: appointment.notes || '',
+      naoLancarFinanceiro: appointment.naoLancarFinanceiro || false,
     });
+    setShowNaoLancarFinanceiroSwitch(!!(selectedType?.lancarFinanceiroAutomatico && (selectedType?.valor || 0) > 0));
     setIsEditAppointmentDialogOpen(true);
   };
 
@@ -518,20 +561,24 @@ export default function AgendaPage() {
     if (!editingAppointmentInfo || !currentUser) return;
 
     const { appointment: originalAppointment } = editingAppointmentInfo;
-    const { patientId, type, date: newDateKey, time, notes } = editAppointmentForm;
+    const { patientId, type, date: newDateKey, time, notes, naoLancarFinanceiro, appointmentTypeId } = editAppointmentForm;
 
-    if (!patientId || !newDateKey || !time || !type) {
+    if (!patientId || !newDateKey || !time || !type || !appointmentTypeId) {
       toast({ title: "Erro de Validação", description: "Paciente, Data, Hora e Tipo são obrigatórios.", variant: "destructive" });
       return;
     }
-    const activeAppointmentType = appointmentTypes.find(t => t.name === type && t.status === 'active');
-    if (!activeAppointmentType) {
-      toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo.", variant: "destructive" });
+
+    const selectedAppointmentType = appointmentTypes.find(t => t.id === appointmentTypeId && t.status === 'active');
+    if (!selectedAppointmentType) {
+      toast({ title: "Tipo Inválido", description: "O tipo de atendimento selecionado não está ativo ou não foi encontrado.", variant: "destructive" });
       return;
     }
 
     const appointmentDateTime = validateAppointmentDateTime(newDateKey, time);
-    if (!appointmentDateTime) return;
+    if (!appointmentDateTime) {
+      toast({ title: "Data/Hora Inválida", description: "Formato de data ou hora inválido.", variant: "destructive" });
+      return;
+    }
 
     const isOriginalDateTime = originalAppointment.date === newDateKey && originalAppointment.time === time;
     if (!isOriginalDateTime && isDateTimeInPast(appointmentDateTime)) {
@@ -559,12 +606,55 @@ export default function AgendaPage() {
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         type,
+        appointmentTypeId,
         notes,
-        // status remains originalAppointment.status unless specifically changed
+        naoLancarFinanceiro, // Update this field
       });
+
+      // Logic to manage financial transaction based on changes
+      const financialTransactionsRef = collection(db, 'financialTransactions');
+      const qFinance = query(financialTransactionsRef, where('appointmentId', '==', originalAppointment.id));
+      const financeSnapshot = await getDocs(qFinance);
+      const existingTransaction = financeSnapshot.docs.length > 0 ? { id: financeSnapshot.docs[0].id, ...financeSnapshot.docs[0].data() } : null;
+
+      const shouldGenerateFinance = selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro;
+
+      if (shouldGenerateFinance) {
+        if (existingTransaction) {
+          // Update existing financial record if amount or date changed
+          await updateDoc(doc(db, 'financialTransactions', existingTransaction.id), {
+            amount: selectedAppointmentType.valor,
+            date: Timestamp.fromDate(parseISO(newDateKey)),
+            description: `Consulta - ${type} - ${selectedPatient.name}`,
+            status: 'Pendente', // Reset to pending if re-enabled or amount changed
+          });
+        } else {
+          // Create new financial record
+          await addDoc(financialTransactionsRef, {
+            ownerId: currentUser.uid,
+            appointmentId: originalAppointment.id,
+            date: Timestamp.fromDate(parseISO(newDateKey)),
+            description: `Consulta - ${type} - ${selectedPatient.name}`,
+            patientId: selectedPatient.id,
+            patientName: selectedPatient.name,
+            amount: selectedAppointmentType.valor,
+            paymentMethod: 'Pix',
+            status: 'Pendente',
+            type: 'atendimento',
+            createdAt: serverTimestamp(),
+          });
+        }
+      } else if (existingTransaction) {
+        // If finance should not be generated, but exists, cancel it
+        await updateDoc(doc(db, 'financialTransactions', existingTransaction.id), {
+          status: 'Cancelado',
+        });
+      }
+
 
       setIsEditAppointmentDialogOpen(false);
       setEditingAppointmentInfo(null);
+      setShowNaoLancarFinanceiroSwitch(false);
       toast({ title: "Sucesso!", description: "Agendamento atualizado.", variant: "success" });
       await fetchAppointments(currentUser);
     } catch (error) {
@@ -574,18 +664,33 @@ export default function AgendaPage() {
   };
 
   const updateAppointmentStatus = async (appointmentId: string, newStatus: Appointment['status']) => {
-    if(!currentUser) return;
+    if (!currentUser) return;
     try {
       const apptRef = doc(db, 'agendamentos', appointmentId);
       await updateDoc(apptRef, {
         status: newStatus,
-        updatedAt: serverTimestamp() 
+        updatedAt: serverTimestamp()
       });
+
+      // If cancelled, update linked financial transaction
+      if (newStatus === 'cancelado') {
+        const financialTransactionsRef = collection(db, 'financialTransactions');
+        const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentId));
+        const financeSnapshot = await getDocs(qFinance);
+        if (!financeSnapshot.empty) {
+          const financeDocId = financeSnapshot.docs[0].id;
+          await updateDoc(doc(db, 'financialTransactions', financeDocId), {
+            status: 'Cancelado',
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+
       toast({ title: "Status Atualizado", description: `Agendamento marcado como ${newStatus}.`, variant: "success" });
-      await fetchAppointments(currentUser); // Refresh to reflect change
+      await fetchAppointments(currentUser);
     } catch (error) {
-       console.error(`Erro ao marcar agendamento como ${newStatus}:`, error);
-       toast({ title: "Erro", description: `Não foi possível marcar como ${newStatus}.`, variant: "destructive" });
+      console.error(`Erro ao marcar agendamento como ${newStatus}:`, error);
+      toast({ title: "Erro", description: `Não foi possível marcar como ${newStatus}.`, variant: "destructive" });
     }
   };
 
@@ -600,7 +705,6 @@ export default function AgendaPage() {
     await updateAppointmentStatus(appointmentToCancelInfo.appointmentId, 'cancelado');
     setIsCancelApptConfirmOpen(false);
     setAppointmentToCancelInfo(null);
-    // Toast and fetchAppointments is handled by updateAppointmentStatus
   };
 
   const goToPreviousDay = () => setSelectedDate(prev => prev ? subDays(prev, 1) : (clientToday ? subDays(clientToday, 1) : undefined));
@@ -611,7 +715,7 @@ export default function AgendaPage() {
       toast({ title: 'Erro', description: 'Dados do usuário não carregados.', variant: 'destructive' });
       return;
     }
-    const trimmedName = newCustomTypeName.trim();
+    const trimmedName = newCustomType.name?.trim();
     if (!trimmedName) {
       toast({ title: 'Erro', description: 'Nome do tipo não pode ser vazio.', variant: 'destructive' });
       return;
@@ -623,119 +727,113 @@ export default function AgendaPage() {
 
     try {
       const tiposRef = getAppointmentTypesPath(currentUserData);
-      
       await addDoc(tiposRef, {
         name: trimmedName,
         status: 'active',
-        createdAt: serverTimestamp(), 
+        valor: newCustomType.valor || 0,
+        lancarFinanceiroAutomatico: newCustomType.lancarFinanceiroAutomatico || false,
+        createdAt: serverTimestamp(),
       });
-
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
-      setNewCustomTypeName('');
+      setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
-      fetchAppointmentTypes(); 
+      fetchAppointmentTypes();
     } catch (error) {
       console.error("Erro ao adicionar tipo:", error);
-      toast({ title: 'Erro', description: 'Não foi possível adicionar o tipo de atendimento.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Não foi possível adicionar o tipo.', variant: 'destructive' });
     }
   };
 
   const handleSaveEditedTypeName = async () => {
-    if (!editingTypeInfo || !editingTypeInfo.type.id || !currentUserData) {
+    if (!editingTypeInfo || !editingTypeInfo.type.id || !currentUserData || !editingTypeInfo.currentData) {
       toast({ title: 'Erro', description: 'Informações para edição incompletas.', variant: 'destructive' });
       return;
     }
-    const { type: originalType, currentName } = editingTypeInfo;
-    const newNameTrimmed = currentName.trim();
-  
+    const { type: originalType, currentData } = editingTypeInfo;
+    const newNameTrimmed = currentData.name?.trim();
+
     if (!newNameTrimmed) {
       toast({ title: "Erro", description: "O nome do tipo não pode ser vazio.", variant: "destructive" });
       return;
     }
-    if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() && 
-        appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
+    if (newNameTrimmed.toLowerCase() !== originalType.name.toLowerCase() &&
+      appointmentTypes.some(type => type.id !== originalType.id && type.name.toLowerCase() === newNameTrimmed.toLowerCase())) {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
-  
+
     try {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToUpdateRef = doc(tiposCollectionRef, originalType.id);
-      
-      await updateDoc(docToUpdateRef, { name: newNameTrimmed });
-  
+      await updateDoc(docToUpdateRef, {
+        name: newNameTrimmed,
+        valor: currentData.valor || 0,
+        lancarFinanceiroAutomatico: currentData.lancarFinanceiroAutomatico || false,
+      });
+
       setEditingTypeInfo(null);
-      toast({ title: "Sucesso", description: `Nome do tipo "${originalType.name}" atualizado para "${newNameTrimmed}".`, variant: "success" });
-      await fetchAppointmentTypes(); 
-  
+      toast({ title: "Sucesso", description: `Tipo "${originalType.name}" atualizado.`, variant: "success" });
+      await fetchAppointmentTypes();
+      
+      const {name: firstActiveTypeName, id: firstActiveTypeId} = getFirstActiveTypeNameAndId();
       if (newAppointmentForm.type === originalType.name) {
-        setNewAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
+        setNewAppointmentForm(prev => ({ ...prev, type: newNameTrimmed, appointmentTypeId: firstActiveTypeId }));
       }
       if (editAppointmentForm.type === originalType.name) {
-        setEditAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
+        setEditAppointmentForm(prev => ({ ...prev, type: newNameTrimmed, appointmentTypeId: firstActiveTypeId }));
       }
       if (attendanceType === originalType.name) {
         setAttendanceType(newNameTrimmed);
       }
-  
+
     } catch (error) {
-      console.error("Erro ao editar nome do tipo:", error);
-      toast({ title: "Erro", description: "Falha ao atualizar o nome do tipo.", variant: "destructive" });
+      console.error("Erro ao editar tipo:", error);
+      toast({ title: "Erro", description: "Falha ao atualizar o tipo.", variant: "destructive" });
     }
   };
 
   const handleToggleTypeStatus = async (typeToToggle: AppointmentTypeObject) => {
     if (!typeToToggle || !typeToToggle.id || !currentUserData) {
-       toast({ title: 'Erro', description: 'Informações do tipo ou usuário incompletas.', variant: 'destructive' });
+      toast({ title: 'Erro', description: 'Informações do tipo ou usuário incompletas.', variant: 'destructive' });
       setTypeToToggleStatusConfirm(null);
       return;
     }
-
     const newStatus = typeToToggle.status === 'active' ? 'inactive' : 'active';
-
     const activeTypesCount = appointmentTypes.filter(t => t.status === 'active').length;
     if (newStatus === 'inactive' && activeTypesCount <= 1 && appointmentTypes.some(t => t.status === 'inactive' && t.id !== typeToToggle.id)) {
-      toast({ title: "Atenção", description: "Não é possível desativar o último tipo de atendimento ativo se existirem outros tipos inativos.", variant: "warning" });
+      toast({ title: "Atenção", description: "Não é possível desativar o último tipo ativo se existirem outros inativos.", variant: "warning" });
       setTypeToToggleStatusConfirm(null);
       return;
     }
-     if (newStatus === 'inactive' && activeTypesCount === 1 && appointmentTypes.length === 1) {
-       toast({ title: "Atenção", description: "Não é possível desativar o único tipo de atendimento existente.", variant: "warning" });
-       setTypeToToggleStatusConfirm(null);
-       return;
+    if (newStatus === 'inactive' && activeTypesCount === 1 && appointmentTypes.length === 1) {
+      toast({ title: "Atenção", description: "Não é possível desativar o único tipo existente.", variant: "warning" });
+      setTypeToToggleStatusConfirm(null);
+      return;
     }
-
 
     try {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToUpdateRef = doc(tiposCollectionRef, typeToToggle.id);
-      
       await updateDoc(docToUpdateRef, { status: newStatus });
-      
-      toast({
-        title: "Status Alterado",
-        description: `O tipo "${typeToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`,
-        variant: "success"
-      });
+      toast({ title: "Status Alterado", description: `O tipo "${typeToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`, variant: "success" });
       setTypeToToggleStatusConfirm(null);
-      await fetchAppointmentTypes(); 
-
-      const firstActive = getFirstActiveTypeName(); 
+      await fetchAppointmentTypes();
+      
+      const {name: firstActiveName, id: firstActiveId} = getFirstActiveTypeNameAndId();
       if (newStatus === 'inactive') {
         if (newAppointmentForm.type === typeToToggle.name) {
-          setNewAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
+          setNewAppointmentForm(prev => ({ ...prev, type: firstActiveName || '', appointmentTypeId: firstActiveId || ''}));
         }
         if (editAppointmentForm.type === typeToToggle.name) {
-          setEditAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
+          setEditAppointmentForm(prev => ({ ...prev, type: firstActiveName || '', appointmentTypeId: firstActiveId || ''}));
         }
         if (attendanceType === typeToToggle.name) {
-          setAttendanceType(firstActive || '');
+          setAttendanceType(firstActiveName || '');
         }
       }
     } catch (error) {
       console.error("Erro ao alterar status do tipo:", error);
       toast({ title: "Erro", description: "Falha ao alterar o status do tipo.", variant: "destructive" });
-      setTypeToToggleStatusConfirm(null);
     }
   };
 
@@ -751,30 +849,26 @@ export default function AgendaPage() {
       setTypeToDelete(null);
       return;
     }
-
     try {
       const tiposCollectionRef = getAppointmentTypesPath(currentUserData);
       const docToDeleteRef = doc(tiposCollectionRef, typeToDelete.id);
       await deleteDoc(docToDeleteRef);
-
       toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
+      await fetchAppointmentTypes();
       
-      await fetchAppointmentTypes(); 
-
-      const firstActive = getFirstActiveTypeName(); 
+      const {name: firstActiveName, id: firstActiveId} = getFirstActiveTypeNameAndId();
       if (newAppointmentForm.type === typeToDelete.name) {
-        setNewAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
+        setNewAppointmentForm(prev => ({ ...prev, type: firstActiveName || '', appointmentTypeId: firstActiveId || ''}));
       }
       if (editAppointmentForm.type === typeToDelete.name) {
-        setEditAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
+        setEditAppointmentForm(prev => ({ ...prev, type: firstActiveName || '', appointmentTypeId: firstActiveId || '' }));
       }
       if (attendanceType === typeToDelete.name) {
-        setAttendanceType(firstActive || '');
+        setAttendanceType(firstActiveName || '');
       }
-      
     } catch (error) {
       console.error("Erro ao excluir tipo:", error);
-      toast({ title: "Erro ao Excluir", description: `Não foi possível excluir o tipo "${typeToDelete.name}". Verifique se ele está em uso.`, variant: "destructive" });
+      toast({ title: "Erro ao Excluir", description: `Não foi possível excluir o tipo. Verifique se ele está em uso.`, variant: "destructive" });
     } finally {
       setIsDeleteTypeConfirmOpen(false);
       setTypeToDelete(null);
@@ -795,12 +889,10 @@ export default function AgendaPage() {
         setWhatsAppPatientDetails({ name: patientData.name, phone: patientData.phone || null });
       } else {
         setWhatsAppPatientDetails({ name: appointment.patientName, phone: null });
-        toast({ title: "Erro", description: "Dados do paciente não encontrados.", variant: "warning" });
       }
     } catch (error) {
       console.error("Erro ao buscar dados do paciente para WhatsApp:", error);
       setWhatsAppPatientDetails({ name: appointment.patientName, phone: null });
-      toast({ title: "Erro", description: "Não foi possível carregar os dados do paciente.", variant: "destructive" });
     } finally {
       setIsFetchingPatientPhone(false);
       setIsConfirmWhatsAppDialogOpen(true);
@@ -808,89 +900,71 @@ export default function AgendaPage() {
   };
 
   const handleSendWhatsAppConfirmation = () => {
-    if (!selectedApptForWhatsApp || !whatsAppPatientDetails.phone) {
-      toast({ title: "Erro", description: "Informações do agendamento ou telefone do paciente não disponíveis.", variant: "destructive"});
-      return;
-    }
+    if (!selectedApptForWhatsApp || !whatsAppPatientDetails.phone) return;
     let message = '';
     const apptDateFormatted = format(parse(selectedApptForWhatsApp.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy', { locale: ptBR });
-    
     if (whatsAppMsgType === 'predefined') {
       message = `Olá ${selectedApptForWhatsApp.patientName}, tudo bem? Confirmando seu agendamento para ${selectedApptForWhatsApp.type} no dia ${apptDateFormatted} às ${selectedApptForWhatsApp.time}. Em caso de imprevisto, por favor, nos avise com antecedência. Até breve!`;
     } else {
       if (!customWhatsAppMsg.trim()) {
-        toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning"});
+        toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning" });
         return;
       }
       message = customWhatsAppMsg;
     }
-
     const cleanPhone = whatsAppPatientDetails.phone.replace(/\D/g, '');
-    // Assuming Brazilian numbers, add country code 55 if not present
     const whatsappLink = `https://wa.me/${cleanPhone.startsWith('55') ? cleanPhone : '55' + cleanPhone}?text=${encodeURIComponent(message)}`;
-    
     window.open(whatsappLink, '_blank');
-    toast({ title: "Mensagem Pronta", description: `Abrindo WhatsApp para enviar mensagem para ${selectedApptForWhatsApp.patientName}.`, variant: "success"});
     setIsConfirmWhatsAppDialogOpen(false);
   };
 
   const handleOpenRecordAttendanceDialog = (appointment: Appointment) => {
     setAppointmentToRecordAttendance(appointment);
-    setAttendanceType(appointment.type || getFirstActiveTypeName() || '');
-    setAttendanceNote(''); // Clear previous notes
+    const { name: firstActiveTypeName } = getFirstActiveTypeNameAndId();
+    setAttendanceType(appointment.type || firstActiveTypeName || '');
+    setAttendanceNote('');
     setIsRecordAttendanceDialogOpen(true);
   };
 
   const handleSaveAttendanceAndMarkRealizado = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!currentUser || !appointmentToRecordAttendance) {
-      toast({ title: "Erro", description: "Usuário ou agendamento não identificado.", variant: "destructive" });
-      return;
-    }
+    if (!currentUser || !appointmentToRecordAttendance) return;
     const isNoteEmpty = !attendanceNote || attendanceNote.trim() === '<p></p>' || attendanceNote.trim() === '';
     if (!attendanceType || isNoteEmpty) {
-      toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são necessários.", variant: "destructive" });
+      toast({ title: "Campos Obrigatórios", description: "Tipo e observações são necessários.", variant: "destructive" });
       return;
     }
-
     setIsSavingAttendance(true);
     try {
-      // 1. Update patient history
       const patientDocRef = doc(db, 'pacientes', appointmentToRecordAttendance.patientId);
       const patientDocSnap = await getDoc(patientDocRef);
-
       if (patientDocSnap.exists()) {
         const patientData = patientDocSnap.data() as PatientFromFirebase;
         const currentHistory = patientData.history || [];
         const newHistoryEntry = {
           id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-          date: format(new Date(), 'yyyy-MM-dd'), // Use current date for attendance record
+          date: format(new Date(), 'yyyy-MM-dd'),
           type: attendanceType,
           notes: attendanceNote,
         };
         const updatedHistory = [newHistoryEntry, ...currentHistory];
         await updateDoc(patientDocRef, { history: updatedHistory });
       } else {
-        throw new Error("Documento do paciente não encontrado para adicionar histórico.");
+        throw new Error("Documento do paciente não encontrado.");
       }
-
-      // 2. Update appointment status to 'realizado'
       await updateAppointmentStatus(appointmentToRecordAttendance.id, 'realizado');
-
       toast({ title: "Sucesso!", description: "Atendimento registrado e agendamento marcado como realizado.", variant: "success" });
       setIsRecordAttendanceDialogOpen(false);
-      setAppointmentToRecordAttendance(null);
+      const { name: firstActiveTypeName } = getFirstActiveTypeNameAndId();
+      setAttendanceType(firstActiveTypeName || '');
       setAttendanceNote('');
-      setAttendanceType(getFirstActiveTypeName() || '');
-      // fetchAppointments is called by updateAppointmentStatus
     } catch (error) {
       console.error("Erro ao registrar atendimento:", error);
-      toast({ title: "Erro ao Registrar", description: "Não foi possível salvar o registro do atendimento.", variant: "destructive" });
+      toast({ title: "Erro ao Registrar", description: "Não foi possível salvar o registro.", variant: "destructive" });
     } finally {
       setIsSavingAttendance(false);
     }
   };
-
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
 
@@ -908,12 +982,12 @@ export default function AgendaPage() {
   const isSelectedDatePast = selectedDate && clientToday ? isBefore(startOfDay(selectedDate), clientToday) : false;
 
   const apptDateTimeForActionButtons = (apptDate: string, apptTime: string) => parse(`${apptDate} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date());
-  
+
   const getStatusBadgeVariant = (status: Appointment['status']) => {
     switch (status) {
-      case 'agendado': return 'default'; // Blue or theme default
-      case 'realizado': return 'success'; // Green
-      case 'cancelado': return 'destructive'; // Red (though cancelled are filtered out)
+      case 'agendado': return 'default';
+      case 'realizado': return 'success';
+      case 'cancelado': return 'destructive';
       default: return 'secondary';
     }
   };
@@ -925,13 +999,18 @@ export default function AgendaPage() {
         <Dialog open={isNewAppointmentDialogOpen} onOpenChange={(isOpen) => {
           setIsNewAppointmentDialogOpen(isOpen);
           if (isOpen) {
-            const firstActive = getFirstActiveTypeName();
+            const {name: firstActiveName, id: firstActiveId} = getFirstActiveTypeNameAndId();
             const currentFormDate = newAppointmentForm.date || format(selectedDate || new Date(), 'yyyy-MM-dd');
             setNewAppointmentForm({
               ...initialAppointmentFormValues,
               date: currentFormDate,
-              type: firstActive,
+              type: firstActiveName,
+              appointmentTypeId: firstActiveId,
             });
+             const selectedType = appointmentTypes.find(t => t.id === firstActiveId);
+            setShowNaoLancarFinanceiroSwitch(!!(selectedType?.lancarFinanceiroAutomatico && (selectedType?.valor || 0) > 0));
+          } else {
+            setShowNaoLancarFinanceiroSwitch(false);
           }
         }}>
           <DialogTrigger asChild>
@@ -950,13 +1029,7 @@ export default function AgendaPage() {
                 <Select value={newAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'patientId', value)} required>
                   <SelectTrigger id="newPatientId" className="col-span-3"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
                   <SelectContent>
-                    {isLoadingPatients ? (
-                      <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
-                    ) : firebasePatients.length === 0 ? (
-                      <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
-                    ) : (
-                      firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                    )}
+                    {isLoadingPatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum paciente</SelectItem> : firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -970,25 +1043,24 @@ export default function AgendaPage() {
                       {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
                     </SelectContent>
                   </Select>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo" className="flex-shrink-0">
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar tipos" className="flex-shrink-0">
-                    <Search className="h-4 w-4" />
-                  </Button>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar" className="flex-shrink-0"><Plus className="h-4 w-4" /></Button>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
                 </div>
               </div>
+              {showNaoLancarFinanceiroSwitch && (
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="naoLancarFinanceiroNew" className="text-right col-span-3">Gerar Lançamento Financeiro?</Label>
+                  <Switch
+                    id="naoLancarFinanceiroNew"
+                    checked={!newAppointmentForm.naoLancarFinanceiro}
+                    onCheckedChange={(checked) => handleFormInputChange(setNewAppointmentForm, 'naoLancarFinanceiro', !checked)}
+                    className="col-span-1 justify-self-start"
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-4 items-center gap-4">
                  <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
-                 <Input 
-                  id="newDate" 
-                  type="date" 
-                  value={newAppointmentForm.date} 
-                  onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} 
-                  className="col-span-3" 
-                  min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} 
-                  required 
-                />
+                 <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newTime" className="text-right col-span-1">Hora*</Label>
@@ -996,7 +1068,7 @@ export default function AgendaPage() {
               </div>
               <div className="grid grid-cols-4 items-start gap-4">
                 <Label htmlFor="newNotes" className="text-right col-span-1 pt-2">Observações</Label>
-                <Textarea id="newNotes" value={newAppointmentForm.notes} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'notes', e.target.value)} className="col-span-3" rows={3} placeholder="Detalhes adicionais..." />
+                <Textarea id="newNotes" value={newAppointmentForm.notes} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'notes', e.target.value as string)} className="col-span-3" rows={3} />
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
@@ -1019,220 +1091,126 @@ export default function AgendaPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Compromissos para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'Data Selecionada'}</CardTitle>
-                <CardDescription>Compromissos do dia ({todaysAppointments.length}).</CardDescription>
+                <CardTitle>Compromissos para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'Data'}</CardTitle>
+                <CardDescription>({todaysAppointments.length}).</CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={goToPreviousDay} aria-label="Dia anterior"><ChevronLeft className="h-4 w-4" /></Button>
-                <Button variant="outline" size="icon" onClick={goToNextDay} aria-label="Próximo dia"><ChevronRight className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={goToPreviousDay}><ChevronLeft className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={goToNextDay}><ChevronRight className="h-4 w-4" /></Button>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {todaysAppointments.length > 0 ? (
               todaysAppointments.map((appt) => (
-                <div key={appt.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-md hover:bg-muted transition-colors">
+                <div key={appt.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
                   <div className="flex items-center gap-3">
-                    <div className="flex flex-col items-center w-12">
-                      <Clock className="h-4 w-4 text-muted-foreground mb-1" />
-                      <span className="font-semibold text-sm text-primary">{appt.time}</span>
-                    </div>
+                    <div className="flex flex-col items-center w-12"><Clock className="h-4 w-4 text-muted-foreground" /><span className="font-semibold text-sm text-primary">{appt.time}</span></div>
                     <div className="border-l pl-3">
-                      <p className="font-medium flex items-center gap-1"><User className="h-4 w-4 text-muted-foreground" /> {appt.patientName}</p>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1"><ClipboardList className="h-4 w-4 text-muted-foreground" /> {appt.type}</p>
+                      <p className="font-medium flex items-center gap-1"><User className="h-4 w-4" /> {appt.patientName}</p>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1"><ClipboardList className="h-4 w-4" /> {appt.type}</p>
                       {appt.notes && <p className="text-xs text-muted-foreground mt-1 italic">"{appt.notes}"</p>}
                        <Badge variant={getStatusBadgeVariant(appt.status)} className="mt-1.5 text-xs capitalize">{appt.status}</Badge>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap justify-end">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-blue-500 hover:bg-blue-100"
-                      onClick={() => handleOpenEditDialog(appt, formattedDateKey)}
-                      title="Editar Agendamento"
-                      disabled={appt.status === 'cancelado' || appt.status === 'realizado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-green-600 hover:bg-green-100"
-                      onClick={() => openConfirmWhatsAppDialog(appt)}
-                      title="Enviar Mensagem de Confirmação"
-                      disabled={appt.status !== 'agendado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditDialog(appt, formattedDateKey)} title="Editar" disabled={appt.status === 'cancelado' || appt.status === 'realizado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}><Edit className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:bg-green-100" onClick={() => openConfirmWhatsAppDialog(appt)} title="Mensagem" disabled={appt.status !== 'agendado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}><MessageSquare className="h-4 w-4" /></Button>
                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4"/></Button>
-                        </DropdownMenuTrigger>
+                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4"/></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            {appt.status === 'agendado' && !(clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow)) && (
-                                <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}>
-                                    <CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Marcar como Realizado
-                                </DropdownMenuItem>
-                            )}
-                            {appt.status === 'realizado' && (
-                                <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}>
-                                <RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Marcar como Agendado
-                                </DropdownMenuItem>
-                            )}
-                            {(appt.status === 'agendado' || appt.status === 'realizado') && (
-                                <DropdownMenuItem 
-                                  onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} 
-                                  className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
-                                 <XCircle className="mr-2 h-4 w-4"/> Cancelar Agendamento
-                                </DropdownMenuItem>
-                            )}
+                            {appt.status === 'agendado' && !(clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow)) && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}><CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Realizado</DropdownMenuItem>}
+                            {appt.status === 'realizado' && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}><RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Agendado</DropdownMenuItem>}
+                            {(appt.status === 'agendado' || appt.status === 'realizado') && <DropdownMenuItem onClick={() => handleOpenCancelApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive"><XCircle className="mr-2 h-4 w-4"/> Cancelar</DropdownMenuItem>}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                     <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="h-8 px-2 text-xs sm:text-sm sm:px-3" 
-                        title="Registrar Atendimento" 
-                        disabled={appt.status === 'cancelado' || appt.status === 'realizado'}
-                        onClick={() => handleOpenRecordAttendanceDialog(appt)}
-                        >
-                        <FileText className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="hidden sm:inline">Reg. Atend.</span>
-                        <span className="sm:hidden">Atend.</span>
-                    </Button>
-                    <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3">
-                      <Link href={`/pacientes/${appt.patientSlug}`}>
-                        <Eye className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" />
-                        <span className="sm:hidden">Ver</span>
-                        <span className="hidden sm:inline">Paciente</span>
-                      </Link>
-                    </Button>
+                     <Button variant="outline" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3" title="Atendimento" disabled={appt.status === 'cancelado' || appt.status === 'realizado'} onClick={() => handleOpenRecordAttendanceDialog(appt)}><FileText className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" /><span className="hidden sm:inline">Reg. Atend.</span><span className="sm:hidden">Atend.</span></Button>
+                    <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3"><Link href={`/pacientes/${appt.patientSlug}`}><Eye className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" /><span className="sm:hidden">Ver</span><span className="hidden sm:inline">Paciente</span></Link></Button>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="text-center py-10 text-muted-foreground">
-                <CalendarPlus className="mx-auto h-12 w-12 mb-4" />
-                <p>Nenhum agendamento para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'esta data'}.</p>
-                <Button variant="link" onClick={() => setIsNewAppointmentDialogOpen(true)} disabled={isSelectedDatePast}>
-                  {isSelectedDatePast ? "Não é possível agendar" : "Adicionar agendamento"}
-                </Button>
-              </div>
+              <div className="text-center py-10 text-muted-foreground"><CalendarPlus className="mx-auto h-12 w-12" /><p>Nenhum agendamento para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'esta data'}.</p><Button variant="link" onClick={() => setIsNewAppointmentDialogOpen(true)} disabled={isSelectedDatePast}>{isSelectedDatePast ? "Não é possível agendar" : "Adicionar"}</Button></div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Record Attendance Dialog */}
-      <Dialog open={isRecordAttendanceDialogOpen} onOpenChange={(isOpen) => {
-        setIsRecordAttendanceDialogOpen(isOpen);
-        if (!isOpen) setAppointmentToRecordAttendance(null);
-      }}>
+      <Dialog open={isRecordAttendanceDialogOpen} onOpenChange={(isOpen) => { setIsRecordAttendanceDialogOpen(isOpen); if (!isOpen) setAppointmentToRecordAttendance(null); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Registrar Atendimento</DialogTitle>
-            <DialogDescription>
-              Paciente: <strong>{appointmentToRecordAttendance?.patientName}</strong> <br/>
-              Horário: {appointmentToRecordAttendance?.time}
-            </DialogDescription>
+            <DialogDescription>Paciente: <strong>{appointmentToRecordAttendance?.patientName}</strong> <br/>Horário: {appointmentToRecordAttendance?.time}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveAttendanceAndMarkRealizado} className="space-y-4 py-4">
              <div>
-              <Label htmlFor="attendanceType">Tipo de Atendimento*</Label>
+              <Label htmlFor="attendanceType">Tipo*</Label>
               <div className="flex items-center gap-1 mt-1">
                 <Select value={attendanceType} onValueChange={setAttendanceType} required>
-                  <SelectTrigger id="attendanceType" className="flex-grow">
-                    <SelectValue placeholder="Selecione o tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
-                    {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
-                  </SelectContent>
+                  <SelectTrigger id="attendanceType" className="flex-grow"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}{activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum</SelectItem>}</SelectContent>
                 </Select>
-                <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo" className="flex-shrink-0">
-                  <Plus className="h-4 w-4" />
-                </Button>
-                 <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar tipos" className="flex-shrink-0">
-                  <Search className="h-4 w-4" />
-                </Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar" className="flex-shrink-0"><Plus className="h-4 w-4" /></Button>
+                 <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
               </div>
             </div>
             <div>
-              <Label htmlFor="attendanceNote">Observações do Atendimento*</Label>
-              <div className="mt-1">
-                {isClient && TiptapEditor ? (
-                  <TiptapEditor content={attendanceNote} onChange={setAttendanceNote} />
-                ) : (
-                  <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /><p className="ml-2 text-muted-foreground">Carregando editor...</p></div>
-                )}
-              </div>
+              <Label htmlFor="attendanceNote">Observações*</Label>
+              <div className="mt-1">{isClient && TiptapEditor ? <TiptapEditor content={attendanceNote} onChange={setAttendanceNote} /> : <div className="w-full h-[150px] border rounded-md bg-muted/50 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /><p className="ml-2">Carregando...</p></div>}</div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingAttendance}>Cancelar</Button></DialogClose>
-              <Button type="submit" disabled={isSavingAttendance}>
-                {isSavingAttendance ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : <><Save className="mr-2 h-4 w-4" /> Salvar Atendimento</>}
-              </Button>
+              <Button type="submit" disabled={isSavingAttendance}>{isSavingAttendance ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : <><Save className="mr-2 h-4 w-4" /> Salvar</>}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-
       <Dialog open={isEditAppointmentDialogOpen} onOpenChange={(isOpen) => {
         setIsEditAppointmentDialogOpen(isOpen);
-        if (!isOpen) setEditingAppointmentInfo(null);
-      }}>
+        if (!isOpen) {
+            setEditingAppointmentInfo(null);
+            setShowNaoLancarFinanceiroSwitch(false);
+        }
+       }}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Editar Agendamento</DialogTitle>
-            <DialogDescription>Modifique os detalhes do agendamento.</DialogDescription>
+            <DialogDescription>Modifique os detalhes.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveEditedAppointment} className="grid gap-4 py-4">
              <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="editPatientId" className="text-right col-span-1">Paciente*</Label>
               <Select value={editAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'patientId', value)} required>
-                <SelectTrigger id="editPatientId" className="col-span-3"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
-                <SelectContent>
-                  {isLoadingPatients ? (
-                    <SelectItem value="loading" disabled>Carregando pacientes...</SelectItem>
-                  ) : firebasePatients.length === 0 ? (
-                    <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
-                  ) : (
-                    firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                  )}
-                </SelectContent>
+                <SelectTrigger id="editPatientId" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <SelectContent>{isLoadingPatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum</SelectItem> : firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="editType" className="text-right col-span-1">Tipo*</Label>
               <div className="col-span-3 flex items-center gap-1">
                 <Select value={editAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'type', value)} required>
-                  <SelectTrigger id="editType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
-                  <SelectContent>
-                    {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
-                    {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
-                  </SelectContent>
+                  <SelectTrigger id="editType" className="flex-grow"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}{activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum</SelectItem>}</SelectContent>
                 </Select>
-                <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo" className="flex-shrink-0">
-                  <Plus className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar tipos" className="flex-shrink-0">
-                  <Search className="h-4 w-4" />
-                </Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar" className="flex-shrink-0"><Plus className="h-4 w-4" /></Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
               </div>
             </div>
+            {showNaoLancarFinanceiroSwitch && (
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="naoLancarFinanceiroEdit" className="text-right col-span-3">Gerar Lançamento Financeiro?</Label>
+                  <Switch
+                    id="naoLancarFinanceiroEdit"
+                    checked={!editAppointmentForm.naoLancarFinanceiro}
+                    onCheckedChange={(checked) => handleFormInputChange(setEditAppointmentForm, 'naoLancarFinanceiro', !checked)}
+                    className="col-span-1 justify-self-start"
+                  />
+                </div>
+              )}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="editDate" className="text-right col-span-1">Data*</Label>
-              <Input
-                id="editDate"
-                type="date"
-                value={editAppointmentForm.date}
-                onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)}
-                className="col-span-3"
-                min={clientToday && editingAppointmentInfo && editingAppointmentInfo.appointment.date === format(clientToday, 'yyyy-MM-dd') ? format(clientToday, 'yyyy-MM-dd') : undefined}
-                required
-              />
+              <Input id="editDate" type="date" value={editAppointmentForm.date} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday && editingAppointmentInfo && editingAppointmentInfo.appointment.date === format(clientToday, 'yyyy-MM-dd') ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="editTime" className="text-right col-span-1">Hora*</Label>
@@ -1240,199 +1218,123 @@ export default function AgendaPage() {
             </div>
             <div className="grid grid-cols-4 items-start gap-4">
               <Label htmlFor="editNotes" className="text-right col-span-1 pt-2">Observações</Label>
-              <Textarea id="editNotes" value={editAppointmentForm.notes} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'notes', e.target.value)} className="col-span-3" rows={3} placeholder="Detalhes adicionais..." />
+              <Textarea id="editNotes" value={editAppointmentForm.notes} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'notes', e.target.value as string)} className="col-span-3" rows={3} />
             </div>
             <DialogFooter>
               <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-              <Button type="submit"><Save className="mr-2 h-4 w-4" />Salvar Alterações</Button>
+              <Button type="submit"><Save className="mr-2 h-4 w-4" />Salvar</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Adicionar Novo Tipo de Atendimento</DialogTitle>
-            <DialogDescription>Insira o nome do novo tipo.</DialogDescription>
+            <DialogTitle>Novo Tipo de Atendimento</DialogTitle>
+            <DialogDescription>Insira os detalhes.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <Label htmlFor="newCustomTypeName">Nome do Tipo</Label>
-            <Input
-              id="newCustomTypeName"
-              value={newCustomTypeName}
-              onChange={(e) => setNewCustomTypeName(e.target.value)}
-              placeholder="Ex: Sessão Extra"
-            />
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="newCustomTypeName" className="text-right col-span-1">Nome*</Label>
+              <Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="newCustomTypeValor" className="text-right col-span-1">Valor (R$)</Label>
+              <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-3" placeholder="0.00" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="newCustomTypeLancar" className="text-right col-span-3">Lançar Financeiro Automático?</Label>
+              <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-1 justify-self-start" />
+            </div>
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button type="button" variant="outline" onClick={() => setNewCustomTypeName('')}>Cancelar</Button></DialogClose>
-            <Button type="button" onClick={handleAddCustomType}>Salvar Tipo</Button>
+            <DialogClose asChild><Button variant="outline" onClick={() => setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' })}>Cancelar</Button></DialogClose>
+            <Button onClick={handleAddCustomType}>Salvar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isManageTypesDialogOpen} onOpenChange={setIsManageTypesDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle>
-            <DialogDescription>Edite, altere o status ou exclua os tipos de atendimento.</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle></DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
-             {appointmentTypes.map((type) => (
+            {appointmentTypes.map((type) => (
               <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
-                {editingTypeInfo && editingTypeInfo.type && editingTypeInfo.type.id === type.id ? (
-                  <div className="flex-grow flex items-center gap-2 mr-2">
-                    <Input
-                      value={editingTypeInfo.currentName}
-                      onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)}
-                      className="h-8"
-                    />
-                    <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar Nome"><Save className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo(null)} title="Cancelar Edição"><X className="h-4 w-4" /></Button>
+                {editingTypeInfo?.type.id === type.id ? (
+                  <div className="flex-grow grid grid-cols-3 gap-2 mr-2 items-center">
+                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-2" placeholder="Nome do tipo" />
+                     <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor"/>
+                     <div className="col-span-3 flex items-center justify-between mt-1">
+                        <Label htmlFor={`editLancar-${type.id}`} className="text-xs">Lançar Financeiro Auto.?</Label>
+                        <Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked }} : null)} />
+                     </div>
                   </div>
                 ) : (
-                  <span className={`flex-grow ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
+                  <div className="flex-grow">
+                    <span className={` ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
+                    <div className="text-xs text-muted-foreground">
+                        Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}
+                    </div>
+                  </div>
                 )}
                 <div className="flex gap-1 items-center ml-auto">
-                  {(!editingTypeInfo || !(editingTypeInfo.type && editingTypeInfo.type.id === type.id)) && (
+                  {editingTypeInfo?.type.id === type.id ? (
                     <>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentName: type.name })} title="Editar Nome">
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir Tipo">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentData: { name: type.name, valor: type.valor, lancarFinanceiroAutomatico: type.lancarFinanceiroAutomatico } })} title="Editar"><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
                     </>
                   )}
-                  <Switch
-                    checked={type.status === 'active'}
-                    onCheckedChange={() => setTypeToToggleStatusConfirm(type)}
-                    aria-label={`Status do tipo ${type.name}`}
-                    className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0"
-                  />
+                  <Switch checked={type.status === 'active'} onCheckedChange={() => setTypeToToggleStatusConfirm(type)} aria-label={`Status ${type.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" />
                 </div>
               </div>
             ))}
-            {appointmentTypes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum tipo cadastrado.</p>}
+            {appointmentTypes.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum tipo.</p>}
           </div>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose>
-          </DialogFooter>
+          <DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Alteração de Status</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} o tipo "{typeToToggleStatusConfirm?.name}"?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm)}
-              className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}
-            >
-              {typeToToggleStatusConfirm?.status === 'active' ? 'Desativar Tipo' : 'Ativar Tipo'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Confirmar Status</AlertDialogTitle><AlertDialogDescription>Deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{typeToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm)} className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{typeToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if(!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen);}}>
+      <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen); }}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Exclusão de Tipo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja excluir o tipo de atendimento "<strong>{typeToDelete?.name}</strong>"? Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDeleteType}
-              className="bg-destructive hover:bg-destructive/90"
-            >
-              Excluir Tipo
-            </AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{typeToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteType} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={isCancelApptConfirmOpen} onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          setAppointmentToCancelInfo(null);
-        }
-        setIsCancelApptConfirmOpen(isOpen);
-      }}>
+      <AlertDialog open={isCancelApptConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setAppointmentToCancelInfo(null); setIsCancelApptConfirmOpen(isOpen); }}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Cancelamento</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja cancelar o agendamento para {appointmentToCancelInfo?.patientName} às {appointmentToCancelInfo?.time}?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Voltar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmCancelAppt} className="bg-destructive hover:bg-destructive/90">Cancelar Agendamento</AlertDialogAction>
-          </AlertDialogFooter>
+          <AlertDialogHeader><AlertDialogTitle>Confirmar Cancelamento</AlertDialogTitle><AlertDialogDescription>Deseja cancelar o agendamento para {appointmentToCancelInfo?.patientName} às {appointmentToCancelInfo?.time}?</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmCancelAppt} className="bg-destructive hover:bg-destructive/90">Cancelar</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* WhatsApp Confirmation Message Dialog */}
       <Dialog open={isConfirmWhatsAppDialogOpen} onOpenChange={setIsConfirmWhatsAppDialogOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Mensagem de Confirmação</DialogTitle>
-            <DialogDescription>
-              Enviar mensagem para {selectedApptForWhatsApp?.patientName}.
-              Telefone: {isFetchingPatientPhone ? "Carregando..." : (whatsAppPatientDetails.phone || "Não cadastrado")}
-            </DialogDescription>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Mensagem de Confirmação</DialogTitle><DialogDescription>Enviar para {selectedApptForWhatsApp?.patientName}. Tel: {isFetchingPatientPhone ? "Carregando..." : (whatsAppPatientDetails.phone || "Não cadastrado")}</DialogDescription></DialogHeader>
           <div className="space-y-4 py-4">
             <RadioGroup value={whatsAppMsgType} onValueChange={(value) => setWhatsAppMsgType(value as 'predefined' | 'custom')}>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="predefined" id="rb-predefined-confirm" />
-                <Label htmlFor="rb-predefined-confirm">Usar mensagem padrão</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="custom" id="rb-custom-confirm" />
-                <Label htmlFor="rb-custom-confirm">Escrever mensagem personalizada</Label>
-              </div>
+              <div className="flex items-center space-x-2"><RadioGroupItem value="predefined" id="rb-predefined-confirm" /><Label htmlFor="rb-predefined-confirm">Usar padrão</Label></div>
+              <div className="flex items-center space-x-2"><RadioGroupItem value="custom" id="rb-custom-confirm" /><Label htmlFor="rb-custom-confirm">Personalizada</Label></div>
             </RadioGroup>
-
-            {whatsAppMsgType === 'predefined' && selectedApptForWhatsApp && (
-              <Card className="bg-muted/50">
-                <CardContent className="p-3 text-sm text-muted-foreground">
-                  <p>Olá {selectedApptForWhatsApp.patientName}, tudo bem? Confirmando seu agendamento para {selectedApptForWhatsApp.type} no dia {format(parse(selectedApptForWhatsApp.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy', { locale: ptBR })} às {selectedApptForWhatsApp.time}. Em caso de imprevisto, por favor, nos avise com antecedência. Até breve!</p>
-                </CardContent>
-              </Card>
-            )}
-
-            {whatsAppMsgType === 'custom' && (
-              <Textarea
-                value={customWhatsAppMsg}
-                onChange={(e) => setCustomWhatsAppMsg(e.target.value)}
-                placeholder={`Escreva sua mensagem para ${selectedApptForWhatsApp?.patientName}...`}
-                rows={4}
-              />
-            )}
+            {whatsAppMsgType === 'predefined' && selectedApptForWhatsApp && <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground"><p>Olá {selectedApptForWhatsApp.patientName}, tudo bem? Confirmando seu agendamento para {selectedApptForWhatsApp.type} no dia {format(parse(selectedApptForWhatsApp.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy', { locale: ptBR })} às {selectedApptForWhatsApp.time}. Em caso de imprevisto, por favor, nos avise com antecedência. Até breve!</p></CardContent></Card>}
+            {whatsAppMsgType === 'custom' && <Textarea value={customWhatsAppMsg} onChange={(e) => setCustomWhatsAppMsg(e.target.value)} placeholder={`Mensagem para ${selectedApptForWhatsApp?.patientName}...`} rows={4} />}
           </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancelar</Button>
-            </DialogClose>
-            <Button onClick={handleSendWhatsAppConfirmation} disabled={!whatsAppPatientDetails.phone || isFetchingPatientPhone}>
-              <Send className="mr-2 h-4 w-4" /> Enviar via WhatsApp
-            </Button>
-          </DialogFooter>
+          <DialogFooter><DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose><Button onClick={handleSendWhatsAppConfirmation} disabled={!whatsAppPatientDetails.phone || isFetchingPatientPhone}><Send className="mr-2 h-4 w-4" /> Enviar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }
-
