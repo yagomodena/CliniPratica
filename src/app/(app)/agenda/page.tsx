@@ -4,7 +4,7 @@
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send, FileText } from "lucide-react";
+import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send, FileText, Loader2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -44,6 +44,7 @@ import Link from 'next/link';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import dynamic from 'next/dynamic';
 
 
 import { getAuth, onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
@@ -63,12 +64,19 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '@/firebase';
 
+const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod => mod.TiptapEditor), {
+  ssr: false,
+  loading: () => <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /><p className="ml-2 text-muted-foreground">Carregando editor...</p></div>,
+});
+
+
 type PatientFromFirebase = {
   id: string; 
   name: string;
   status: string;
   slug: string;
   phone?: string; // Added phone
+  history?: any[]; // To store history items
 };
 
 type Appointment = {
@@ -121,6 +129,7 @@ export default function AgendaPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [clientToday, setClientToday] = useState<Date | undefined>(undefined);
   const [clientNow, setClientNow] = useState<Date | undefined>(undefined);
+  const [isClient, setIsClient] = useState(false); // For Tiptap
 
   const [appointments, setAppointments] = useState<AppointmentsData>({});
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
@@ -159,6 +168,16 @@ export default function AgendaPage() {
   const [whatsAppPatientDetails, setWhatsAppPatientDetails] = useState<{name: string; phone: string | null}>({name: '', phone: null});
   const [isFetchingPatientPhone, setIsFetchingPatientPhone] = useState(false);
 
+  // State for Record Attendance Dialog
+  const [isRecordAttendanceDialogOpen, setIsRecordAttendanceDialogOpen] = useState(false);
+  const [appointmentToRecordAttendance, setAppointmentToRecordAttendance] = useState<Appointment | null>(null);
+  const [attendanceNote, setAttendanceNote] = useState('');
+  const [attendanceType, setAttendanceType] = useState('');
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const fetchCurrentUserData = useCallback(async (user: FirebaseUser) => {
     if (!user) return null;
@@ -220,11 +239,6 @@ export default function AgendaPage() {
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
         const apptStatus = (data.status as Appointment['status']) || 'agendado'; // Default to 'agendado'
-
-        // Only include if not cancelled for the main view
-        if (apptStatus === 'cancelado') {
-          return; 
-        }
 
         const apptDateKey = data.date; 
 
@@ -304,6 +318,7 @@ export default function AgendaPage() {
               status: data.status as string,
               slug: data.slug as string, 
               phone: data.phone as string | undefined,
+              history: data.history || [],
             });
           });
           setFirebasePatients(fetchedPatientsData);
@@ -347,6 +362,7 @@ export default function AgendaPage() {
       ...initialAppointmentFormValues, 
       type: prev.type || firstActiveType || '', 
     }));
+    setAttendanceType(firstActiveType || '');
   }, [getFirstActiveTypeName]);
 
   useEffect(() => {
@@ -361,6 +377,7 @@ export default function AgendaPage() {
     if (firstActive) {
       setNewAppointmentForm(prev => ({ ...prev, type: prev.type || firstActive }));
       setEditAppointmentForm(prev => ({ ...prev, type: prev.type || firstActive }));
+      setAttendanceType(prev => prev || firstActive);
     }
   }, [appointmentTypes, getFirstActiveTypeName]);
 
@@ -657,6 +674,9 @@ export default function AgendaPage() {
       if (editAppointmentForm.type === originalType.name) {
         setEditAppointmentForm(prev => ({ ...prev, type: newNameTrimmed }));
       }
+      if (attendanceType === originalType.name) {
+        setAttendanceType(newNameTrimmed);
+      }
   
     } catch (error) {
       console.error("Erro ao editar nome do tipo:", error);
@@ -700,13 +720,16 @@ export default function AgendaPage() {
       setTypeToToggleStatusConfirm(null);
       await fetchAppointmentTypes(); 
 
+      const firstActive = getFirstActiveTypeName(); 
       if (newStatus === 'inactive') {
-        const firstActive = getFirstActiveTypeName(); 
         if (newAppointmentForm.type === typeToToggle.name) {
           setNewAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
         }
         if (editAppointmentForm.type === typeToToggle.name) {
           setEditAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
+        }
+        if (attendanceType === typeToToggle.name) {
+          setAttendanceType(firstActive || '');
         }
       }
     } catch (error) {
@@ -744,6 +767,9 @@ export default function AgendaPage() {
       }
       if (editAppointmentForm.type === typeToDelete.name) {
         setEditAppointmentForm(prev => ({ ...prev, type: firstActive || '' }));
+      }
+      if (attendanceType === typeToDelete.name) {
+        setAttendanceType(firstActive || '');
       }
       
     } catch (error) {
@@ -808,19 +834,77 @@ export default function AgendaPage() {
     setIsConfirmWhatsAppDialogOpen(false);
   };
 
+  const handleOpenRecordAttendanceDialog = (appointment: Appointment) => {
+    setAppointmentToRecordAttendance(appointment);
+    setAttendanceType(appointment.type || getFirstActiveTypeName() || '');
+    setAttendanceNote(''); // Clear previous notes
+    setIsRecordAttendanceDialogOpen(true);
+  };
+
+  const handleSaveAttendanceAndMarkRealizado = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!currentUser || !appointmentToRecordAttendance) {
+      toast({ title: "Erro", description: "Usuário ou agendamento não identificado.", variant: "destructive" });
+      return;
+    }
+    const isNoteEmpty = !attendanceNote || attendanceNote.trim() === '<p></p>' || attendanceNote.trim() === '';
+    if (!attendanceType || isNoteEmpty) {
+      toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são necessários.", variant: "destructive" });
+      return;
+    }
+
+    setIsSavingAttendance(true);
+    try {
+      // 1. Update patient history
+      const patientDocRef = doc(db, 'pacientes', appointmentToRecordAttendance.patientId);
+      const patientDocSnap = await getDoc(patientDocRef);
+
+      if (patientDocSnap.exists()) {
+        const patientData = patientDocSnap.data() as PatientFromFirebase;
+        const currentHistory = patientData.history || [];
+        const newHistoryEntry = {
+          id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          date: format(new Date(), 'yyyy-MM-dd'), // Use current date for attendance record
+          type: attendanceType,
+          notes: attendanceNote,
+        };
+        const updatedHistory = [newHistoryEntry, ...currentHistory];
+        await updateDoc(patientDocRef, { history: updatedHistory });
+      } else {
+        throw new Error("Documento do paciente não encontrado para adicionar histórico.");
+      }
+
+      // 2. Update appointment status to 'realizado'
+      await updateAppointmentStatus(appointmentToRecordAttendance.id, 'realizado');
+
+      toast({ title: "Sucesso!", description: "Atendimento registrado e agendamento marcado como realizado.", variant: "success" });
+      setIsRecordAttendanceDialogOpen(false);
+      setAppointmentToRecordAttendance(null);
+      setAttendanceNote('');
+      setAttendanceType(getFirstActiveTypeName() || '');
+      // fetchAppointments is called by updateAppointmentStatus
+    } catch (error) {
+      console.error("Erro ao registrar atendimento:", error);
+      toast({ title: "Erro ao Registrar", description: "Não foi possível salvar o registro do atendimento.", variant: "destructive" });
+    } finally {
+      setIsSavingAttendance(false);
+    }
+  };
+
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
 
   if (!clientToday || !selectedDate || !clientNow || isLoadingAppointments || isLoadingTypes) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
-        <p className="text-xl text-muted-foreground">Carregando agenda...</p>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="ml-2 text-muted-foreground">Carregando agenda...</p>
       </div>
     );
   }
 
   const formattedDateKey = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
-  const todaysAppointments: Appointment[] = appointments[formattedDateKey] || [];
+  const todaysAppointments: Appointment[] = (appointments[formattedDateKey] || []).filter(a => a.status !== 'cancelado');
   const isSelectedDatePast = selectedDate && clientToday ? isBefore(startOfDay(selectedDate), clientToday) : false;
 
   const apptDateTimeForActionButtons = (apptDate: string, apptTime: string) => parse(`${apptDate} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date());
@@ -936,7 +1020,7 @@ export default function AgendaPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Compromissos para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'Data Selecionada'}</CardTitle>
-                <CardDescription>Compromissos do dia ({todaysAppointments.filter(a => a.status !== 'cancelado').length}).</CardDescription>
+                <CardDescription>Compromissos do dia ({todaysAppointments.length}).</CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={goToPreviousDay} aria-label="Dia anterior"><ChevronLeft className="h-4 w-4" /></Button>
@@ -1005,14 +1089,17 @@ export default function AgendaPage() {
                             )}
                         </DropdownMenuContent>
                     </DropdownMenu>
-                    <Button asChild variant="outline" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3" 
+                     <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-8 px-2 text-xs sm:text-sm sm:px-3" 
                         title="Registrar Atendimento" 
-                        disabled={appt.status === 'cancelado'}>
-                        <Link href={`/pacientes/${appt.patientSlug}?tab=historico`}>
-                            <FileText className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" />
-                            <span className="hidden sm:inline">Reg. Atend.</span>
-                            <span className="sm:hidden">Atend.</span>
-                        </Link>
+                        disabled={appt.status === 'cancelado' || appt.status === 'realizado'}
+                        onClick={() => handleOpenRecordAttendanceDialog(appt)}
+                        >
+                        <FileText className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" />
+                        <span className="hidden sm:inline">Reg. Atend.</span>
+                        <span className="sm:hidden">Atend.</span>
                     </Button>
                     <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3">
                       <Link href={`/pacientes/${appt.patientSlug}`}>
@@ -1036,6 +1123,61 @@ export default function AgendaPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Record Attendance Dialog */}
+      <Dialog open={isRecordAttendanceDialogOpen} onOpenChange={(isOpen) => {
+        setIsRecordAttendanceDialogOpen(isOpen);
+        if (!isOpen) setAppointmentToRecordAttendance(null);
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Registrar Atendimento</DialogTitle>
+            <DialogDescription>
+              Paciente: <strong>{appointmentToRecordAttendance?.patientName}</strong> <br/>
+              Horário: {appointmentToRecordAttendance?.time}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveAttendanceAndMarkRealizado} className="space-y-4 py-4">
+             <div>
+              <Label htmlFor="attendanceType">Tipo de Atendimento*</Label>
+              <div className="flex items-center gap-1 mt-1">
+                <Select value={attendanceType} onValueChange={setAttendanceType} required>
+                  <SelectTrigger id="attendanceType" className="flex-grow">
+                    <SelectValue placeholder="Selecione o tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
+                    {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar novo tipo" className="flex-shrink-0">
+                  <Plus className="h-4 w-4" />
+                </Button>
+                 <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar tipos" className="flex-shrink-0">
+                  <Search className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="attendanceNote">Observações do Atendimento*</Label>
+              <div className="mt-1">
+                {isClient && TiptapEditor ? (
+                  <TiptapEditor content={attendanceNote} onChange={setAttendanceNote} />
+                ) : (
+                  <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /><p className="ml-2 text-muted-foreground">Carregando editor...</p></div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild><Button type="button" variant="outline" disabled={isSavingAttendance}>Cancelar</Button></DialogClose>
+              <Button type="submit" disabled={isSavingAttendance}>
+                {isSavingAttendance ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : <><Save className="mr-2 h-4 w-4" /> Salvar Atendimento</>}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
 
       <Dialog open={isEditAppointmentDialogOpen} onOpenChange={(isOpen) => {
         setIsEditAppointmentDialogOpen(isOpen);
