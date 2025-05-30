@@ -175,16 +175,15 @@ export default function PacienteDetalhePage() {
       throw new Error("Dados do usuário não encontrados");
     }
     const data = { ...userDocSnap.data(), uid: currentUserAuth.uid };
-    setCurrentUserData(data); // Also set current user data here
+    setCurrentUserData(data); 
     return data;
   }, []);
 
 
   const fetchAppointmentTypes = useCallback(async () => {
     try {
-      // currentUserData should be used instead of fetching again if available and recent
       const userProfile = currentUserData || await fetchCurrentUserData(); 
-      if (!userProfile) { // Double check if fetchCurrentUserData returned null
+      if (!userProfile) { 
           toast({ title: "Erro de Autenticação", description: "Não foi possível carregar dados do usuário para tipos.", variant: "warning"});
           const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
           setAppointmentTypes(fallbackTypes);
@@ -203,7 +202,7 @@ export default function PacienteDetalhePage() {
 
     } catch (error: any) {
       console.error("Erro ao buscar tipos de atendimento:", error);
-      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos de atendimento. Detalhe: ${error.message}`, variant: "warning", duration: 7000 });
+      toast({ title: "Erro ao Carregar Tipos", description: `Não foi possível carregar os tipos de atendimento.`, variant: "warning", duration: 7000 });
       const fallbackTypes = initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name));
       setAppointmentTypes(fallbackTypes);
     }
@@ -229,7 +228,7 @@ export default function PacienteDetalhePage() {
       setPatientObjectives(fetchedObjectives.length > 0 ? fetchedObjectives : fallback);
     } catch (error: any) {
       console.error("Erro ao buscar objetivos do paciente:", error);
-      toast({ title: "Erro ao Carregar Objetivos", description: `Não foi possível carregar os objetivos. Detalhe: ${error.message}`, variant: "warning" });
+      toast({ title: "Erro ao Carregar Objetivos", description: `Não foi possível carregar os objetivos.`, variant: "warning" });
       const fallback = initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase().replace(/\s+/g, '-')}`})).sort((a,b) => a.name.localeCompare(b.name));
       setPatientObjectives(fallback);
     }
@@ -246,7 +245,7 @@ export default function PacienteDetalhePage() {
 
 
   useEffect(() => {
-    const fetchAllPatientData = async () => {
+    const fetchAllData = async () => {
       if (!patientSlug) {
         toast({ title: "Erro", description: "Identificador do paciente não encontrado.", variant: "destructive" });
         setIsLoading(false);
@@ -256,18 +255,14 @@ export default function PacienteDetalhePage() {
 
       const currentUserAuth = auth.currentUser;
       if (!currentUserAuth) {
-        // Wait for auth state to be confirmed
-        setIsLoading(true); // Keep loading indicator
+        setIsLoading(true); 
         return;
       }
 
       setIsLoading(true);
       try {
-        // Fetch current user data for context (e.g., clinic ID if applicable)
-        // This is important if getAppointmentTypesPath or getPatientObjectivesPath depend on it.
-        await fetchCurrentUserData(); // Ensure currentUserData is set
+        await fetchCurrentUserData(); // Ensures currentUserData is set before dependent fetches
 
-        // Fetch core patient data
         const patientsRef = collection(db, 'pacientes');
         const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUserAuth.uid));
         const querySnapshot = await getDocs(q);
@@ -284,29 +279,29 @@ export default function PacienteDetalhePage() {
             objetivoPaciente: data.objetivoPaciente || '',
           };
           setPatient(fetchedPatient);
-          // Defer setting editedPatient and newHistoryType to other useEffects
+          
+          // Fetch dependent data only after patient data is available and user data is set
+          if (currentUserData) { // currentUserData should be set by fetchCurrentUserData
+            fetchAppointmentTypes();
+            fetchPatientObjectives();
+          }
+
         } else {
           toast({ title: "Paciente não encontrado", description: "Verifique se o link está correto ou se o paciente existe.", variant: "destructive" });
           setPatient(undefined);
         }
       } catch (error: any) {
         console.error("Erro ao buscar dados da página do paciente:", error);
-        toast({ title: "Erro", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
+        if (error.message !== "Usuário não autenticado") { // Avoid double toast for auth error
+            toast({ title: "Erro", description: `Falha ao carregar os dados da página: ${error.message}`, variant: "destructive" });
+        }
         setPatient(undefined);
       } finally {
         setIsLoading(false);
       }
     };
-    fetchAllPatientData();
-  }, [patientSlug, auth.currentUser, router, toast, fetchCurrentUserData]);
-
-
-  useEffect(() => {
-    if (auth.currentUser) { // Only fetch if user is authenticated
-      fetchAppointmentTypes();
-      fetchPatientObjectives();
-    }
-  }, [auth.currentUser, fetchAppointmentTypes, fetchPatientObjectives]);
+    fetchAllData();
+  }, [patientSlug, auth.currentUser, router, toast, fetchCurrentUserData, currentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
 
 
   useEffect(() => {
@@ -327,7 +322,7 @@ export default function PacienteDetalhePage() {
         } : {})
       }));
     }
-  }, [patient, patientObjectives, getFirstActiveObjectiveName, isEditing]); // Removed isEditing from direct impact here, handled by conditional spread
+  }, [patient, patientObjectives, getFirstActiveObjectiveName, isEditing]); 
 
   useEffect(() => {
     if (appointmentTypes.length > 0 && !newHistoryType) {
@@ -968,7 +963,7 @@ export default function PacienteDetalhePage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => handleOpenDeleteHistoryDialog(item)}
-                            className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive-foreground"
+                            className="text-destructive hover:!bg-destructive/10 hover:!text-black focus:!bg-destructive/10 focus:!text-destructive-foreground"
                           >
                             <Trash2 className="mr-2 h-4 w-4" /> Excluir Registro
                           </DropdownMenuItem>
