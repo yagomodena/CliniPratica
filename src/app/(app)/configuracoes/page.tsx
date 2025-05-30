@@ -45,9 +45,9 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
-  onAuthStateChanged, // Added onAuthStateChanged here
+  onAuthStateChanged,
 } from 'firebase/auth';
-import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc } from "firebase/firestore"; // Added updateDoc and deleteDoc
+import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc, query, where, getDocs, orderBy } from "firebase/firestore";
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
@@ -86,6 +86,7 @@ export default function ConfiguracoesPage() {
     areaAtuacao: '',
     plano: '',
     fotoPerfilUrl: '',
+    nomeEmpresa: '', // Added nomeEmpresa to profile state
   });
 
   const [currentUserPlan, setCurrentUserPlan] = useState<string>('Gratuito');
@@ -102,53 +103,98 @@ export default function ConfiguracoesPage() {
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-
-  // State for User Management
   const [users, setUsers] = useState<User[]>([]);
   const [isUserFormOpen, setIsUserFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDeleteUserConfirmOpen, setIsDeleteUserConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+
+  const fetchUserProfile = useCallback(async () => {
+    const user = auth.currentUser;
+    if (user) {
+      const userDocRef = doc(db, 'usuarios', user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      
+      let data: any = {}; // Define 'any' here or a more specific type if available
+      if (userDocSnap.exists()) {
+        data = userDocSnap.data();
+      } else {
+        console.warn(`Dados do usuário ${user.uid} não encontrados no Firestore. Usando dados do Auth.`);
+      }
+
+      const nomeCompleto = user.displayName || data.nomeCompleto || '';
+      const email = user.email || data.email || '';
+      const telefone = data.telefone || user.phoneNumber || '';
+      const areaAtuacao = data.areaAtuacao || '';
+      const plano = data.plano || 'Gratuito';
+      const fotoPerfilUrl = user.photoURL || data.fotoPerfilUrl || '';
+      const nomeEmpresa = data.nomeEmpresa || ''; // Fetch nomeEmpresa
+
+      setProfile({ nomeCompleto, email, telefone, areaAtuacao, plano, fotoPerfilUrl, nomeEmpresa });
+      setCurrentUserPlan(plano);
+    }
+  }, []);
+
 
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      const user = auth.currentUser;
-      if (user) {
-        const userDocRef = doc(db, 'usuarios', user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        
-        let data = {};
-        if (userDocSnap.exists()) {
-          data = userDocSnap.data();
-        } else {
-          // Se não houver dados no Firestore, usar dados do Auth e padrões
-          console.warn(`Dados do usuário ${user.uid} não encontrados no Firestore. Usando dados do Auth.`);
-        }
-
-        const nomeCompleto = user.displayName || (data as any).nomeCompleto || '';
-        const email = user.email || (data as any).email || '';
-        const telefone = (data as any).telefone || user.phoneNumber || '';
-        const areaAtuacao = (data as any).areaAtuacao || '';
-        const plano = (data as any).plano || 'Gratuito';
-        const fotoPerfilUrl = user.photoURL || (data as any).fotoPerfilUrl || '';
-
-        setProfile({ nomeCompleto, email, telefone, areaAtuacao, plano, fotoPerfilUrl });
-        setCurrentUserPlan(plano);
-      }
-    };
-
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         fetchUserProfile();
       } else {
-        // Reset profile if user logs out
-        setProfile({ nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '' });
+        setProfile({ nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '', nomeEmpresa: '' });
         setCurrentUserPlan('Gratuito');
+        setUsers([]);
       }
     });
     
     return () => unsubscribe();
-  }, []);
+  }, [fetchUserProfile]);
+
+  const fetchClinicUsers = useCallback(async () => {
+    if (currentUserPlan !== 'Clínica' || !profile.nomeEmpresa || !auth.currentUser) {
+      setUsers([]);
+      return;
+    }
+    setIsLoadingUsers(true);
+    try {
+      const usersRef = collection(db, 'usuarios');
+      // Fetch users of the same clinic, excluding the admin themselves
+      const q = query(usersRef, where('nomeEmpresa', '==', profile.nomeEmpresa), where('email', '!=', auth.currentUser.email), orderBy('nomeCompleto'));
+      const querySnapshot = await getDocs(q);
+      const clinicUsers: User[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        clinicUsers.push({
+          id: docSnap.id,
+          nomeCompleto: data.nomeCompleto || '',
+          email: data.email || '',
+          cargo: data.cargo || '',
+          permissoes: data.permissoes || {},
+          areaAtuacao: data.areaAtuacao || '',
+          criadoEm: data.criadoEm?.toDate()?.toISOString() || new Date().toISOString(),
+          fotoPerfilUrl: data.fotoPerfilUrl || '',
+          nomeEmpresa: data.nomeEmpresa || '',
+          plano: data.plano || '', // Or derive from clinic plan
+          telefone: data.telefone || '',
+        });
+      });
+      setUsers(clinicUsers);
+    } catch (error) {
+      console.error("Erro ao buscar usuários da clínica:", error);
+      toast({ title: "Erro", description: "Não foi possível carregar os usuários da clínica.", variant: "destructive" });
+      setUsers([]);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  }, [currentUserPlan, profile.nomeEmpresa, toast]);
+
+  useEffect(() => {
+    if (currentUserPlan === 'Clínica' && profile.nomeEmpresa) {
+      fetchClinicUsers();
+    }
+  }, [currentUserPlan, profile.nomeEmpresa, fetchClinicUsers]);
 
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,12 +221,10 @@ export default function ConfiguracoesPage() {
         telefone: profile.telefone,
         areaAtuacao: profile.areaAtuacao,
         fotoPerfilUrl: profile.fotoPerfilUrl,
-        // email e plano não são atualizados aqui diretamente pelo perfil
+        nomeEmpresa: profile.nomeEmpresa, // Save nomeEmpresa
       };
       
-      // Remove campos indefinidos para não sobrescrever com undefined no Firestore
       Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
-
 
       await setDoc(userDocRef, dataToUpdate, { merge: true }
       );
@@ -264,12 +308,12 @@ export default function ConfiguracoesPage() {
   const handleSelectPlan = (planName: PlanName) => {
     console.log("Updating plan to:", planName);
     setCurrentUserPlan(planName);
-    // TODO: Add logic to update plan in Firestore
     const user = auth.currentUser;
     if (user) {
         const userDocRef = doc(db, "usuarios", user.uid);
         setDoc(userDocRef, { plano: planName }, { merge: true })
             .then(() => {
+                setProfile(prev => ({ ...prev, plano: planName }));
                 console.log("Plano atualizado no Firestore para:", planName);
             })
             .catch((error) => {
@@ -312,82 +356,70 @@ export default function ConfiguracoesPage() {
       }
 
       if (editingUser) {
-        // Edição de usuário: Atualizar no Firestore (não no Auth primário)
-        const userDocRef = doc(db, 'usuarios', editingUser.id); // Assume 'id' is the UID
-        const userDataToUpdate = {
-          email: data.email, // Email não pode ser alterado no Auth sem reautenticação, mas podemos atualizar no Firestore
+        const userDocRef = doc(db, 'usuarios', editingUser.id);
+        const userDataToUpdate: Partial<User> = {
+          email: data.email,
           cargo: data.cargo,
           permissoes: data.permissoes,
           nomeCompleto: data.nomeCompleto || '',
-          // Não atualizamos a senha aqui. Se for necessário, deve ser um processo separado.
-          // Adicione outros campos conforme necessário: nomeEmpresa, plano, telefone, etc.
+          // nomeEmpresa is not typically changed for sub-users here, it's set at creation.
         };
         await updateDoc(userDocRef, userDataToUpdate);
-        setUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...userDataToUpdate } : u));
+        setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...userDataToUpdate } : u));
         toast({ title: "Usuário Atualizado", description: `Dados de ${data.email} atualizados.`, variant: "success" });
       } else {
-        // Cadastro de novo usuário:
-        // Criar no Firebase Auth - Idealmente, isso exigiria uma instância de Auth secundária ou uma função de back-end
-        // Para esta versão simplificada, vamos focar em salvar no Firestore sob a estrutura da clínica/usuário principal
-        // A senha não será usada para login direto deste sub-usuário sem uma lógica de Auth mais complexa.
-
-        // Gerar um ID único para o novo usuário (pode ser o UID de uma conta Auth secundária ou um ID gerado)
-        // Por enquanto, vamos usar um ID gerado, mas o ideal seria um UID do Firebase Auth
-        const newUserId = doc(collection(db, 'usuarios')).id; // Gera um ID único de documento
-
+        // New User Creation
+        const newUserId = doc(collection(db, 'usuarios')).id;
         const newUserDoc = {
           email: data.email,
           cargo: data.cargo,
           permissoes: data.permissoes,
           nomeCompleto: data.nomeCompleto || '',
-          // Para 'Clínica', associar ao 'ownerId' ou 'companyId' do usuário principal
-          // Este campo 'ownerId' ou 'clinicId' seria crucial para buscar usuários da mesma clínica
-          ownerId: mainAuthUser.uid, // Exemplo de como associar ao admin/dono da clínica
+          ownerId: mainAuthUser.uid,
+          nomeEmpresa: profile.nomeEmpresa || '', // Assign admin's company name
+          plano: 'Clínica', // Sub-users of a clinic are part of the clinic's plan context
           createdAt: serverTimestamp(),
+          fotoPerfilUrl: '', // Default
+          telefone: data.telefone || '', // Use phone from form if available
+          areaAtuacao: data.areaAtuacao || '', // Use area from form if available
         };
         await setDoc(doc(db, 'usuarios', newUserId), newUserDoc);
 
         const newUserForState: User = {
           id: newUserId,
-          email: data.email,
-          cargo: data.cargo,
-          permissoes: data.permissoes,
-          nomeCompleto: data.nomeCompleto || '',
-          areaAtuacao: '',
+          ...newUserDoc,
           criadoEm: new Date().toISOString(),
-          fotoPerfilUrl: '',
-          nomeEmpresa: '',
-          plano: '', // Ou o plano da clínica
-          telefone: '',
         };
+        delete (newUserForState as any).createdAt; // Remove Firestore timestamp for local state
+
         setUsers([...users, newUserForState]);
         toast({ title: "Usuário Adicionado", description: `${data.email} adicionado com sucesso.`, variant: "success" });
       }
       setIsUserFormOpen(false);
       setEditingUser(null);
+      fetchClinicUsers(); // Refresh user list
     } catch (error: any) {
       console.error("Erro no formulário de usuário:", error);
       toast({ title: "Erro", description: `Falha ao processar usuário: ${error.message}`, variant: "destructive" });
     }
   };
 
-
   const handleOpenDeleteUserDialog = (user: User) => {
     setUserToDelete(user);
     setIsDeleteUserConfirmOpen(true);
   };
 
-  const handleConfirmDeleteUser = () => {
+  const handleConfirmDeleteUser = async () => {
     if (userToDelete) {
-      // Lógica para remover usuário do Firestore. A remoção do Firebase Auth é mais complexa e requer backend.
-      const userDocRef = doc(db, 'usuarios', userToDelete.id);
-      deleteDoc(userDocRef).then(() => {
+      try {
+        const userDocRef = doc(db, 'usuarios', userToDelete.id);
+        await deleteDoc(userDocRef);
         setUsers(users.filter(u => u.id !== userToDelete.id));
         toast({ title: "Usuário Excluído", description: `${userToDelete.email} foi removido.`, variant: "destructive" });
-      }).catch(error => {
+      } catch (error) {
         console.error("Erro ao excluir usuário do Firestore:", error);
         toast({ title: "Erro", description: "Não foi possível excluir o usuário do Firestore.", variant: "destructive" });
-      });
+      }
       setUserToDelete(null);
     }
     setIsDeleteUserConfirmOpen(false);
@@ -430,7 +462,6 @@ export default function ConfiguracoesPage() {
           <TabsTrigger value="usuarios"><UsersRound className="mr-2 h-4 w-4 sm:inline hidden" />Usuários</TabsTrigger>
         </TabsList>
 
-        {/* Perfil Tab */}
         <TabsContent value="perfil">
           <Card className="shadow-md">
             <CardHeader>
@@ -454,6 +485,10 @@ export default function ConfiguracoesPage() {
                   <Label htmlFor="email">Email</Label>
                   <Input id="email" name="email" type="email" value={profile.email} disabled />
                 </div>
+                 <div className="space-y-2">
+                  <Label htmlFor="nomeEmpresa">Nome da Empresa/Clínica</Label>
+                  <Input id="nomeEmpresa" name="nomeEmpresa" placeholder="Nome da sua clínica" value={profile.nomeEmpresa} onChange={handleProfileChange} />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="telefone">Telefone</Label>
                   <Input id="telefone" name="telefone" type="tel" placeholder="(XX) XXXXX-XXXX" value={profile.telefone} onChange={handleProfileChange} />
@@ -472,7 +507,6 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
 
-        {/* Plano e Assinatura Tab */}
         <TabsContent value="plano">
           <Card className="shadow-md">
             <CardHeader>
@@ -496,7 +530,7 @@ export default function ConfiguracoesPage() {
                     <>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Até 50 pacientes</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Agenda completa com alertas</div>
-                      <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Upload de exames (1GB)</div>
+                      <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Relatórios básicos</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte por e-mail</div>
                     </>
                   )}
@@ -504,7 +538,7 @@ export default function ConfiguracoesPage() {
                     <>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Pacientes ilimitados</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Todas as funcionalidades Essencial</div>
-                      <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Envio automático de mensagens</div>
+                      <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Financeiro completo</div>
                       <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte prioritário</div>
                     </>
                   )}
@@ -550,7 +584,6 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
 
-        {/* Mural de Atualizações Tab */}
         <TabsContent value="mural-atualizacoes">
           <Card className="shadow-md">
             <CardHeader>
@@ -586,7 +619,6 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
 
-        {/* Segurança Tab */}
         <TabsContent value="seguranca">
           <Card className="shadow-md">
             <CardHeader>
@@ -676,7 +708,6 @@ export default function ConfiguracoesPage() {
           </Card>
         </TabsContent>
 
-        {/* Usuários Tab */}
         <TabsContent value="usuarios">
           <Card className="shadow-md">
             <CardHeader>
@@ -691,11 +722,17 @@ export default function ConfiguracoesPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {users.length > 0 ? (
+              {isLoadingUsers ? (
+                 <div className="flex justify-center items-center py-10">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="ml-2 text-muted-foreground">Carregando usuários...</p>
+                  </div>
+              ) : users.length > 0 ? (
                 <div className="overflow-x-auto">
                   <Table className="min-w-full">
                     <TableHeader className="hidden sm:table-header-group">
                       <TableRow>
+                        <TableHead>Nome</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>Cargo</TableHead>
                         <TableHead>Permissões</TableHead>
@@ -706,6 +743,10 @@ export default function ConfiguracoesPage() {
                       {users.map((user) => (
                         <TableRow key={user.id} className="block sm:table-row mb-4 sm:mb-0 border sm:border-0 rounded-lg sm:rounded-none shadow-md sm:shadow-none p-4 sm:p-0">
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4 font-medium">
+                            <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Nome: </span>
+                            {user.nomeCompleto}
+                          </TableCell>
+                          <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4">
                             <span className="font-semibold sm:hidden mr-2 text-muted-foreground">Email: </span>
                             {user.email}
                           </TableCell>
@@ -719,7 +760,7 @@ export default function ConfiguracoesPage() {
                               {menuItemsConfig.filter(item => user.permissoes[item.id]).map(item => (
                                 <Badge key={item.id} variant="secondary" className="text-xs">{item.label}</Badge>
                               ))}
-                              {menuItemsConfig.filter(item => user.permissoes[item.id]).length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma permissão específica</span>}
+                              {menuItemsConfig.filter(item => user.permissoes[item.id]).length === 0 && <span className="text-xs text-muted-foreground italic">Nenhuma</span>}
                             </div>
                           </TableCell>
                           <TableCell className="block sm:table-cell py-2 sm:py-4 sm:px-4 text-left sm:text-right">
@@ -749,7 +790,6 @@ export default function ConfiguracoesPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Plans Modal */}
       <PlansModal
         isOpen={isPlansModalOpen}
         onOpenChange={setIsPlansModalOpen}
@@ -757,7 +797,6 @@ export default function ConfiguracoesPage() {
         onSelectPlan={handleSelectPlan}
       />
 
-      {/* Add/Edit User Dialog */}
       <Dialog open={isUserFormOpen} onOpenChange={(isOpen) => {
         setIsUserFormOpen(isOpen);
         if (!isOpen) setEditingUser(null);
@@ -780,7 +819,6 @@ export default function ConfiguracoesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete User Confirmation Dialog */}
       <AlertDialog open={isDeleteUserConfirmOpen} onOpenChange={setIsDeleteUserConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
