@@ -4,7 +4,7 @@
 import { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send } from "lucide-react";
 import {
   ChartContainer,
   ChartTooltip,
@@ -47,6 +47,8 @@ import {
   orderBy
 } from "firebase/firestore";
 import { MessageCircle } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
 
 // Type for patients fetched from Firebase, used in select dropdowns for alerts
 type PatientForSelect = {
@@ -112,7 +114,7 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
   const [isPlanWarningVisible, setIsPlanWarningVisible] = useState(true);
-  const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
+  
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
   const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
 
@@ -130,6 +132,13 @@ export default function DashboardPage() {
   const [monthlyRevenue, setMonthlyRevenue] = useState<number | null>(null);
   const [revenueComparisonPercentage, setRevenueComparisonPercentage] = useState<number | null>(null);
   const [isLoadingRevenue, setIsLoadingRevenue] = useState(true);
+
+  // State for Birthday Message Dialog
+  const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
+  const [isBirthdayMessageDialogOpen, setIsBirthdayMessageDialogOpen] = useState(false);
+  const [selectedBirthdayPatient, setSelectedBirthdayPatient] = useState<PatientForBirthday | null>(null);
+  const [birthdayMessageType, setBirthdayMessageType] = useState<'predefined' | 'custom'>('predefined');
+  const [customBirthdayMessage, setCustomBirthdayMessage] = useState('');
 
 
   const isFreePlan = currentUserPlan === 'Gratuito';
@@ -162,6 +171,7 @@ export default function DashboardPage() {
         setMonthlyRevenue(null);
         setRevenueComparisonPercentage(null);
         setIsLoadingRevenue(false);
+        setBirthdayPatients([]);
       }
     });
     return () => unsubscribe();
@@ -169,7 +179,7 @@ export default function DashboardPage() {
 
   const fetchAlerts = useCallback(async (currentUsuario: FirebaseUser) => {
     if (!currentUsuario) return;
-    console.log("Buscando alertas para o UID:", currentUsuario.uid);
+    console.log("Buscando alertas para o UID:", currentUsuario.uid); // Diagnostic log
     try {
       const alertsRef = collection(db, 'alertas');
       const q = query(alertsRef, where('uid', '==', currentUsuario.uid), orderBy('createdAt', 'desc'));
@@ -185,16 +195,16 @@ export default function DashboardPage() {
           try {
             createdAtDate = new Date(data.createdAt);
             if (isNaN(createdAtDate.getTime())) {
-              console.warn(`Formato inválido de createdAt para alerta ${docSnap.id}:`, data.createdAt, "- Usando data atual como fallback.");
+              console.warn(`Invalid createdAt date format for alert ${docSnap.id}:`, data.createdAt, "- Using current date as fallback.");
               createdAtDate = new Date();
             }
           } catch (parseError) {
-            console.warn(`Erro ao parsear createdAt para alerta ${docSnap.id}:`, data.createdAt, parseError, "- Usando data atual como fallback.");
+            console.warn(`Error parsing createdAt for alert ${docSnap.id}:`, data.createdAt, parseError, "- Using current date as fallback.");
             createdAtDate = new Date();
           }
         } else {
-          console.warn(`Tipo de createdAt ausente ou não tratado para alerta ${docSnap.id}, usando data atual como fallback.`);
-          createdAtDate = new Date(); 
+          console.warn(`Missing or unhandled createdAt type for alert ${docSnap.id}, defaulting to now.`);
+          createdAtDate = new Date();
         }
 
         fetchedAlerts.push({
@@ -214,7 +224,7 @@ export default function DashboardPage() {
       if (error.code === 'permission-denied') {
         description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
       } else if (error.code === 'failed-precondition') {
-        description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' e 'createdAt' na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ATIVADO.";
+        description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' ASC e 'createdAt' DESC na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ATIVADO.";
       }
       toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
     }
@@ -570,6 +580,38 @@ export default function DashboardPage() {
     setCurrentUserPlan(planName);
   };
 
+  const openBirthdayMessageDialog = (patient: PatientForBirthday) => {
+    setSelectedBirthdayPatient(patient);
+    setBirthdayMessageType('predefined'); // Reset to predefined
+    setCustomBirthdayMessage(''); // Clear custom message
+    setIsBirthdayMessageDialogOpen(true);
+  };
+
+  const handleSendBirthdayMessage = () => {
+    if (!selectedBirthdayPatient || !selectedBirthdayPatient.phone) {
+      toast({ title: "Erro", description: "Paciente ou telefone não selecionado.", variant: "destructive"});
+      return;
+    }
+    let message = '';
+    if (birthdayMessageType === 'predefined') {
+      message = `Olá ${selectedBirthdayPatient.name}! Parabéns pelo seu aniversário 🎉 Desejamos muita saúde e felicidades!`;
+    } else {
+      if (!customBirthdayMessage.trim()) {
+        toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning"});
+        return;
+      }
+      message = customBirthdayMessage;
+    }
+
+    const cleanPhone = selectedBirthdayPatient.phone.replace(/\D/g, '');
+    const whatsappLink = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
+    
+    window.open(whatsappLink, '_blank');
+    toast({ title: "Mensagem Pronta", description: `Abrindo WhatsApp para enviar mensagem para ${selectedBirthdayPatient.name}.`, variant: "success"});
+    setIsBirthdayMessageDialogOpen(false);
+  };
+
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -620,7 +662,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground text-center py-8">Carregando dados...</p>
               ) : (
                 <ChartContainer config={chartConfig} className="h-full w-full">
-                  <RechartsBarChart data={actualWeeklyAppointmentsData} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                  <RechartsBarChart data={actualWeeklyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
@@ -701,7 +743,7 @@ export default function DashboardPage() {
                       <Select
                         value={alertForm.patientId}
                         onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
-                        required
+                        
                       >
                         <SelectTrigger className="col-span-3">
                           <SelectValue placeholder="Selecione o paciente" />
@@ -732,7 +774,7 @@ export default function DashboardPage() {
                         className="col-span-3"
                         rows={3}
                         placeholder="Descreva o alerta (ex: Verificar exame, Agendar retorno urgente)"
-                        required
+                        
                       />
                     </div>
                   </div>
@@ -798,12 +840,7 @@ export default function DashboardPage() {
                 Carregando aniversariantes...
               </p>
             ) : birthdayPatients.length > 0 ? (
-              birthdayPatients.map((patient) => {
-                const message = `Olá ${patient.name}! Parabéns pelo seu aniversário 🎉 Desejamos muita saúde e felicidades!`;
-                const cleanPhone = patient.phone ? patient.phone.replace(/\D/g, '') : '';
-                const whatsappLink = cleanPhone ? `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}` : '#';
-
-                return (
+              birthdayPatients.map((patient) => (
                   <div
                     key={patient.id}
                     className="flex items-center justify-between text-sm gap-2"
@@ -815,28 +852,22 @@ export default function DashboardPage() {
                       {patient.name}
                     </span>
                     <div className="flex gap-1">
-                      <Link
-                        href={whatsappLink}
-                        target={patient.phone ? "_blank" : "_self"}
-                        className="shrink-0"
-                        onClick={(e) => {
-                          if (!patient.phone) {
-                            e.preventDefault();
-                            toast({ title: "Telefone Indisponível", description: `Telefone de ${patient.name} não cadastrado.`, variant: "warning" });
-                          }
-                        }}
-                      >
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-auto p-1 text-green-600 hover:text-green-700"
                           title={patient.phone ? "Enviar mensagem no WhatsApp" : "Telefone não disponível"}
                           disabled={!patient.phone}
+                          onClick={() => {
+                            if (patient.phone) {
+                                openBirthdayMessageDialog(patient);
+                            } else {
+                                toast({ title: "Telefone Indisponível", description: `Telefone de ${patient.name} não cadastrado.`, variant: "warning" });
+                            }
+                          }}
                         >
                           <MessageCircle className="h-4 w-4" />
                         </Button>
-                      </Link>
-
                       <Link
                         href={`/pacientes/${patient.slug}`}
                         passHref
@@ -853,8 +884,8 @@ export default function DashboardPage() {
                       </Link>
                     </div>
                   </div>
-                );
-              })
+                )
+              )
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8">
                 Nenhum aniversariante hoje.
@@ -956,7 +987,7 @@ export default function DashboardPage() {
                 <Select
                   value={alertForm.patientId}
                   onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
-                  required
+                  
                 >
                   <SelectTrigger className="col-span-3">
                     <SelectValue placeholder="Selecione o paciente" />
@@ -987,7 +1018,7 @@ export default function DashboardPage() {
                   className="col-span-3"
                   rows={3}
                   placeholder="Descreva o alerta"
-                  required
+                  
                 />
               </div>
             </div>
@@ -998,6 +1029,55 @@ export default function DashboardPage() {
               <Button type="submit">Salvar Alterações</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+       {/* Birthday Message Dialog */}
+      <Dialog open={isBirthdayMessageDialogOpen} onOpenChange={setIsBirthdayMessageDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mensagem de Aniversário</DialogTitle>
+            <DialogDescription>
+              Enviar mensagem para {selectedBirthdayPatient?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <RadioGroup value={birthdayMessageType} onValueChange={(value) => setBirthdayMessageType(value as 'predefined' | 'custom')}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="predefined" id="rb-predefined" />
+                <Label htmlFor="rb-predefined">Usar mensagem padrão</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="custom" id="rb-custom" />
+                <Label htmlFor="rb-custom">Escrever mensagem personalizada</Label>
+              </div>
+            </RadioGroup>
+
+            {birthdayMessageType === 'predefined' && selectedBirthdayPatient && (
+              <Card className="bg-muted/50">
+                <CardContent className="p-3 text-sm text-muted-foreground">
+                  <p>Olá {selectedBirthdayPatient.name}! Parabéns pelo seu aniversário 🎉 Desejamos muita saúde e felicidades!</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {birthdayMessageType === 'custom' && (
+              <Textarea
+                value={customBirthdayMessage}
+                onChange={(e) => setCustomBirthdayMessage(e.target.value)}
+                placeholder={`Escreva sua mensagem para ${selectedBirthdayPatient?.name}...`}
+                rows={4}
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancelar</Button>
+            </DialogClose>
+            <Button onClick={handleSendBirthdayMessage}>
+              <Send className="mr-2 h-4 w-4" /> Enviar via WhatsApp
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
