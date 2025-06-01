@@ -1,11 +1,9 @@
 
 'use client';
 
-import { useEffect, Suspense, useState } from 'react';
+import { useEffect, Suspense, useState, useActionState, startTransition } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useActionState } from 'react';
-// import { useFormStatus } from 'react-dom'; // Removido useFormStatus
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Eye, EyeOff } from 'lucide-react';
@@ -81,7 +79,7 @@ function CadastroForm() {
       companyName: '',
       password: '',
       confirmPassword: '',
-      area: '', 
+      area: '',
       plan: planFromQuery,
     },
   });
@@ -131,8 +129,8 @@ function CadastroForm() {
   if (showPlanAlert) {
     return (
       <AlertDialog open={showPlanAlert} onOpenChange={(isOpen) => {
-        if (!isOpen) { 
-           router.push('/#planos'); 
+        if (!isOpen) {
+           router.push('/#planos');
         }
         setShowPlanAlert(isOpen);
       }}>
@@ -158,19 +156,15 @@ function CadastroForm() {
     const formData = new FormData();
     (Object.keys(rhfData) as Array<keyof RegistrationFormValues>).forEach((key) => {
         const value = rhfData[key];
-        if (value !== undefined && value !== null) { 
+        if (value !== undefined && value !== null) {
             formData.append(key, String(value));
         } else if (key === 'companyName' && value === undefined) {
-            // Zod schema for companyName is .optional().or(z.literal(''))
-            // If RHF provides undefined, ensure FormData gets an empty string if that's desired for the action.
-            // Or, simply don't append if the action handles undefined as truly optional.
-            // For now, let's ensure empty string if it was undefined from RHF and optional().or(z.literal(''))
             formData.append(key, '');
         }
-        // For 'plan', if it's undefined from RHF and schema is .optional(), not appending is fine.
-        // However, 'plan' is driven by planFromQuery and form.reset, so it should always be a string.
     });
-    formAction(formData);
+    startTransition(() => {
+      formAction(formData);
+    });
   };
 
 
@@ -187,7 +181,6 @@ function CadastroForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {/* Alterado para usar form.handleSubmit */}
         <form onSubmit={form.handleSubmit(onSubmitRHF)} className="space-y-4">
           <input type="hidden" {...form.register('plan')} value={planFromQuery} />
 
@@ -214,12 +207,12 @@ function CadastroForm() {
           <div>
             <Label htmlFor="password">Senha*</Label>
             <div className="relative">
-              <Input 
-                id="password" 
-                type={showPassword ? 'text' : 'password'} 
-                placeholder="Mínimo 6 caracteres" 
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Mínimo 6 caracteres"
                 {...form.register('password')}
-                className="pr-10" 
+                className="pr-10"
               />
               <Button
                 type="button"
@@ -239,11 +232,11 @@ function CadastroForm() {
           <div>
             <Label htmlFor="confirmPassword">Confirmar Senha*</Label>
             <div className="relative">
-              <Input 
-                id="confirmPassword" 
-                type={showConfirmPassword ? 'text' : 'password'} 
-                placeholder="Repita a senha" 
-                {...form.register('confirmPassword')} 
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                placeholder="Repita a senha"
+                {...form.register('confirmPassword')}
                 className="pr-10"
               />
               <Button
@@ -283,7 +276,6 @@ function CadastroForm() {
             />
              {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
           </div>
-          {/* Passando isActionPending para o SubmitButton */}
           <SubmitButton pending={isActionPending} />
         </form>
         <div className="mt-6 text-center text-sm text-muted-foreground">
@@ -311,6 +303,5 @@ export default function CadastroPage() {
     </div>
   );
 }
-
 
     
