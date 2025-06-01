@@ -14,14 +14,14 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from 'next/dynamic';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger, } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, } from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger
 import { format, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
-import { db, storage, auth } from '@/firebase';
+import { db, auth } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import {
   addDoc,
@@ -29,18 +29,14 @@ import {
   serverTimestamp,
   doc,
   getDoc,
-  setDoc,
   getDocs,
   query,
   where,
   updateDoc,
   deleteDoc,
-  arrayUnion,
-  arrayRemove,
   orderBy,
   Timestamp
-} from 'firebase/firestore';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+} from 'firebase/firestore'; // Removed arrayUnion, arrayRemove as they are not used
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import {
@@ -74,6 +70,7 @@ type Patient = {
   objetivoPaciente?: string;
   lastVisit?: string;
   nextVisit?: string;
+  nomeEmpresa?: string; // Added for clinic identification
 };
 
 type AppointmentTypeObject = {
@@ -273,7 +270,12 @@ export default function PacienteDetalhePage() {
       ]);
 
       const patientsRef = collection(db, 'pacientes');
-      const q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUserAuth.uid));
+      let q;
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(patientsRef, where('slug', '==', patientSlug), where('nomeEmpresa', '==', uData.nomeEmpresa));
+      } else {
+        q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUserAuth.uid));
+      }
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
@@ -300,6 +302,7 @@ export default function PacienteDetalhePage() {
           avatar: data.avatar || `https://placehold.co/100x100.png`,
           lastVisit: data.lastVisit || '',
           nextVisit: data.nextVisit || '',
+          nomeEmpresa: data.nomeEmpresa || '',
         };
         setPatient(fetchedPatient);
       } else {
@@ -359,7 +362,7 @@ export default function PacienteDetalhePage() {
 
 
   const handleSaveEditedPatient = async () => {
-    if (!editedPatient || !editedPatient.internalId || !currentUserData) {
+    if (!editedPatient || !editedPatient.internalId || !currentUserData || !firebaseUserAuth) {
       toast({ title: "Erro", description: "Não foi possível identificar dados para salvar.", variant: "destructive" });
       return;
     }
@@ -381,9 +384,11 @@ export default function PacienteDetalhePage() {
         address: editedPatient.address || '',
         status: editedPatient.status || 'Ativo',
         objetivoPaciente: editedPatient.objetivoPaciente || '',
+        // uid and nomeEmpresa should not be changed here by default, ownership is complex
       };
       await updateDoc(patientRef, dataToSave);
-      setPatient(prev => prev ? { ...prev, ...dataToSave } : undefined);
+      // After successful save, reload the page data to reflect any changes and ensure consistency
+      await loadPageData(firebaseUserAuth); 
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -417,13 +422,12 @@ export default function PacienteDetalhePage() {
   }
 
   const handleToggleStatus = async () => {
-    if (!patient || !patient.internalId) return;
+    if (!patient || !patient.internalId || !firebaseUserAuth) return;
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
       const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
       await updateDoc(patientRef, { status: newStatus });
-      setPatient(prev => prev ? { ...prev, status: newStatus } : prev);
-      if (editedPatient) setEditedPatient(prev => prev ? { ...prev, status: newStatus } : prev);
+      await loadPageData(firebaseUserAuth); // Reload to get fresh data
       toast({ title: `Paciente ${newStatus}`, description: `Status de ${patient.name} atualizado.`, variant: newStatus === 'Ativo' ? 'success' : 'warning', });
     } catch (error) {
       toast({ title: 'Erro', description: 'Não foi possível atualizar status.', variant: 'destructive' });
@@ -432,7 +436,7 @@ export default function PacienteDetalhePage() {
 
   const handleAddHistory = async () => {
     const isNoteEmpty = !newHistoryNote || newHistoryNote.trim() === '<p></p>' || newHistoryNote.trim() === '';
-    if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim()) {
+    if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim() || !firebaseUserAuth) {
       toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são obrigatórios para adicionar ao histórico.", variant: "destructive" });
       return;
     }
@@ -454,9 +458,7 @@ export default function PacienteDetalhePage() {
       const currentHistory = currentPatientData?.history || [];
       const updatedHistory = [newEntry, ...currentHistory];
       await updateDoc(patientRef, { history: updatedHistory });
-      const updatedPatientState = { ...patient, history: updatedHistory };
-      setPatient(updatedPatientState);
-      if (isEditing) setEditedPatient(updatedPatientState);
+      await loadPageData(firebaseUserAuth); // Reload to get fresh data
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName() || '');
       toast({ title: "Histórico Adicionado", description: "Novo registro adicionado com sucesso.", variant: "success" });
@@ -494,7 +496,6 @@ export default function PacienteDetalhePage() {
     const typeDataToSave: Partial<AppointmentTypeObject> = {
         name: trimmedName,
         status: 'active',
-        createdAt: serverTimestamp(),
     };
 
     if (currentUserData.plano !== 'Gratuito') {
@@ -507,7 +508,7 @@ export default function PacienteDetalhePage() {
 
     try {
       const tiposRef = getAppointmentTypesPath(currentUserData);
-      await addDoc(tiposRef, typeDataToSave);
+      await addDoc(tiposRef, { ...typeDataToSave, createdAt: serverTimestamp() }); // Add createdAt
       toast({ title: 'Tipo Adicionado', description: 'Novo tipo de atendimento adicionado com sucesso.', variant: 'success' });
       setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
@@ -1004,3 +1005,4 @@ export default function PacienteDetalhePage() {
   );
 }
 
+    

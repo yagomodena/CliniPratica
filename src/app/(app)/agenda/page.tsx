@@ -86,11 +86,12 @@ type Appointment = {
   patientName: string;
   patientSlug: string;
   type: string;
-  appointmentTypeId?: string; // Store the ID of the appointment type for reference
+  appointmentTypeId?: string; 
   notes?: string;
   date: string; // 'yyyy-MM-dd'
   status: 'agendado' | 'cancelado' | 'realizado';
-  naoLancarFinanceiro?: boolean; // User override for auto financial launch
+  naoLancarFinanceiro?: boolean; 
+  nomeEmpresa?: string; // Added for clinic identification
 };
 
 type AppointmentsData = {
@@ -237,12 +238,18 @@ export default function AgendaPage() {
     }
   }, [currentUserData, toast]);
 
-  const fetchAppointments = useCallback(async (user: FirebaseUser) => {
-    if (!user) return;
+  const fetchAppointments = useCallback(async (user: FirebaseUser, uData: any) => {
+    if (!user || !uData) return;
     setIsLoadingAppointments(true);
     try {
       const apptsRef = collection(db, 'agendamentos');
-      const q = query(apptsRef, where('uid', '==', user.uid));
+      let q;
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(apptsRef, where('nomeEmpresa', '==', uData.nomeEmpresa));
+      } else {
+        q = query(apptsRef, where('uid', '==', user.uid));
+      }
+      
       const querySnapshot = await getDocs(q);
       const fetchedAppointmentsData: AppointmentsData = {};
 
@@ -262,7 +269,8 @@ export default function AgendaPage() {
           notes: data.notes,
           date: apptDateKey,
           status: apptStatus,
-          naoLancarFinanceiro: data.naoLancarFinanceiro
+          naoLancarFinanceiro: data.naoLancarFinanceiro,
+          nomeEmpresa: data.nomeEmpresa
         };
 
         if (!fetchedAppointmentsData[apptDateKey]) {
@@ -289,7 +297,10 @@ export default function AgendaPage() {
       if (user) {
         const uData = await fetchCurrentUserData(user);
         setCurrentUserData(uData);
-        fetchAppointments(user);
+        if (uData) {
+          fetchAppointments(user, uData);
+          fetchPatientsForUser(user, uData); // Pass uData here
+        }
       } else {
         setFirebasePatients([]);
         setIsLoadingPatients(false);
@@ -301,49 +312,56 @@ export default function AgendaPage() {
       }
     });
     return () => unsubscribe();
-  }, [fetchCurrentUserData, fetchAppointments]);
+  }, [fetchCurrentUserData, fetchAppointments]); // Removed fetchPatientsForUser from here, will be called conditionally
+
+  const fetchPatientsForUser = useCallback(async (user: FirebaseUser, uData: any) => { // Added uData parameter
+    if (!user || !uData) { // Check uData
+        setFirebasePatients([]);
+        setIsLoadingPatients(false);
+        return;
+    }
+    setIsLoadingPatients(true);
+    try {
+      const patientsRef = collection(db, 'pacientes');
+      let q;
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(patientsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), where('status', '==', 'Ativo'));
+      } else {
+        q = query(patientsRef, where('uid', '==', user.uid), where('status', '==', 'Ativo'));
+      }
+      
+      const querySnapshot = await getDocs(q);
+      const fetchedPatientsData: PatientFromFirebase[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        fetchedPatientsData.push({
+          id: docSnap.id,
+          name: data.name as string,
+          status: data.status as string,
+          slug: data.slug as string,
+          phone: data.phone as string | undefined,
+          history: data.history || [],
+        });
+      });
+      setFirebasePatients(fetchedPatientsData.sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (error) {
+      console.error("Erro ao buscar pacientes:", error);
+      toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes.", variant: "destructive" });
+      setFirebasePatients([]);
+    } finally {
+      setIsLoadingPatients(false);
+    }
+  }, [toast]);
+
 
   useEffect(() => {
     if (currentUserData) {
       fetchAppointmentTypes();
+       if (currentUser) { // Ensure currentUser is also available
+         fetchPatientsForUser(currentUser, currentUserData);
+       }
     }
-  }, [currentUserData, fetchAppointmentTypes]);
-
-
-  useEffect(() => {
-    if (currentUser) {
-      const fetchPatientsForUser = async () => {
-        setIsLoadingPatients(true);
-        try {
-          const patientsRef = collection(db, 'pacientes');
-          const q = query(patientsRef, where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
-          const querySnapshot = await getDocs(q);
-          const fetchedPatientsData: PatientFromFirebase[] = [];
-          querySnapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            fetchedPatientsData.push({
-              id: docSnap.id,
-              name: data.name as string,
-              status: data.status as string,
-              slug: data.slug as string,
-              phone: data.phone as string | undefined,
-              history: data.history || [],
-            });
-          });
-          setFirebasePatients(fetchedPatientsData);
-        } catch (error) {
-          console.error("Erro ao buscar pacientes:", error);
-          toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes.", variant: "destructive" });
-        } finally {
-          setIsLoadingPatients(false);
-        }
-      };
-      fetchPatientsForUser();
-    } else {
-      setFirebasePatients([]);
-      setIsLoadingPatients(false);
-    }
-  }, [currentUser, toast]);
+  }, [currentUser, currentUserData, fetchAppointmentTypes, fetchPatientsForUser]);
 
 
   const getFirstActiveTypeNameAndId = useCallback(() => {
@@ -500,7 +518,8 @@ export default function AgendaPage() {
 
     try {
       const newApptRef = await addDoc(collection(db, 'agendamentos'), {
-        uid: currentUser.uid,
+        uid: currentUser.uid, // Creator's UID
+        nomeEmpresa: currentUserData.plano === 'Clínica' ? (currentUserData.nomeEmpresa || '') : '', // Clinic's name if applicable
         date: date,
         time,
         patientId,
@@ -517,7 +536,7 @@ export default function AgendaPage() {
       // Create financial transaction if applicable AND user is not on free plan
       if (currentUserData.plano !== 'Gratuito' && selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro) {
         await addDoc(collection(db, 'financialTransactions'), {
-          ownerId: currentUser.uid,
+          ownerId: currentUser.uid, // Keep as creator's UID for now, or adjust if financial data needs to be clinic-scoped
           appointmentId: newApptRef.id,
           date: Timestamp.fromDate(parseISO(date)),
           description: `Consulta - ${type} - ${selectedPatient.name}`,
@@ -528,6 +547,7 @@ export default function AgendaPage() {
           status: 'Pendente',
           type: 'atendimento',
           createdAt: serverTimestamp(),
+          nomeEmpresa: currentUserData.plano === 'Clínica' ? (currentUserData.nomeEmpresa || '') : '',
         });
       }
       const { name: firstActiveTypeName, id: firstActiveTypeId } = getFirstActiveTypeNameAndId();
@@ -540,7 +560,7 @@ export default function AgendaPage() {
       setIsNewAppointmentDialogOpen(false);
       setShowNaoLancarFinanceiroSwitch(false);
       toast({ title: "Sucesso!", description: "Agendamento adicionado.", variant: "success" });
-      await fetchAppointments(currentUser);
+      if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData); // Pass currentUserData
     } catch (error) {
       console.error("Erro ao adicionar agendamento:", error);
       toast({ title: "Erro", description: "Não foi possível salvar o agendamento.", variant: "destructive" });
@@ -615,6 +635,7 @@ export default function AgendaPage() {
     try {
       const apptRef = doc(db, 'agendamentos', originalAppointment.id);
       await updateDoc(apptRef, {
+        // uid and nomeEmpresa should generally not change on edit, unless ownership model changes
         date: newDateKey,
         time,
         patientId,
@@ -640,12 +661,14 @@ export default function AgendaPage() {
             amount: selectedAppointmentType.valor,
             date: Timestamp.fromDate(parseISO(newDateKey)),
             description: `Consulta - ${type} - ${selectedPatient.name}`,
-            status: 'Pendente', 
+            status: 'Pendente', // Or keep existing if already paid? For now, reset to Pendente on edit.
+            // nomeEmpresa might also need update if clinic structure changes, but less likely for transaction edits
           });
         } else {
           await addDoc(financialTransactionsRef, {
             ownerId: currentUser.uid,
             appointmentId: originalAppointment.id,
+            nomeEmpresa: currentUserData.plano === 'Clínica' ? (currentUserData.nomeEmpresa || '') : '',
             date: Timestamp.fromDate(parseISO(newDateKey)),
             description: `Consulta - ${type} - ${selectedPatient.name}`,
             patientId: selectedPatient.id,
@@ -658,8 +681,10 @@ export default function AgendaPage() {
           });
         }
       } else if (existingTransaction) {
+        // If shouldn't generate finance (e.g., switch toggled off, or type changed to non-finance)
+        // AND an existing transaction exists, mark it as cancelled
         await updateDoc(doc(db, 'financialTransactions', existingTransaction.id), {
-          status: 'Cancelado',
+          status: 'Cancelado', // Or perhaps delete it, depending on business logic
         });
       }
 
@@ -668,7 +693,7 @@ export default function AgendaPage() {
       setEditingAppointmentInfo(null);
       setShowNaoLancarFinanceiroSwitch(false);
       toast({ title: "Sucesso!", description: "Agendamento atualizado.", variant: "success" });
-      await fetchAppointments(currentUser);
+      if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData);
     } catch (error) {
       console.error("Erro ao atualizar agendamento:", error);
       toast({ title: "Erro", description: "Não foi possível atualizar o agendamento.", variant: "destructive" });
@@ -716,7 +741,7 @@ export default function AgendaPage() {
       }
   
       toast({ title: "Status Atualizado", description: `Agendamento marcado como ${newStatus}.`, variant: "success" });
-      await fetchAppointments(currentUser);
+      if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData);
     } catch (error) {
       console.error(`Erro ao marcar agendamento como ${newStatus}:`, error);
       toast({ title: "Erro", description: `Não foi possível marcar como ${newStatus}.`, variant: "destructive" });
@@ -755,7 +780,7 @@ export default function AgendaPage() {
       }
   
       toast({ title: "Agendamento Cancelado", description: `Agendamento para ${appointmentToDeleteInfo.patientName} foi cancelado.`, variant: "success" });
-      await fetchAppointments(currentUser);
+      if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData);
     } catch (error) {
       console.error(`Erro ao cancelar agendamento:`, error);
       toast({ title: "Erro", description: `Não foi possível cancelar o agendamento.`, variant: "destructive" });
@@ -1431,3 +1456,4 @@ export default function AgendaPage() {
   );
 }
 
+    

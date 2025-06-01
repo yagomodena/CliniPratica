@@ -28,7 +28,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -70,7 +69,8 @@ type Patient = {
   slug: string;
   lastVisit: string;
   nextVisit: string;
-  objetivoPaciente?: string; // New field for patient objective
+  objetivoPaciente?: string; 
+  nomeEmpresa?: string; // Added for clinic identification
 };
 
 // For Patient Objectives
@@ -189,10 +189,10 @@ export default function PacientesPage() {
   }, [fetchCurrentUserData]);
 
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && currentUserData) { // Ensure currentUserData is also available
       fetchPatients();
     }
-  }, [currentUser]);
+  }, [currentUser, currentUserData]); // Add currentUserData to dependency array
 
   useEffect(() => {
     if(currentUserData){
@@ -208,9 +208,15 @@ export default function PacientesPage() {
 
 
   const fetchPatients = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUserData) return; // Check for currentUserData
     try {
-      const q = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid));
+      let q;
+      if (currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa) {
+        q = query(collection(db, 'pacientes'), where('nomeEmpresa', '==', currentUserData.nomeEmpresa));
+      } else {
+        q = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid));
+      }
+      
       const querySnapshot = await getDocs(q);
       const loadedPatients: Patient[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -231,9 +237,10 @@ export default function PacientesPage() {
           lastVisit: data.lastVisit || '-',
           nextVisit: data.nextVisit || '-',
           objetivoPaciente: data.objetivoPaciente || '',
+          nomeEmpresa: data.nomeEmpresa || '',
         });
       });
-      setPatients(loadedPatients);
+      setPatients(loadedPatients.sort((a, b) => a.name.localeCompare(b.name)));
     } catch (error) {
       console.error("Erro ao buscar pacientes:", error);
       toast({ title: "Erro", description: "Não foi possível carregar os pacientes.", variant: "destructive" });
@@ -247,9 +254,17 @@ export default function PacientesPage() {
       return;
     }
 
-    const activePatientsQuery = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
-    const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
-    const activePatientsCount = activePatientsSnapshot.data().count;
+    let activePatientsCount = 0;
+    if (currentUserData.plano === 'Gratuito' || currentUserData.plano === 'Essencial') {
+        const activePatientsQuery = query(
+            collection(db, 'pacientes'), 
+            where(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? 'nomeEmpresa' : 'uid', '==', currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? currentUserData.nomeEmpresa : currentUser.uid),
+            where('status', '==', 'Ativo')
+        );
+        const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
+        activePatientsCount = activePatientsSnapshot.data().count;
+    }
+
 
     if (currentUserData.plano === 'Gratuito' && activePatientsCount >= 10) {
       toast({
@@ -269,7 +284,7 @@ export default function PacientesPage() {
       return;
     }
 
-    const nomeEmpresa = currentUserData.nomeEmpresa || '';
+    const nomeEmpresaParaSalvar = currentUserData.plano === 'Clínica' ? (currentUserData.nomeEmpresa || '') : '';
 
     if (!newPatient.name || !newPatient.email) {
       toast({ title: "Erro de Validação", description: "Nome e Email são obrigatórios.", variant: "destructive" });
@@ -290,8 +305,8 @@ export default function PacientesPage() {
     try {
       await addDoc(collection(db, 'pacientes'), {
         ...newPatient,
-        uid: currentUser.uid,
-        nomeEmpresa,
+        uid: currentUser.uid, // Creator's UID
+        nomeEmpresa: nomeEmpresaParaSalvar, // Clinic's name if applicable
         status: newPatient.status || 'Ativo',
         objetivoPaciente: newPatient.objetivoPaciente || '',
         createdAt: serverTimestamp(),
@@ -433,9 +448,15 @@ export default function PacientesPage() {
     if (!patientToUpdate || !currentUser || !currentUserData) return;
 
     if (newStatus === 'Ativo') {
-      const activePatientsQuery = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid), where('status', '==', 'Ativo'));
+      let activePatientsCount = 0;
+      const activePatientsQuery = query(
+        collection(db, 'pacientes'), 
+        where(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? 'nomeEmpresa' : 'uid', '==', currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? currentUserData.nomeEmpresa : currentUser.uid),
+        where('status', '==', 'Ativo')
+      );
       const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
-      let activePatientsCount = activePatientsSnapshot.data().count;
+      activePatientsCount = activePatientsSnapshot.data().count;
+
 
       if (currentUserData.plano === 'Gratuito' && activePatientsCount >= 10) {
          toast({
@@ -479,9 +500,10 @@ export default function PacientesPage() {
         description: 'Não foi possível atualizar o status do paciente.',
         variant: 'destructive',
       });
+      // Revert local state if Firebase update fails
       setPatients(prev =>
         prev.map(p =>
-          p.internalId === patientInternalId ? { ...p, status: patientToUpdate.status } : p
+          p.internalId === patientInternalId ? { ...p, status: patientToUpdate.status } : p // Revert to original status
         )
       );
     }
@@ -848,3 +870,5 @@ export default function PacientesPage() {
     </div>
   );
 }
+
+    
