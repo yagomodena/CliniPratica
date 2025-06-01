@@ -159,11 +159,9 @@ export default function DashboardPage() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setCurrentUserData({ ...data, uid: user.uid }); // Ensure UID is part of currentUserData
-          setCurrentUserPlan(data.plano || "Gratuito");
+          setCurrentUserData({ ...data, uid: user.uid, plano: data.plano || "Gratuito" });
         } else {
-           setCurrentUserData({ uid: user.uid, plano: "Gratuito" }); // Basic data if Firestore doc doesn't exist
-           setCurrentUserPlan("Gratuito");
+           setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
         }
       } else {
         setFirebasePatients([]);
@@ -178,7 +176,6 @@ export default function DashboardPage() {
         setIsLoadingRevenue(false);
         setBirthdayPatients([]);
         setCurrentUserData(null);
-        setCurrentUserPlan("");
       }
     });
     return () => unsubscribe();
