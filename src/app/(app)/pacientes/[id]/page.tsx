@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign, BookText } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -14,7 +14,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from 'next/dynamic';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { format, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -36,7 +36,7 @@ import {
   deleteDoc,
   orderBy,
   Timestamp
-} from 'firebase/firestore'; // Removed arrayUnion, arrayRemove as they are not used
+} from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import {
@@ -70,7 +70,8 @@ type Patient = {
   objetivoPaciente?: string;
   lastVisit?: string;
   nextVisit?: string;
-  nomeEmpresa?: string; // Added for clinic identification
+  nomeEmpresa?: string;
+  anamnese?: string; // Added anamnese field
 };
 
 type AppointmentTypeObject = {
@@ -293,6 +294,7 @@ export default function PacienteDetalhePage() {
           history: processedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
           documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
           objetivoPaciente: data.objetivoPaciente || '',
+          anamnese: data.anamnese || '', // Load anamnese
           name: data.name || '',
           email: data.email || '',
           phone: data.phone || '',
@@ -326,14 +328,12 @@ export default function PacienteDetalhePage() {
 
   useEffect(() => {
     if (firebaseUserAuth === undefined) {
-      setIsLoading(true); // Still waiting for auth state
+      setIsLoading(true);
     } else if (firebaseUserAuth === null) {
-      // Auth state resolved, but no user
       setIsLoading(false);
       toast({ title: "Acesso Negado", description: "Faça login para continuar.", variant: "destructive" });
       router.push('/login');
     } else if (patientSlug && firebaseUserAuth) {
-      // User is authenticated, proceed to load data
       loadPageData(firebaseUserAuth);
     }
   }, [patientSlug, firebaseUserAuth, loadPageData, router, toast]);
@@ -353,6 +353,7 @@ export default function PacienteDetalhePage() {
       setEditedPatient(prev => ({
         ...(prev?.internalId === patient.internalId ? prev : patient), 
         objetivoPaciente: (prev?.internalId === patient.internalId ? prev.objetivoPaciente : patient.objetivoPaciente) || firstActiveObjective || '',
+        anamnese: (prev?.internalId === patient.internalId ? prev.anamnese : patient.anamnese) || '', // Initialize anamnese for editing
       }));
       if (activeTab === 'historico') { 
         setNewHistoryType(prevHistoryType => prevHistoryType || firstActiveType || '');
@@ -384,10 +385,9 @@ export default function PacienteDetalhePage() {
         address: editedPatient.address || '',
         status: editedPatient.status || 'Ativo',
         objetivoPaciente: editedPatient.objetivoPaciente || '',
-        // uid and nomeEmpresa should not be changed here by default, ownership is complex
+        anamnese: editedPatient.anamnese || '', // Save anamnese
       };
       await updateDoc(patientRef, dataToSave);
-      // After successful save, reload the page data to reflect any changes and ensure consistency
       await loadPageData(firebaseUserAuth); 
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
@@ -400,7 +400,11 @@ export default function PacienteDetalhePage() {
     if (isEditing) {
       handleSaveEditedPatient();
     } else if (patient) {
-      setEditedPatient({ ...patient, objetivoPaciente: patient.objetivoPaciente || getFirstActiveObjectiveName() || '' });
+      setEditedPatient({ 
+        ...patient, 
+        objetivoPaciente: patient.objetivoPaciente || getFirstActiveObjectiveName() || '',
+        anamnese: patient.anamnese || ''
+      });
       setIsEditing(true);
     }
   };
@@ -416,6 +420,12 @@ export default function PacienteDetalhePage() {
     setEditedPatient(prev => prev ? { ...prev, [name]: value } : undefined);
   };
 
+  const handleAnamneseChange = (content: string) => {
+    if (isEditing && editedPatient) {
+      setEditedPatient(prev => prev ? { ...prev, anamnese: content } : undefined);
+    }
+  };
+
   const handleSelectChange = (name: keyof Patient, value: string) => {
     if (!editedPatient) return;
     setEditedPatient(prev => prev ? { ...prev, [name]: value } : undefined);
@@ -427,7 +437,7 @@ export default function PacienteDetalhePage() {
       const patientRef = doc(db, 'pacientes', patient.internalId);
       const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
       await updateDoc(patientRef, { status: newStatus });
-      await loadPageData(firebaseUserAuth); // Reload to get fresh data
+      await loadPageData(firebaseUserAuth);
       toast({ title: `Paciente ${newStatus}`, description: `Status de ${patient.name} atualizado.`, variant: newStatus === 'Ativo' ? 'success' : 'warning', });
     } catch (error) {
       toast({ title: 'Erro', description: 'Não foi possível atualizar status.', variant: 'destructive' });
@@ -458,7 +468,7 @@ export default function PacienteDetalhePage() {
       const currentHistory = currentPatientData?.history || [];
       const updatedHistory = [newEntry, ...currentHistory];
       await updateDoc(patientRef, { history: updatedHistory });
-      await loadPageData(firebaseUserAuth); // Reload to get fresh data
+      await loadPageData(firebaseUserAuth); 
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName() || '');
       toast({ title: "Histórico Adicionado", description: "Novo registro adicionado com sucesso.", variant: "success" });
@@ -508,7 +518,7 @@ export default function PacienteDetalhePage() {
 
     try {
       const tiposRef = getAppointmentTypesPath(currentUserData);
-      await addDoc(tiposRef, { ...typeDataToSave, createdAt: serverTimestamp() }); // Add createdAt
+      await addDoc(tiposRef, { ...typeDataToSave, createdAt: serverTimestamp() }); 
       toast({ title: 'Tipo Adicionado', description: 'Novo tipo de atendimento adicionado com sucesso.', variant: 'success' });
       setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
@@ -868,7 +878,12 @@ export default function PacienteDetalhePage() {
         </CardHeader>
         <CardContent className="p-0">
           <Tabs defaultValue={initialTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="flex flex-wrap w-full items-center justify-start rounded-none border-b bg-transparent px-2 py-0 sm:px-4"><TabsTrigger value="historico" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Histórico</TabsTrigger><TabsTrigger value="documentos" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Documentos</TabsTrigger><TabsTrigger value="dados" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Dados Cadastrais</TabsTrigger></TabsList>
+            <TabsList className="flex flex-wrap w-full items-center justify-start rounded-none border-b bg-transparent px-2 py-0 sm:px-4">
+                <TabsTrigger value="historico" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Histórico</TabsTrigger>
+                <TabsTrigger value="anamnese" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Anamnese</TabsTrigger>
+                <TabsTrigger value="documentos" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Documentos</TabsTrigger>
+                <TabsTrigger value="dados" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Dados Cadastrais</TabsTrigger>
+            </TabsList>
             <TabsContent value="historico" className="p-6 space-y-6 mt-0">
               <Card>
                 <CardHeader><CardTitle className="text-lg font-semibold flex items-center"><CalendarPlus className="mr-2 h-5 w-5 text-primary" /> Novo Registro</CardTitle></CardHeader>
@@ -903,6 +918,44 @@ export default function PacienteDetalhePage() {
                   </Card>
                 ))
               ) : <p className="text-muted-foreground text-center py-4">Nenhum histórico de atendimento registrado para este paciente.</p>}
+            </TabsContent>
+            <TabsContent value="anamnese" className="p-6 space-y-6 mt-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg font-semibold flex items-center">
+                    <BookText className="mr-2 h-5 w-5 text-primary" /> Registro de Anamnese
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isEditing ? (
+                    isClient && TiptapEditor ? (
+                      <TiptapEditor
+                        content={editedPatient?.anamnese || ''}
+                        onChange={handleAnamneseChange}
+                      />
+                    ) : (
+                      <div className="w-full h-[200px] border rounded-md bg-muted/50 flex items-center justify-center">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                        <p className="ml-2 text-muted-foreground">Carregando editor de anamnese...</p>
+                      </div>
+                    )
+                  ) : (
+                    displayPatient?.anamnese && displayPatient.anamnese.trim() !== '' && displayPatient.anamnese.trim() !== '<p></p>' ? (
+                      <div
+                        className="prose prose-sm max-w-none p-4 border rounded-md bg-muted/30 min-h-[150px]"
+                        dangerouslySetInnerHTML={{ __html: displayPatient.anamnese }}
+                      />
+                    ) : (
+                      <p className="text-muted-foreground text-center py-4">Nenhum registro de anamnese para este paciente. Clique em "Editar" para adicionar.</p>
+                    )
+                  )}
+                </CardContent>
+                {isEditing && (
+                  <CardFooter>
+                    <Button onClick={handleSaveEditedPatient}><Save className="mr-2 h-4 w-4" /> Salvar Anamnese</Button>
+                  </CardFooter>
+                )}
+              </Card>
             </TabsContent>
             <TabsContent value="documentos" className="p-6 space-y-6 mt-0">
               <Card><CardHeader><CardTitle className="text-lg font-semibold">Documentos do Paciente</CardTitle></CardHeader><CardContent className="text-center py-16 text-muted-foreground"><Info className="mx-auto h-12 w-12" /><p>Funcionalidade de Documentos em desenvolvimento.</p><p className="text-sm">Estará disponível em breve!</p></CardContent></Card>
