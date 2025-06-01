@@ -935,22 +935,6 @@ export default function FinanceiroPage() {
         </Card>
       )}
       
-      {/* Placeholder for future advanced receivables if plans are Professional or Clinic */}
-      {isProfessionalOrClinicPlan && (
-         <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle>Gestão Avançada de Contas a Receber (Em Breve)</CardTitle>
-            <CardDescription>
-              Ferramentas adicionais para uma gestão ainda mais completa de cobranças, como geração de faturas, relatórios de inadimplência e integração com meios de pagamento, estarão disponíveis em futuras atualizações para os planos Profissional e Clínica.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center py-16 text-muted-foreground">
-            <DollarSign className="mx-auto h-12 w-12 opacity-50" />
-            <p>Novas funcionalidades de gestão de recebíveis em desenvolvimento.</p>
-          </CardContent>
-        </Card>
-      )}
-
 
       <AlertDialog open={isDeleteTransactionConfirmOpen} onOpenChange={setIsDeleteTransactionConfirmOpen}>
         <AlertDialogContent>
@@ -971,4 +955,5 @@ export default function FinanceiroPage() {
     </div>
   );
 }
+
 
