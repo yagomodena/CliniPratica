@@ -5,8 +5,8 @@ import { useEffect, Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useActionState } from 'react';
-import { useFormStatus, Controller } from 'react-dom'; // Added Controller
-import { useForm } from 'react-hook-form';
+import { useFormStatus } from 'react-dom';
+import { useForm, Controller } from 'react-hook-form'; // Corrected: Controller imported from react-hook-form
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Eye, EyeOff } from 'lucide-react';
 
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Added Select components
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
 import { submitRegistrationForm, type FormState as RegistrationFormState } from '@/actions/register';
