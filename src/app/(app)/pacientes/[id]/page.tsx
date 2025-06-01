@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign, BookText } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign, BookText, CheckCircle } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -71,7 +71,7 @@ type Patient = {
   lastVisit?: string;
   nextVisit?: string;
   nomeEmpresa?: string;
-  anamnese?: string; // Added anamnese field
+  anamnese?: string;
 };
 
 type AppointmentTypeObject = {
@@ -91,6 +91,289 @@ type PatientObjectiveObject = {
 };
 
 const initialPatientObjectivesData: PatientObjectiveObject[] = [];
+
+interface AnamneseTemplate {
+  key: string;
+  name: string;
+  content: string;
+}
+
+interface AnamneseTemplatesByArea {
+  [area: string]: AnamneseTemplate[];
+}
+
+const ANAMNESE_TEMPLATES: AnamneseTemplatesByArea = {
+  "Psicologia": [
+    {
+      key: 'psicologia_clinica',
+      name: 'Modelo 1 — Anamnese Clínica Psicológica',
+      content: `
+        <p><strong>Data da Anamnese:</strong> </p>
+        <p><strong>Queixa Principal:</strong> </p>
+        <p><strong>Histórico Familiar:</strong> </p>
+        <p><strong>Histórico Pessoal (infância, adolescência, vida adulta):</strong> </p>
+        <p><strong>Há quanto tempo percebe os sintomas?</strong> </p>
+        <p><strong>Já fez terapia antes? (Sim/Não):</strong> </p>
+        <p><strong>Faz uso de medicação? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Objetivo da terapia:</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    },
+    {
+      key: 'psicologia_avaliacao_inicial',
+      name: 'Modelo 2 — Avaliação Inicial',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Motivo da busca por terapia:</strong> </p>
+        <p><strong>Relacionamento familiar:</strong> </p>
+        <p><strong>Relacionamento interpessoal (amigos, colegas):</strong> </p>
+        <p><strong>Há episódios de ansiedade, depressão ou pânico? (Sim/Não):</strong> </p>
+        <p><strong>Qual a frequência dos sintomas?</strong> </p>
+        <p><strong>Pratica atividade física? (Sim/Não):</strong> </p>
+        <p><strong>Como é sua rotina diária?</strong> </p>
+        <p><strong>Expectativas em relação ao processo terapêutico:</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    }
+  ],
+  "Nutrição": [
+    {
+      key: 'nutricao_anamnese',
+      name: 'Modelo 1 — Anamnese Nutricional',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa principal:</strong> </p>
+        <p><strong>Peso atual (kg):</strong> </p>
+        <p><strong>Altura (m):</strong> </p>
+        <p><strong>Possui alguma doença diagnosticada? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Usa medicações? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Pratica atividade física? (Sim/Não):</strong> </p>
+        <p><strong>Rotina alimentar (Café, Almoço, Jantar, Lanches):</strong> </p>
+        <p><strong>Ingestão de água (litros por dia):</strong> </p>
+        <p><strong>Restrições alimentares (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    },
+    {
+      key: 'nutricao_habitos',
+      name: 'Modelo 2 — Avaliação de Hábitos e Comportamento Alimentar',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Objetivo (Perda de peso, Ganho de massa, Manutenção, Outro):</strong> </p>
+        <p><strong>Frequência de consumo de: Doces, Frituras, Refrigerantes, Bebidas alcoólicas:</strong> </p>
+        <p><strong>Horário das principais refeições:</strong> </p>
+        <p><strong>Faz uso de suplementos? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Tem alguma dificuldade alimentar? (Sim/Não):</strong> </p>
+        <p><strong>Qual a sua maior dificuldade para seguir um plano alimentar?</strong> </p>
+        <p><strong>Qualidade do sono:</strong> </p>
+        <p><strong>Nível de estresse (Baixo, Médio, Alto):</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    }
+  ],
+  "Fisioterapia": [
+    {
+      key: 'fisioterapia_musculoesqueletica',
+      name: 'Modelo 1 — Anamnese Musculoesquelética',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal (dor, limitação, etc.):</strong> </p>
+        <p><strong>Localização da dor:</strong> </p>
+        <p><strong>Intensidade da dor (Escala 0-10):</strong> </p>
+        <p><strong>Quando iniciou?</strong> </p>
+        <p><strong>O que agrava e o que melhora?</strong> </p>
+        <p><strong>Já fez fisioterapia antes? (Sim/Não):</strong> </p>
+        <p><strong>Histórico de cirurgias ou lesões? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Pratica atividade física? (Sim/Não):</strong> </p>
+        <p><strong>Uso de medicações? (Sim/Não):</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    },
+    {
+      key: 'fisioterapia_funcional_geral',
+      name: 'Modelo 2 — Avaliação Funcional Geral',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Limitações nas atividades diárias (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Postura no trabalho (Sentado, em pé, outro):</strong> </p>
+        <p><strong>Tempo sentado por dia (horas):</strong> </p>
+        <p><strong>Histórico familiar relevante (doenças, alterações ortopédicas):</strong> </p>
+        <p><strong>Já fez algum tratamento para a queixa atual? (Sim/Não):</strong> </p>
+        <p><strong>Como é sua rotina de alongamentos?</strong> </p>
+        <p><strong>Avaliação do sono:</strong> </p>
+        <p><strong>Objetivos com o tratamento fisioterapêutico:</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    }
+  ],
+  "Odontologia": [
+    {
+      key: 'odontologia_padrao',
+      name: 'Modelo 1 — Anamnese Odontológica Padrão',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal:</strong> </p>
+        <p><strong>Possui dor? (Sim/Não):</strong> </p>
+        <p><strong>Local da dor:</strong> </p>
+        <p><strong>Sensibilidade? (Quente, Frio, Doce):</strong> </p>
+        <p><strong>Tem sangramento gengival? (Sim/Não):</strong> </p>
+        <p><strong>Doenças sistêmicas (Diabetes, Hipertensão, etc.) (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Faz uso de medicações? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Alergias (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    },
+    {
+      key: 'odontologia_preventiva',
+      name: 'Modelo 2 — Avaliação Preventiva',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Frequência de escovação diária (vezes):</strong> </p>
+        <p><strong>Uso de fio dental? (Sim/Não):</strong> </p>
+        <p><strong>Faz consultas regulares ao dentista? (Sim/Não):</strong> </p>
+        <p><strong>Tem próteses, implantes ou aparelhos? (Sim/Não):</strong> </p>
+        <p><strong>Relato de mau hálito? (Sim/Não):</strong> </p>
+        <p><strong>Dificuldades mastigatórias? (Sim/Não):</strong> </p>
+        <p><strong>Nível de estresse (Baixo, Médio, Alto):</strong> </p>
+        <p><strong>Qualidade do sono:</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    }
+  ],
+  "Fonoaudiologia": [
+    {
+      key: 'fonoaudiologia_infantil',
+      name: 'Modelo 1 — Anamnese Fonoaudiológica Infantil',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal:</strong> </p>
+        <p><strong>Idade da criança:</strong> </p>
+        <p><strong>Histórico gestacional (alguma intercorrência?):</strong> </p>
+        <p><strong>Histórico de desenvolvimento (andou, falou na idade esperada?):</strong> </p>
+        <p><strong>Frequenta escola? (Sim/Não):</strong> </p>
+        <p><strong>Diagnósticos anteriores:</strong> </p>
+        <p><strong>Faz uso de medicação? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    },
+    {
+      key: 'fonoaudiologia_adulto',
+      name: 'Modelo 2 — Anamnese Fonoaudiológica Adulto',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal:</strong> </p>
+        <p><strong>Histórico de cirurgias, traumas ou AVC:</strong> </p>
+        <p><strong>Alterações na fala, voz ou audição? (Sim/Não):</strong> </p>
+        <p><strong>Quando percebeu os sintomas?</strong> </p>
+        <p><strong>Faz uso de medicação? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Fuma? (Sim/Não):</strong> </p>
+        <p><strong>Consome bebidas alcoólicas? (Sim/Não):</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    }
+  ],
+  "Estética e Terapias": [
+    {
+      key: 'estetica_facial',
+      name: 'Modelo 1 — Anamnese Estética Facial',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal:</strong> </p>
+        <p><strong>Tipo de pele (Seca, Oleosa, Mista, Sensível):</strong> </p>
+        <p><strong>Histórico de acne, manchas ou melasma? (Sim/Não):</strong> </p>
+        <p><strong>Usa protetor solar diariamente? (Sim/Não):</strong> </p>
+        <p><strong>Usa ácidos ou dermocosméticos? (Sim/Não):</strong> </p>
+        <p><strong>Alergias? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Faz uso de medicações? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    },
+    {
+      key: 'estetica_corporal',
+      name: 'Modelo 2 — Anamnese Estética Corporal',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal (Celulite, Flacidez, Estrias, Gordura localizada, Outro):</strong> </p>
+        <p><strong>Pratica atividade física? (Sim/Não):</strong> </p>
+        <p><strong>Consome água regularmente? (Sim/Não):</strong> </p>
+        <p><strong>Há quanto tempo apresenta essa queixa?</strong> </p>
+        <p><strong>Usa medicação? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Possui alguma doença ou condição médica? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    }
+  ],
+  "Terapia Ocupacional": [
+    {
+      key: 'to_infantil',
+      name: 'Modelo 1 — Avaliação Ocupacional Infantil',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal:</strong> </p>
+        <p><strong>Idade da criança:</strong> </p>
+        <p><strong>Diagnóstico (se houver):</strong> </p>
+        <p><strong>Desenvolvimento motor (adequado/atrasado):</strong> </p>
+        <p><strong>Desenvolvimento cognitivo (adequado/atrasado):</strong> </p>
+        <p><strong>Desenvolvimento social (adequado/atrasado):</strong> </p>
+        <p><strong>Frequenta escola? (Sim/Não):</strong> </p>
+        <p><strong>Usa medicação? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    },
+    {
+      key: 'to_adulto_idoso',
+      name: 'Modelo 2 — Avaliação Ocupacional Adulto/Idoso',
+      content: `
+        <p><strong>Data:</strong> </p>
+        <p><strong>Queixa Principal:</strong> </p>
+        <p><strong>Diagnóstico (se houver):</strong> </p>
+        <p><strong>Limitações nas atividades diárias (Sim/Não):</strong> </p>
+        <p><strong>Quais atividades estão comprometidas?</strong> </p>
+        <p><strong>Histórico de lesões, AVC ou traumas:</strong> </p>
+        <p><strong>Faz uso de medicação? (Sim/Não):</strong> </p>
+        <p><strong>Quais?</strong> </p>
+        <p><strong>Suporte familiar (Bom, Médio, Ruim):</strong> </p>
+        <p><strong>Observações:</strong> </p>
+      `
+    }
+  ],
+   "Outro": [
+    {
+      key: 'outro_geral',
+      name: 'Modelo Geral de Anamnese',
+      content: `
+        <p><strong>Data da Anamnese:</strong> </p>
+        <p><strong>Queixa Principal / Motivo da Consulta:</strong> </p>
+        <p><strong>Histórico da Queixa Atual:</strong> </p>
+        <p><strong>Histórico Médico Pregresso (doenças, cirurgias, internações):</strong> </p>
+        <p><strong>Medicações em Uso (nome, dose, frequência):</strong> </p>
+        <p><strong>Alergias:</strong> </p>
+        <p><strong>Hábitos (alimentação, sono, atividade física, fumo, álcool):</strong> </p>
+        <p><strong>Histórico Familiar (doenças relevantes em familiares):</strong> </p>
+        <p><strong>Aspectos Psicossociais (trabalho, rotina, estresse, suporte social):</strong> </p>
+        <p><strong>Objetivos do Paciente com o Tratamento/Acompanhamento:</strong> </p>
+        <p><strong>Observações Adicionais:</strong> </p>
+      `
+    }
+  ]
+};
 
 
 const getAppointmentTypesPath = (userData: any) => {
@@ -171,6 +454,11 @@ export default function PacienteDetalhePage() {
 
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [firebaseUserAuth, setFirebaseUserAuth] = useState<FirebaseUser | null | undefined>(undefined);
+
+  const [anamneseTemplatesForUser, setAnamneseTemplatesForUser] = useState<AnamneseTemplate[]>([]);
+  const [selectedAnamneseModelKey, setSelectedAnamneseModelKey] = useState<string>('');
+  const [isConfirmOverwriteAnamneseOpen, setIsConfirmOverwriteAnamneseOpen] = useState(false);
+  const [templateToApply, setTemplateToApply] = useState<AnamneseTemplate | null>(null);
 
 
   useEffect(() => {
@@ -259,11 +547,17 @@ export default function PacienteDetalhePage() {
       const uData = await fetchCurrentUserData(currentUserAuth);
       if (!uData) {
         toast({ title: "Erro de Perfil", description: "Dados de perfil não encontrados. Você será redirecionado para o login.", variant: "destructive" });
-        router.push('/login'); 
+        router.push('/login');
         setIsLoading(false);
         return;
       }
       setCurrentUserData(uData);
+
+      // Set anamnese templates based on user's area
+      const userArea = uData.areaAtuacao || "Outro";
+      const templates = ANAMNESE_TEMPLATES[userArea] || ANAMNESE_TEMPLATES["Outro"] || [];
+      setAnamneseTemplatesForUser(templates);
+
 
       await Promise.all([
         fetchAppointmentTypes(uData),
@@ -294,7 +588,7 @@ export default function PacienteDetalhePage() {
           history: processedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
           documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
           objetivoPaciente: data.objetivoPaciente || '',
-          anamnese: data.anamnese || '', // Load anamnese
+          anamnese: data.anamnese || '',
           name: data.name || '',
           email: data.email || '',
           phone: data.phone || '',
@@ -351,11 +645,11 @@ export default function PacienteDetalhePage() {
       const firstActiveObjective = getFirstActiveObjectiveName();
       const firstActiveType = getFirstActiveTypeName();
       setEditedPatient(prev => ({
-        ...(prev?.internalId === patient.internalId ? prev : patient), 
+        ...(prev?.internalId === patient.internalId ? prev : patient),
         objetivoPaciente: (prev?.internalId === patient.internalId ? prev.objetivoPaciente : patient.objetivoPaciente) || firstActiveObjective || '',
-        anamnese: (prev?.internalId === patient.internalId ? prev.anamnese : patient.anamnese) || '', // Initialize anamnese for editing
+        anamnese: (prev?.internalId === patient.internalId ? prev.anamnese : patient.anamnese) || '',
       }));
-      if (activeTab === 'historico') { 
+      if (activeTab === 'historico') {
         setNewHistoryType(prevHistoryType => prevHistoryType || firstActiveType || '');
       }
     }
@@ -385,10 +679,10 @@ export default function PacienteDetalhePage() {
         address: editedPatient.address || '',
         status: editedPatient.status || 'Ativo',
         objetivoPaciente: editedPatient.objetivoPaciente || '',
-        anamnese: editedPatient.anamnese || '', // Save anamnese
+        anamnese: editedPatient.anamnese || '',
       };
       await updateDoc(patientRef, dataToSave);
-      await loadPageData(firebaseUserAuth); 
+      await loadPageData(firebaseUserAuth);
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -400,8 +694,8 @@ export default function PacienteDetalhePage() {
     if (isEditing) {
       handleSaveEditedPatient();
     } else if (patient) {
-      setEditedPatient({ 
-        ...patient, 
+      setEditedPatient({
+        ...patient,
         objetivoPaciente: patient.objetivoPaciente || getFirstActiveObjectiveName() || '',
         anamnese: patient.anamnese || ''
       });
@@ -412,6 +706,7 @@ export default function PacienteDetalhePage() {
   const handleCancelEdit = () => {
     if (patient) setEditedPatient({ ...patient });
     setIsEditing(false);
+    setSelectedAnamneseModelKey(''); // Reset selected template on cancel
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -468,7 +763,7 @@ export default function PacienteDetalhePage() {
       const currentHistory = currentPatientData?.history || [];
       const updatedHistory = [newEntry, ...currentHistory];
       await updateDoc(patientRef, { history: updatedHistory });
-      await loadPageData(firebaseUserAuth); 
+      await loadPageData(firebaseUserAuth);
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName() || '');
       toast({ title: "Histórico Adicionado", description: "Novo registro adicionado com sucesso.", variant: "success" });
@@ -518,7 +813,7 @@ export default function PacienteDetalhePage() {
 
     try {
       const tiposRef = getAppointmentTypesPath(currentUserData);
-      await addDoc(tiposRef, { ...typeDataToSave, createdAt: serverTimestamp() }); 
+      await addDoc(tiposRef, { ...typeDataToSave, createdAt: serverTimestamp() });
       toast({ title: 'Tipo Adicionado', description: 'Novo tipo de atendimento adicionado com sucesso.', variant: 'success' });
       setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
@@ -544,7 +839,7 @@ export default function PacienteDetalhePage() {
       toast({ title: "Tipo Duplicado", description: `O tipo de atendimento "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
-    
+
     const typeDataToUpdate: Partial<AppointmentTypeObject> = { name: newNameTrimmed };
     if (currentUserData.plano !== 'Gratuito') {
         typeDataToUpdate.valor = currentData.valor || 0;
@@ -815,9 +1110,32 @@ export default function PacienteDetalhePage() {
     }
   };
 
+  const applyAnamneseTemplate = (templateKey: string) => {
+    const selectedTemplate = anamneseTemplatesForUser.find(t => t.key === templateKey);
+    if (selectedTemplate) {
+      if (editedPatient?.anamnese && editedPatient.anamnese.trim() !== '' && editedPatient.anamnese.trim() !== '<p></p>') {
+        setTemplateToApply(selectedTemplate);
+        setIsConfirmOverwriteAnamneseOpen(true);
+      } else {
+        handleAnamneseChange(selectedTemplate.content);
+        setSelectedAnamneseModelKey(templateKey);
+      }
+    }
+  };
+
+  const confirmOverwriteAnamnese = () => {
+    if (templateToApply) {
+      handleAnamneseChange(templateToApply.content);
+      setSelectedAnamneseModelKey(templateToApply.key);
+    }
+    setIsConfirmOverwriteAnamneseOpen(false);
+    setTemplateToApply(null);
+  };
+
+
   if (isLoading) return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando dados do paciente...</p></div>;
   if (!patient && !isLoading) return <div className="text-center py-10"><h1 className="text-2xl font-semibold mb-4">Paciente não encontrado</h1><Button onClick={() => router.push('/pacientes')}>Voltar para Pacientes</Button></div>;
-  
+
   const displayPatient = isEditing ? editedPatient : patient;
   if (!displayPatient) return <div className="text-center py-10"><p>Erro ao carregar dados do paciente.</p></div>;
 
@@ -927,6 +1245,27 @@ export default function PacienteDetalhePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
+                  {isEditing && anamneseTemplatesForUser.length > 0 && (
+                    <div className="mb-4">
+                      <Label htmlFor="anamnese-template-select">Usar modelo de Anamnese</Label>
+                      <Select
+                        value={selectedAnamneseModelKey}
+                        onValueChange={(value) => applyAnamneseTemplate(value)}
+                      >
+                        <SelectTrigger id="anamnese-template-select">
+                          <SelectValue placeholder="Selecionar modelo (opcional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Nenhum (começar em branco)</SelectItem>
+                          {anamneseTemplatesForUser.map((template) => (
+                            <SelectItem key={template.key} value={template.key}>
+                              {template.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   {isEditing ? (
                     isClient && TiptapEditor ? (
                       <TiptapEditor
@@ -1054,8 +1393,25 @@ export default function PacienteDetalhePage() {
       <AlertDialog open={isDeleteObjectiveConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setObjectiveToDelete(null); setIsDeleteObjectiveConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{objectiveToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteObjective} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}><DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]"><DialogHeader><DialogTitle>Detalhes - {selectedHistoryNote?.type}</DialogTitle><DialogDescription>Data: {selectedHistoryNote ? formatDate(selectedHistoryNote.date) : ''}</DialogDescription></DialogHeader><div id="historyNoteContentToExport" className="py-4 max-h-[60vh] overflow-y-auto">{selectedHistoryNote && <div className="history-note-content prose prose-sm sm:prose-base max-w-none" dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }} />}</div><DialogFooter><Button variant="outline" onClick={handleExportPdf}> <FileDown className="mr-2 h-4 w-4" /> Exportar para PDF </Button><DialogClose asChild><Button type="button" variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={isDeleteHistoryConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setHistoryItemToDelete(null); setIsDeleteHistoryConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Registro</AlertDialogTitle><AlertDialogDescription>Deseja excluir este registro de <strong>{historyItemToDelete?.type}</strong> em {historyItemToDelete ? formatDate(historyItemToDelete.date) : ''}?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setHistoryItemToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteHistory} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      
+      <AlertDialog open={isConfirmOverwriteAnamneseOpen} onOpenChange={setIsConfirmOverwriteAnamneseOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Sobrescrita</AlertDialogTitle>
+            <AlertDialogDescription>
+              O campo Anamnese já possui conteúdo. Deseja realmente aplicar o modelo selecionado e substituir o texto atual?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setIsConfirmOverwriteAnamneseOpen(false); setTemplateToApply(null); setSelectedAnamneseModelKey(''); }}>Não, manter atual</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmOverwriteAnamnese}>Sim, aplicar modelo</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
 
     
+
