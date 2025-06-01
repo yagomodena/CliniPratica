@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getDoc, doc } from "firebase/firestore";
+import { getDoc, doc, onSnapshot, Unsubscribe } from "firebase/firestore"; // Added onSnapshot and Unsubscribe
 import { useToast } from '@/hooks/use-toast';
 import type { UserPermissions } from '@/components/forms/user-form';
 
@@ -33,7 +33,6 @@ const navLinks = [
   { href: '/configuracoes', label: 'Configurações', icon: Settings, permissionKey: 'configuracoes' as const },
 ];
 
-// Moved MenuItemId type alias to module scope
 type MenuItemId = typeof navLinks[number]['permissionKey'];
 
 const freePlanAllowed = ['/dashboard', '/pacientes', '/agenda', '/configuracoes'];
@@ -48,26 +47,50 @@ export function AppHeader() {
   const [userPermissions, setUserPermissions] = useState<UserPermissions | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let unsubscribeFirestore: Unsubscribe | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUsuario(user);
+
+      // Clean up previous Firestore listener if user changes or logs out
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+        unsubscribeFirestore = null;
+      }
+
       if (user) {
         const docRef = doc(db, "usuarios", user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setCurrentUserData(data);
-          setUserPermissions(data.permissoes || {});
-        } else {
-          setCurrentUserData({ plano: "Gratuito" });
+        // Set up real-time listener for user document
+        unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setCurrentUserData({ ...data, uid: user.uid }); // Ensure uid is part of currentUserData
+            setUserPermissions(data.permissoes || {});
+          } else {
+            console.warn(`User document not found for UID: ${user.uid}. Defaulting plan.`);
+            setCurrentUserData({ plano: "Gratuito", uid: user.uid });
+            setUserPermissions({});
+          }
+        }, (error) => {
+          console.error("Error listening to user document:", error);
+          // Handle error, e.g., by setting default data or showing a toast
+          setCurrentUserData({ plano: "Gratuito", uid: user.uid });
           setUserPermissions({});
-        }
+          toast({ title: "Erro ao Carregar Perfil", description: "Não foi possível carregar os dados do seu perfil em tempo real.", variant: "destructive" });
+        });
       } else {
         setCurrentUserData(null);
         setUserPermissions(null);
       }
     });
-    return () => unsubscribe();
-  }, []);
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
+  }, [toast]); // Added toast to dependency array
 
   const handleLogout = async () => {
     try {
@@ -92,21 +115,17 @@ export function AppHeader() {
         if (userPermissions[permissionKey] === false) {
           return false;
         }
-        // For sub-users, if a permission is undefined, default to false unless it's the dashboard.
-        // All other sections require explicit true.
         if (userPermissions[permissionKey] === undefined && permissionKey !== 'dashboard') {
             return false;
         }
-        // If dashboard permission is undefined, allow access (common landing)
         if (userPermissions[permissionKey] === undefined && permissionKey === 'dashboard') {
             return true;
         }
-        // If permission is explicitly true, allow.
         if (userPermissions[permissionKey] === true) {
             return true;
         }
       } else if (permissionKey && !userPermissions) {
-          return false; // No permissions loaded yet, deny.
+          return false; 
       }
     }
     
@@ -229,7 +248,7 @@ export function AppHeader() {
                 <User className="mr-2 h-4 w-4" />
                 <span>Perfil</span>
               </DropdownMenuItem>
-              { (currentUserData?.cargo === 'Administrador' || !currentUserData?.plano || currentUserData?.plano !== 'Clínica') && (
+              { (currentUserData?.cargo === 'Administrador' || (currentUserData?.plano === 'Clínica' && currentUserData?.permissoes?.configuracoes_acesso_plano_assinatura) || (currentUserData?.plano !== 'Clínica' && currentUserData?.cargo !== 'Administrador')) && (
                  <DropdownMenuItem onClick={() => router.push('/configuracoes?tab=plano')}>
                     <CreditCard className="mr-2 h-4 w-4" />
                     <span>Plano e Assinatura</span>
