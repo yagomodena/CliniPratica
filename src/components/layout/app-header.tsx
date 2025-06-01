@@ -20,17 +20,21 @@ import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, setDoc, getDoc, doc } from "firebase/firestore";
+import { getDoc, doc } from "firebase/firestore";
 import { useToast } from '@/hooks/use-toast';
+import type { UserPermissions } from '@/components/forms/user-form';
 
 const navLinks = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/pacientes', label: 'Pacientes', icon: Users },
-  { href: '/agenda', label: 'Agenda', icon: Calendar },
-  { href: '/financeiro', label: 'Financeiro', icon: Landmark },
-  { href: '/relatorios', label: 'Relatórios', icon: BarChart },
-  { href: '/configuracoes', label: 'Configurações', icon: Settings },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, permissionKey: 'dashboard' as const },
+  { href: '/pacientes', label: 'Pacientes', icon: Users, permissionKey: 'pacientes' as const },
+  { href: '/agenda', label: 'Agenda', icon: Calendar, permissionKey: 'agenda' as const },
+  { href: '/financeiro', label: 'Financeiro', icon: Landmark, permissionKey: 'financeiro' as const },
+  { href: '/relatorios', label: 'Relatórios', icon: BarChart, permissionKey: 'relatorios' as const },
+  { href: '/configuracoes', label: 'Configurações', icon: Settings, permissionKey: 'configuracoes' as const },
 ];
+
+// Moved MenuItemId type alias to module scope
+type MenuItemId = typeof navLinks[number]['permissionKey'];
 
 const freePlanAllowed = ['/dashboard', '/pacientes', '/agenda', '/configuracoes'];
 
@@ -40,7 +44,8 @@ export function AppHeader() {
   const { toast } = useToast();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
-  const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
+  const [userPermissions, setUserPermissions] = useState<UserPermissions | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -50,8 +55,15 @@ export function AppHeader() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setCurrentUserPlan(data.plano || "Gratuito");
+          setCurrentUserData(data);
+          setUserPermissions(data.permissoes || {});
+        } else {
+          setCurrentUserData({ plano: "Gratuito" });
+          setUserPermissions({});
         }
+      } else {
+        setCurrentUserData(null);
+        setUserPermissions(null);
       }
     });
     return () => unsubscribe();
@@ -63,32 +75,62 @@ export function AppHeader() {
       router.push('/login');
     } catch (error) {
       console.error("Erro ao fazer logout:", error);
-      // Você pode exibir um toast de erro aqui, se quiser
+      toast({ title: "Erro", description: "Falha ao sair.", variant: "destructive" });
     }
   };
 
-  const isAccessible = (href: string) => {
-    if (currentUserPlan === 'Gratuito') {
+  const isAccessible = (href: string, permissionKey?: MenuItemId) => {
+    if (currentUserData?.cargo === 'Administrador') {
+      if (currentUserData?.plano === 'Gratuito') {
+        return freePlanAllowed.includes(href);
+      }
+      return true;
+    }
+
+    if (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador') {
+      if (permissionKey && userPermissions) {
+        if (userPermissions[permissionKey] === false) {
+          return false;
+        }
+        // For sub-users, if a permission is undefined, default to false unless it's the dashboard.
+        // All other sections require explicit true.
+        if (userPermissions[permissionKey] === undefined && permissionKey !== 'dashboard') {
+            return false;
+        }
+        // If dashboard permission is undefined, allow access (common landing)
+        if (userPermissions[permissionKey] === undefined && permissionKey === 'dashboard') {
+            return true;
+        }
+        // If permission is explicitly true, allow.
+        if (userPermissions[permissionKey] === true) {
+            return true;
+        }
+      } else if (permissionKey && !userPermissions) {
+          return false; // No permissions loaded yet, deny.
+      }
+    }
+    
+    if (currentUserData?.plano === 'Gratuito') {
       return freePlanAllowed.includes(href);
     }
     return true;
   };
 
-
-  const handleNavigation = (href: string) => {
-    if (currentUserPlan === "Gratuito" && !freePlanAllowed.includes(href)) {
+  const handleNavigation = (href: string, permissionKey?: MenuItemId) => {
+    if (!isAccessible(href, permissionKey)) {
       toast({
-        title: "Plano necessário",
-        description: "Essa funcionalidade está disponível apenas para planos Essencial, Profissional ou Clínica.",
+        title: "Acesso Negado",
+        description: (currentUserData?.plano === 'Gratuito' && !freePlanAllowed.includes(href)) || (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador' && (!userPermissions || userPermissions[permissionKey!] === false || userPermissions[permissionKey!] === undefined && permissionKey !== 'dashboard'))
+          ? "Você não tem permissão para acessar esta área."
+          : "Essa funcionalidade está disponível apenas para planos pagos.",
         variant: "destructive",
       });
       return;
     }
-
     router.push(href);
     setIsMobileMenuOpen(false);
   }
-
+  
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
       <div className="container mx-auto flex h-16 max-w-screen-2xl items-center justify-between px-4">
@@ -100,21 +142,13 @@ export function AppHeader() {
             {navLinks.map((link) => (
               <button
                 key={link.href}
-                onClick={() => {
-                  if (!isAccessible(link.href)) {
-                    toast({
-                      title: "Plano necessário",
-                      description: "Essa funcionalidade está disponível apenas para planos Essencial, Profissional ou Clínica.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  router.push(link.href);
-                }}
+                onClick={() => handleNavigation(link.href, link.permissionKey)}
                 className={cn(
                   "transition-colors hover:text-foreground/80",
-                  pathname === link.href ? "text-foreground font-semibold" : "text-foreground/60"
+                  pathname === link.href ? "text-foreground font-semibold" : "text-foreground/60",
+                  !isAccessible(link.href, link.permissionKey) ? "text-muted-foreground cursor-not-allowed opacity-60" : ""
                 )}
+                 disabled={!isAccessible(link.href, link.permissionKey)}
               >
                 {link.label}
               </button>
@@ -122,7 +156,6 @@ export function AppHeader() {
           </nav>
         </div>
 
-        {/* Mobile Menu Trigger */}
         <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
           <SheetTrigger asChild>
             <Button
@@ -146,7 +179,8 @@ export function AppHeader() {
                   key={link.href}
                   variant={pathname === link.href ? "secondary" : "ghost"}
                   className="w-full justify-start h-10 px-4 text-base"
-                  onClick={() => handleNavigation(link.href)}
+                  onClick={() => handleNavigation(link.href, link.permissionKey)}
+                  disabled={!isAccessible(link.href, link.permissionKey)}
                 >
                   <link.icon className="mr-2 h-4 w-4" />
                   {link.label}
@@ -169,7 +203,7 @@ export function AppHeader() {
                   <AvatarFallback>
                     {usuario?.displayName
                       ? usuario?.displayName.split(' ').map(n => n[0]).join('').toUpperCase()
-                      : 'CP'}
+                      : currentUserData?.nomeCompleto?.split(' ').map((n: string) => n[0]).join('').toUpperCase() || 'CP'}
                   </AvatarFallback>
                 </Avatar>
               </Button>
@@ -178,11 +212,16 @@ export function AppHeader() {
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-medium leading-none">
-                    {usuario?.displayName || 'Usuário'}
+                    {currentUserData?.nomeCompleto || usuario?.displayName || 'Usuário'}
                   </p>
                   <p className="text-xs leading-none text-muted-foreground">
                     {usuario?.email || 'email@exemplo.com'}
                   </p>
+                   {currentUserData?.plano && (
+                    <p className="text-xs leading-none text-muted-foreground">
+                      Plano: {currentUserData.plano} {currentUserData?.cargo && currentUserData.cargo !== 'Administrador' ? `(${currentUserData.cargo})` : ''}
+                    </p>
+                  )}
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -190,10 +229,12 @@ export function AppHeader() {
                 <User className="mr-2 h-4 w-4" />
                 <span>Perfil</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/configuracoes?tab=plano')}>
-                <CreditCard className="mr-2 h-4 w-4" />
-                <span>Plano</span>
-              </DropdownMenuItem>
+              { (currentUserData?.cargo === 'Administrador' || !currentUserData?.plano || currentUserData?.plano !== 'Clínica') && (
+                 <DropdownMenuItem onClick={() => router.push('/configuracoes?tab=plano')}>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    <span>Plano e Assinatura</span>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>
                 <LogOut className="mr-2 h-4 w-4" />

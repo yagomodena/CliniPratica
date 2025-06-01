@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback, FormEvent } from 'react';
+import { useRouter } from 'next/navigation'; // Import useRouter
 import {
   Card,
   CardHeader,
@@ -79,7 +80,8 @@ import {
   Coins,
   Wallet,
   ReceiptText,
-  MoreHorizontal, 
+  MoreHorizontal,
+  Loader2, 
 } from 'lucide-react';
 import {
   ChartContainer,
@@ -132,8 +134,8 @@ import {
 
 export interface FinancialTransaction {
   id: string; 
-  ownerId: string; // UID of the individual user who created/owns it OR a relevant UID for clinic context
-  nomeEmpresa?: string; // For clinic-wide transactions
+  ownerId: string; 
+  nomeEmpresa?: string; 
   date: Date; 
   description: string;
   patientId?: string;
@@ -189,8 +191,10 @@ type ReceivableEntry = {
 
 export default function FinanceiroPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
+  const [isLoadingPage, setIsLoadingPage] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodOption>('thisMonth');
   const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined);
   
@@ -220,36 +224,57 @@ export default function FinanceiroPage() {
     const authInstance = getAuth();
     const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
       setCurrentUser(user);
+      setIsLoadingPage(true); // Start loading when auth state changes
       if (user) {
         const userDocRef = doc(db, 'usuarios', user.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
-          setCurrentUserData({ ...userDocSnap.data(), uid: user.uid });
+          const uData = { ...userDocSnap.data(), uid: user.uid };
+          setCurrentUserData(uData);
+          // Permission check for sub-users
+          if (uData.plano === 'Clínica' && uData.cargo !== 'Administrador' && (!uData.permissoes || uData.permissoes.financeiro === false)) {
+            toast({ title: "Acesso Negado", description: "Você não tem permissão para acessar a área Financeira.", variant: "destructive" });
+            router.push('/dashboard');
+            setIsLoadingPage(false);
+            return;
+          }
         } else {
-          setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
+          setCurrentUserData({ uid: user.uid, plano: "Gratuito" }); // Default if Firestore doc missing
+           // If no specific permissions, assume free plan users (who shouldn't be here anyway) can't access
+           if (!userDocSnap.exists() || userDocSnap.data()?.plano === "Gratuito") {
+             toast({ title: "Acesso Restrito", description: "Esta funcionalidade não está disponível para o seu plano.", variant: "destructive" });
+             router.push('/dashboard');
+             setIsLoadingPage(false);
+             return;
+           }
         }
       } else {
         setCurrentUserData(null);
         setTransactions([]);
-        setIsLoadingTransactions(false);
         setFirebasePatients([]);
-        setIsLoadingFirebasePatients(false);
+        toast({ title: "Sessão Expirada", description: "Faça login para continuar.", variant: "destructive" });
+        router.push('/login');
       }
+      setIsLoadingPage(false); // Finish loading after auth and data setup
     });
     return () => unsubscribe();
-  }, []);
+  }, [toast, router]);
+
 
   useEffect(() => {
     setClientNow(new Date());
   }, []);
 
   const fetchFinancialTransactions = useCallback(async (userAuth: FirebaseUser, uData: any) => {
-    if (!userAuth) return;
+    if (!userAuth || !uData) { 
+      setIsLoadingTransactions(false);
+      return;
+    }
     setIsLoadingTransactions(true);
     try {
       const transactionsRef = collection(db, 'financialTransactions');
       let q;
-      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
         q = query(transactionsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), orderBy('date', 'desc'));
       } else {
         q = query(transactionsRef, where('ownerId', '==', userAuth.uid), orderBy('date', 'desc'));
@@ -280,36 +305,43 @@ export default function FinanceiroPage() {
       setTransactions(fetchedTransactions);
     } catch (error: any) {
       console.error("Erro ao buscar transações financeiras:", error);
-      toast({ title: "Erro nos Lançamentos", description: "Não foi possível carregar os lançamentos.", variant: "destructive" });
+      toast({ title: "Erro ao Buscar Transações", description: "Não foi possível carregar as transações financeiras.", variant: "destructive" });
+      setTransactions([]); // Clear transactions on error
     } finally {
       setIsLoadingTransactions(false);
     }
   }, [toast]);
 
   const fetchPatientsForSelect = useCallback(async (userAuth: FirebaseUser, uData: any) => {
-    if (!userAuth) return;
+    if (!userAuth || !uData) {
+      setIsLoadingFirebasePatients(false);
+      return;
+    }
     setIsLoadingFirebasePatients(true);
     try {
       const patientsRef = collection(db, 'pacientes');
       let q;
-      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
         q = query(patientsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), where('status', '==', 'Ativo'), orderBy('name'));
       } else {
         q = query(patientsRef, where('uid', '==', userAuth.uid), where('status', '==', 'Ativo'), orderBy('name'));
       }
+      
       const querySnapshot = await getDocs(q);
       const fetchedPatients: PatientForSelect[] = [];
       querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
         fetchedPatients.push({
           id: docSnap.id,
-          name: docSnap.data().name as string,
-          slug: docSnap.data().slug as string,
+          name: data.name as string,
+          slug: data.slug as string,
         });
       });
       setFirebasePatients(fetchedPatients);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao buscar pacientes:", error);
-      toast({ title: "Erro ao buscar pacientes", description: "Não foi possível carregar a lista de pacientes ativos.", variant: "destructive" });
+      toast({ title: "Erro ao Buscar Pacientes", description: "Não foi possível carregar a lista de pacientes.", variant: "destructive" });
+      setFirebasePatients([]);
     } finally {
       setIsLoadingFirebasePatients(false);
     }
@@ -320,347 +352,232 @@ export default function FinanceiroPage() {
     if (currentUser && currentUserData) {
       fetchFinancialTransactions(currentUser, currentUserData);
       fetchPatientsForSelect(currentUser, currentUserData);
+    } else {
+      setIsLoadingTransactions(false);
+      setIsLoadingFirebasePatients(false);
     }
   }, [currentUser, currentUserData, fetchFinancialTransactions, fetchPatientsForSelect]);
 
-
-  const getDateRangeForPeriod = useCallback((period: PeriodOption, range?: DateRange): { start: Date; end: Date } => {
-    const now = clientNow || new Date(); 
-    let start: Date, end: Date;
+  const getDateRange = (period: PeriodOption, customRange?: DateRange): { start: Date; end: Date } | null => {
+    if (!clientNow) return null;
+    const today = startOfDay(clientNow);
 
     switch (period) {
       case 'today':
-        start = startOfDay(now);
-        end = endOfDay(now);
-        break;
+        return { start: today, end: endOfDay(today) };
       case 'yesterday':
-        const yesterday = subDays(now, 1);
-        start = startOfDay(yesterday);
-        end = endOfDay(yesterday);
-        break;
+        const yesterday = subDays(today, 1);
+        return { start: yesterday, end: endOfDay(yesterday) };
       case 'last7days':
-        start = startOfDay(subDays(now, 6));
-        end = endOfDay(now);
-        break;
+        return { start: subDays(today, 6), end: endOfDay(today) };
       case 'thisMonth':
-        start = startOfMonth(now);
-        end = endOfMonth(now);
-        break;
+        return { start: startOfMonth(today), end: endOfDay(today) }; // Changed from endOfMonth(today) to endOfDay(today) to include today's transactions if it's "thisMonth"
       case 'lastMonth':
-        const prevMonth = subMonths(now, 1);
-        start = startOfMonth(prevMonth);
-        end = endOfMonth(prevMonth);
-        break;
+        const lastMonthStart = startOfMonth(subMonths(today, 1));
+        return { start: lastMonthStart, end: endOfMonth(lastMonthStart) };
       case 'custom':
-        if (range?.from && range?.to) {
-          start = startOfDay(range.from);
-          end = endOfDay(range.to);
-        } else if (range?.from) {
-          start = startOfDay(range.from);
-          end = endOfDay(range.from);
-        } else {
-          start = startOfMonth(now); 
-          end = endOfMonth(now);
+        if (customRange?.from && customRange?.to) {
+          return { start: startOfDay(customRange.from), end: endOfDay(customRange.to) };
         }
-        break;
+        return null;
       default:
-        start = startOfMonth(now);
-        end = endOfMonth(now);
+        return null;
     }
-    return { start, end };
-  }, [clientNow]);
+  };
 
   const filteredTransactions = useMemo(() => {
-    const { start, end } = getDateRangeForPeriod(selectedPeriod, customDateRange);
-    return transactions.filter((t) => {
-        try {
-            return isWithinInterval(t.date, { start, end });
-        } catch (e) {
-            console.error("Error filtering transaction by date", t, e);
-            return false;
-        }
+    const range = getDateRange(selectedPeriod, customDateRange);
+    if (!range) return transactions; // Or an empty array if no range means no data
+
+    return transactions.filter((transaction) =>
+      isWithinInterval(transaction.date, { start: range.start, end: range.end })
+    );
+  }, [transactions, selectedPeriod, customDateRange, clientNow]);
+
+  const { totalRecebido, totalPendente, totalPrevisto, totalCancelado, chartData } = useMemo(() => {
+    let recebido = 0;
+    let pendente = 0;
+    let cancelado = 0;
+    const monthlySummary: { [key: string]: number } = {};
+
+    filteredTransactions.forEach((transaction) => {
+      if (transaction.status === 'Recebido') {
+        recebido += transaction.amount;
+      } else if (transaction.status === 'Pendente') {
+        pendente += transaction.amount;
+      } else if (transaction.status === 'Cancelado') {
+        cancelado += transaction.amount;
+      }
+
+      if (transaction.status === 'Recebido') {
+        const monthYear = format(transaction.date, 'MMM/yy', { locale: ptBR });
+        monthlySummary[monthYear] = (monthlySummary[monthYear] || 0) + transaction.amount;
+      }
     });
-  }, [transactions, selectedPeriod, customDateRange, getDateRangeForPeriod]);
+
+    const chart = Object.entries(monthlySummary)
+      .map(([month, total]) => ({ month, total }))
+      .sort((a, b) => parseISO(a.month.split('/').reverse().join('-')).getTime() - parseISO(b.month.split('/').reverse().join('-')).getTime());
 
 
-  const getPreviousPeriodRange = useCallback((currentStart: Date, currentEnd: Date, periodType: PeriodOption): { start: Date; end: Date } => {
-    let prevStart: Date, prevEnd: Date;
-
-    switch (periodType) {
-      case 'today':
-        prevEnd = subDays(currentStart, 1);
-        prevStart = startOfDay(prevEnd);
-        break;
-      case 'yesterday':
-        prevEnd = subDays(currentStart, 1);
-        prevStart = startOfDay(prevEnd);
-        break;
-      case 'last7days':
-        prevEnd = subDays(currentStart, 1);
-        prevStart = subDays(prevEnd, 6);
-        break;
-      case 'thisMonth':
-        prevStart = startOfMonth(subMonths(currentStart, 1));
-        prevEnd = endOfMonth(prevStart);
-        break;
-      case 'lastMonth':
-        prevStart = startOfMonth(subMonths(currentStart, 1));
-        prevEnd = endOfMonth(prevStart);
-        break;
-      case 'custom':
-        const diff = differenceInDays(currentEnd, currentStart);
-        prevEnd = subDays(currentStart, 1);
-        prevStart = subDays(prevEnd, diff);
-        break;
-      default:
-        prevStart = startOfMonth(subMonths(currentStart, 1));
-        prevEnd = endOfMonth(prevStart);
-    }
-    return { start: startOfDay(prevStart), end: endOfDay(prevEnd) };
-  }, []);
-
-
-  const summaryData = useMemo(() => {
-    const { start: currentPeriodStart, end: currentPeriodEnd } = getDateRangeForPeriod(selectedPeriod, customDateRange);
-    
-    const currentPeriodTransactions = transactions.filter(t => 
-        t.status === 'Recebido' && isWithinInterval(t.date, { start: currentPeriodStart, end: currentPeriodEnd })
-    );
-    const totalRevenue = currentPeriodTransactions.reduce((sum, t) => sum + t.amount, 0);
-    
-    const paidAppointments = currentPeriodTransactions.filter(t => t.type === 'atendimento').length;
-    const revenueFromAppointments = currentPeriodTransactions.filter(t => t.type === 'atendimento').reduce((sum, t) => sum + t.amount, 0);
-    const averagePerAppointment = paidAppointments > 0 ? revenueFromAppointments / paidAppointments : 0;
-
-    const { start: prevPeriodStart, end: prevPeriodEnd } = getPreviousPeriodRange(currentPeriodStart, currentPeriodEnd, selectedPeriod);
-    const previousPeriodTransactions = transactions.filter(t =>
-        t.status === 'Recebido' && isWithinInterval(t.date, { start: prevPeriodStart, end: prevPeriodEnd })
-    );
-    const previousPeriodRevenue = previousPeriodTransactions.reduce((sum, t) => sum + t.amount, 0);
-
-    let comparisonPercentage: number | null = null;
-    if (previousPeriodRevenue > 0) {
-      comparisonPercentage = ((totalRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100;
-    } else if (totalRevenue > 0) {
-      comparisonPercentage = 100;
-    } else if (previousPeriodRevenue === 0 && totalRevenue === 0) {
-      comparisonPercentage = 0;
-    }
     return {
-      totalRevenue,
-      paidAppointments,
-      averagePerAppointment,
-      comparisonPercentage,
+      totalRecebido: recebido,
+      totalPendente: pendente,
+      totalPrevisto: recebido + pendente,
+      totalCancelado: cancelado,
+      chartData: chart,
     };
-  }, [transactions, selectedPeriod, customDateRange, getDateRangeForPeriod, getPreviousPeriodRange]);
+  }, [filteredTransactions]);
 
-
-  const chartData = useMemo(() => {
-    const dataMap = new Map<string, number>();
-    filteredTransactions.filter(t => t.status === 'Recebido').forEach(t => {
-      const dayKey = format(t.date, 'dd/MM');
-      dataMap.set(dayKey, (dataMap.get(dayKey) || 0) + t.amount);
-    });
-    return Array.from(dataMap.entries())
-      .map(([name, value]) => ({ name, faturamento: value }))
-      .sort((a,b) => {
-        const [dayA, monthA] = a.name.split('/').map(Number);
-        const [dayB, monthB] = b.name.split('/').map(Number);
-        const dateA = new Date(clientNow?.getFullYear() || new Date().getFullYear(), monthA - 1, dayA);
-        const dateB = new Date(clientNow?.getFullYear() || new Date().getFullYear(), monthB - 1, dayB);
-        return dateA.getTime() - dateB.getTime();
-      });
-  }, [filteredTransactions, clientNow]);
-
-
-  const receivablesData = useMemo(() => {
-    if (!clientNow) return [];
-    const todayForComparison = startOfDay(clientNow);
-
-    return filteredTransactions
-      .filter(t => t.type === 'atendimento' && t.status !== 'Cancelado') 
-      .map((t): ReceivableEntry => {
-        let paymentStatusDisplay: ReceivableEntry['paymentStatusDisplay'] = 'Pendente';
-        let daysOverdue: number | undefined = undefined;
-        let paymentDate: Date | undefined = undefined;
-
-        if (t.status === 'Recebido') {
-          paymentStatusDisplay = 'Pago';
-          paymentDate = t.date; 
-        } else if (t.status === 'Pendente') {
-          const dueDate = startOfDay(t.date);
-          if (isBefore(dueDate, todayForComparison)) {
-            paymentStatusDisplay = 'Atrasado';
-            daysOverdue = differenceInDays(todayForComparison, dueDate);
-          } else {
-            paymentStatusDisplay = 'Pendente';
-          }
-        }
-
-        return {
-          id: t.id,
-          patientName: t.patientName || 'N/A',
-          description: t.description,
-          dueDate: t.date,
-          paymentDate,
-          paymentStatusDisplay,
-          daysOverdue,
-          amount: t.amount,
-          paymentMethod: t.paymentMethod,
-        };
-      })
-      .sort((a, b) => b.dueDate.getTime() - a.dueDate.getTime());
-  }, [filteredTransactions, clientNow]);
-
-
-  const handleFormInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setTransactionForm((prev) => ({
-      ...prev,
-      [name]: name === 'amount' ? parseFloat(value) || 0 : value,
-    }));
+  const handleFormInputChange = (field: keyof NewTransactionForm, value: string | number | boolean) => {
+    setTransactionForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleFormSelectChange = (
-    name: keyof NewTransactionForm,
-    value: string
-  ) => {
-    setTransactionForm((prev) => ({ ...prev, [name]: value }));
+  const handleFormSelectChange = (field: keyof NewTransactionForm, value: string) => {
+     setTransactionForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleDateChange = (date: Date | undefined, fieldName: keyof NewTransactionForm) => {
-    if (date) {
-      setTransactionForm(prev => ({ ...prev, [fieldName]: format(date, 'yyyy-MM-dd')}));
-    }
-  }
+  const handleDateChange = (dateString: string) => {
+    setTransactionForm(prev => ({ ...prev, date: dateString }));
+  };
 
-  const handleSubmitTransaction = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveTransaction = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!currentUser || !currentUserData) {
-      toast({ title: 'Erro', description: 'Usuário não autenticado.', variant: 'destructive' });
-      return;
-    }
-    if (!transactionForm.description || transactionForm.amount == undefined || transactionForm.amount <= 0 || !transactionForm.date) {
-      toast({ title: 'Erro de Validação', description: 'Descrição, valor e data são obrigatórios.', variant: 'destructive' });
+      toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
     }
 
-    const transactionDate = parseISO(transactionForm.date as string);
-    const selectedPatient = firebasePatients.find(p => p.id === transactionForm.patientId);
+    const { description, amount, paymentMethod, status, type, date, patientId, notes } = transactionForm;
+    
+    if (!description || !amount || !paymentMethod || !status || !type || !date ) {
+      toast({ title: "Erro de Validação", description: "Descrição, Valor, Data, Método de Pagamento, Status e Tipo são obrigatórios.", variant: "destructive" });
+      return;
+    }
 
-    const transactionDataToSave: Partial<FinancialTransaction> = {
+    if (amount <= 0) {
+       toast({ title: "Valor Inválido", description: "O valor da transação deve ser maior que zero.", variant: "destructive" });
+       return;
+    }
+    
+    let parsedDate;
+    try {
+      parsedDate = parseISO(date);
+      if (isNaN(parsedDate.getTime())) {
+        throw new Error("Data inválida");
+      }
+    } catch {
+      toast({ title: "Data Inválida", description: "Por favor, insira uma data válida.", variant: "destructive" });
+      return;
+    }
+
+
+    const selectedPatient = firebasePatients.find(p => p.id === patientId);
+    const transactionData: Omit<FinancialTransaction, 'id' | 'createdAt' | 'updatedAt'> = {
       ownerId: currentUser.uid,
-      date: Timestamp.fromDate(transactionDate) as any, // Firestore will handle conversion
-      description: transactionForm.description!,
-      patientId: transactionForm.patientId || null,
-      patientName: selectedPatient?.name || (transactionForm.type === 'manual' ? null : transactionForm.patientName),
-      appointmentId: transactionForm.appointmentId || null,
-      amount: transactionForm.amount!,
-      paymentMethod: transactionForm.paymentMethod as PaymentMethod,
-      status: transactionForm.status as TransactionStatus,
-      notes: transactionForm.notes || '',
-      type: transactionForm.type as TransactionType,
-      updatedAt: serverTimestamp() as any,
+      nomeEmpresa: currentUserData.plano === 'Clínica' ? currentUserData.nomeEmpresa || '' : '',
+      date: Timestamp.fromDate(parsedDate) as any, // Cast for Firestore compatibility
+      description,
+      amount: Number(amount),
+      paymentMethod: paymentMethod as PaymentMethod,
+      status: status as TransactionStatus,
+      type: type as TransactionType,
+      notes: notes || '',
+      patientId: selectedPatient?.id || '',
+      patientName: selectedPatient?.name || '',
     };
-
-    if(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa) {
-        transactionDataToSave.nomeEmpresa = currentUserData.nomeEmpresa;
-    }
-
 
     try {
       if (editingTransaction) {
         const transactionRef = doc(db, 'financialTransactions', editingTransaction.id);
-        await updateDoc(transactionRef, transactionDataToSave);
-        toast({ title: 'Sucesso!', description: 'Lançamento atualizado.', variant: 'success'});
+        await updateDoc(transactionRef, { ...transactionData, updatedAt: serverTimestamp() });
+        toast({ title: "Sucesso!", description: "Transação atualizada.", variant: "success" });
       } else {
-        await addDoc(collection(db, 'financialTransactions'), {
-          ...transactionDataToSave,
-          createdAt: serverTimestamp(),
-        });
-        toast({ title: 'Sucesso!', description: 'Novo lançamento adicionado.', variant: 'success'});
+        await addDoc(collection(db, 'financialTransactions'), { ...transactionData, createdAt: serverTimestamp() });
+        toast({ title: "Sucesso!", description: "Transação adicionada.", variant: "success" });
       }
       
+      setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
       setIsAddTransactionDialogOpen(false);
       setEditingTransaction(null);
-      setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
-      await fetchFinancialTransactions(currentUser, currentUserData); 
+      if (currentUser && currentUserData) {
+          fetchFinancialTransactions(currentUser, currentUserData);
+      }
     } catch (error) {
-        console.error("Erro ao salvar lançamento:", error);
-        toast({ title: "Erro ao Salvar", description: "Não foi possível salvar o lançamento.", variant: "destructive"});
+      console.error("Erro ao salvar transação:", error);
+      toast({ title: "Erro", description: "Não foi possível salvar a transação.", variant: "destructive" });
     }
   };
 
-  const handleEditTransaction = (transaction: FinancialTransaction) => {
+  const handleOpenEditDialog = (transaction: FinancialTransaction) => {
     setEditingTransaction(transaction);
     setTransactionForm({
-      ...transaction,
-      date: format(transaction.date, 'yyyy-MM-dd'), 
-      amount: transaction.amount, 
-      patientId: transaction.patientId || '', 
+      description: transaction.description,
+      amount: transaction.amount,
+      paymentMethod: transaction.paymentMethod,
+      status: transaction.status,
+      type: transaction.type,
+      date: format(transaction.date, 'yyyy-MM-dd'),
+      patientId: transaction.patientId || '',
+      notes: transaction.notes || '',
     });
     setIsAddTransactionDialogOpen(true);
   };
-  
-  const openDeleteTransactionDialog = (transaction: FinancialTransaction) => {
+
+  const handleOpenDeleteDialog = (transaction: FinancialTransaction) => {
     setTransactionToDelete(transaction);
     setIsDeleteTransactionConfirmOpen(true);
   };
 
-  const confirmDeleteTransaction = async () => {
-    if (!currentUser || !transactionToDelete) return;
+  const handleConfirmDeleteTransaction = async () => {
+    if (!transactionToDelete || !currentUser) return;
     try {
-        await deleteDoc(doc(db, 'financialTransactions', transactionToDelete.id));
-        toast({ title: 'Lançamento Excluído', description: `O lançamento "${transactionToDelete.description}" foi removido.`, variant: 'destructive' });
-        await fetchFinancialTransactions(currentUser, currentUserData); 
+      await deleteDoc(doc(db, 'financialTransactions', transactionToDelete.id));
+      toast({ title: "Transação Excluída", description: "A transação foi removida com sucesso.", variant: "success" });
+      if (currentUser && currentUserData) {
+          fetchFinancialTransactions(currentUser, currentUserData);
+      }
     } catch (error) {
-        console.error("Erro ao excluir lançamento:", error);
-        toast({ title: "Erro ao Excluir", description: "Não foi possível remover o lançamento.", variant: "destructive"});
+      console.error("Erro ao excluir transação:", error);
+      toast({ title: "Erro ao Excluir", description: "Não foi possível excluir a transação.", variant: "destructive" });
     } finally {
-        setIsDeleteTransactionConfirmOpen(false);
-        setTransactionToDelete(null);
+      setIsDeleteTransactionConfirmOpen(false);
+      setTransactionToDelete(null);
     }
   };
 
-  const handleQuickStatusChange = async (transactionId: string, newStatus: TransactionStatus) => {
-    if (!currentUser) {
-      toast({ title: 'Erro', description: 'Usuário não autenticado.', variant: 'destructive' });
-      return;
-    }
+  const handleUpdateTransactionStatus = async (transactionId: string, newStatus: TransactionStatus) => {
+    if (!currentUser) return;
     try {
-      const transactionRef = doc(db, 'financialTransactions', transactionId);
-      await updateDoc(transactionRef, {
-        status: newStatus,
-        updatedAt: serverTimestamp(),
-      });
-      toast({ title: 'Status Atualizado!', description: `Status do lançamento alterado para ${newStatus}.`, variant: 'success'});
-      await fetchFinancialTransactions(currentUser, currentUserData);
+        const transactionRef = doc(db, 'financialTransactions', transactionId);
+        await updateDoc(transactionRef, {
+            status: newStatus,
+            updatedAt: serverTimestamp()
+        });
+        toast({ title: "Status Atualizado", description: `Status da transação alterado para ${newStatus}.`, variant: "success" });
+        if (currentUser && currentUserData) {
+          fetchFinancialTransactions(currentUser, currentUserData);
+        }
     } catch (error) {
-      console.error("Erro ao atualizar status do lançamento:", error);
-      toast({ title: "Erro ao Atualizar Status", description: "Não foi possível atualizar o status do lançamento.", variant: "destructive"});
+        console.error("Erro ao atualizar status da transação:", error);
+        toast({ title: "Erro", description: "Não foi possível atualizar o status da transação.", variant: "destructive" });
     }
-  };
-  
-  const handleExportExcel = () => {
-    console.log("Exportando dados para Excel (simulado):", filteredTransactions);
-    toast({
-      title: "Exportar para Excel",
-      description: "Funcionalidade de exportação para Excel em desenvolvimento.",
-    });
-  };
+};
 
-  const getPaymentStatusBadgeVariant = (status: ReceivableEntry['paymentStatusDisplay']) => {
-    switch (status) {
-      case 'Pago': return 'success';
-      case 'Pendente': return 'default';
-      case 'Atrasado': return 'destructive';
-      default: return 'secondary';
+
+  const getPaymentMethodIcon = (method: PaymentMethod) => {
+    switch (method) {
+      case 'Dinheiro': return <Coins className="h-4 w-4" />;
+      case 'Cartão de Crédito': return <CreditCardIcon className="h-4 w-4" />;
+      case 'Cartão de Débito': return <CreditCardIcon className="h-4 w-4" />;
+      case 'Pix': return <Smartphone className="h-4 w-4" />;
+      case 'Boleto': return <ReceiptText className="h-4 w-4" />;
+      case 'Transferência': return <Landmark className="h-4 w-4" />;
+      default: return <Wallet className="h-4 w-4" />;
     }
   };
 
-  const getTransactionStatusBadgeVariant = (status: TransactionStatus) => {
+  const getStatusBadgeVariant = (status: TransactionStatus) => {
     switch (status) {
       case 'Recebido': return 'success';
       case 'Pendente': return 'warning';
@@ -669,504 +586,297 @@ export default function FinanceiroPage() {
     }
   };
 
-   const getPaymentMethodIcon = (method?: PaymentMethod) => {
-    if (!method) return <DollarSign className="h-4 w-4 text-muted-foreground" />;
-    switch (method) {
-      case 'Dinheiro': return <Coins className="h-4 w-4 text-green-600" />;
-      case 'Cartão de Crédito':
-      case 'Cartão de Débito': return <CreditCardIcon className="h-4 w-4 text-blue-500" />;
-      case 'Pix': return <Smartphone className="h-4 w-4 text-sky-500" />;
-      case 'Boleto':
-      case 'Transferência': return <Landmark className="h-4 w-4 text-purple-500" />;
-      default: return <Wallet className="h-4 w-4 text-gray-500" />;
-    }
-  };
+  const isFreePlan = currentUserData?.plano === 'Gratuito';
+  const isEssencialPlan = currentUserData?.plano === 'Essencial';
 
-  const getEvolutionTextAndColor = (percentage: number | null): { text: string; colorClass: string } => {
-    if (percentage === null) return { text: "Dados Indisponíveis", colorClass: "text-muted-foreground" };
-    if (percentage > 5) return { text: "Crescimento Forte", colorClass: "text-green-600" };
-    if (percentage > 0) return { text: "Crescimento", colorClass: "text-green-600" };
-    if (percentage === 0) return { text: "Estável", colorClass: "text-foreground" };
-    if (percentage < -5) return { text: "Redução Significativa", colorClass: "text-red-600" };
-    if (percentage < 0) return { text: "Redução", colorClass: "text-red-600" };
-    return { text: "Estável", colorClass: "text-foreground" };
-  };
-
-
-  if (!clientNow || isLoadingTransactions || !currentUser || !currentUserData) {
+  if (isLoadingPage) {
+    return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando financeiro...</p></div>;
+  }
+  
+  if (isFreePlan) {
     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
-        <p className="text-xl text-muted-foreground">Carregando dados financeiros...</p>
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
+        <DollarSign className="h-16 w-16 text-destructive mb-4" />
+        <h1 className="text-2xl font-semibold mb-2">Acesso Restrito</h1>
+        <p className="text-muted-foreground mb-6 max-w-md">
+          A funcionalidade de Controle Financeiro não está disponível no plano Gratuito.
+          Para acessar este recurso e gerenciar suas finanças, por favor, faça upgrade do seu plano.
+        </p>
+        <Button onClick={() => router.push('/configuracoes?tab=plano')}>Ver Planos e Fazer Upgrade</Button>
       </div>
     );
   }
 
-
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-3xl font-bold text-foreground">Controle Financeiro</h1>
-        {currentUserData?.plano !== 'Gratuito' && (
-          <Dialog open={isAddTransactionDialogOpen} onOpenChange={(isOpen) => {
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold text-foreground">Financeiro</h1>
+        <Dialog open={isAddTransactionDialogOpen} onOpenChange={(isOpen) => {
             setIsAddTransactionDialogOpen(isOpen);
             if (!isOpen) {
-              setEditingTransaction(null);
-              setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
+                setEditingTransaction(null);
+                setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: ''});
             }
-          }}>
-            <DialogTrigger asChild>
-              <Button className="w-full sm:w-auto">
-                <PlusCircle className="mr-2 h-4 w-4" /> Novo Lançamento
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>{editingTransaction ? 'Editar Lançamento' : 'Adicionar Novo Lançamento'}</DialogTitle>
-                <DialogDescription>
-                  Preencha os detalhes do lançamento financeiro.
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmitTransaction} className="grid gap-4 py-4">
-                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                  <Label htmlFor="description" className="sm:text-right">Descrição*</Label>
-                  <Input id="description" name="description" value={transactionForm.description} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                  <Label htmlFor="amount" className="sm:text-right">Valor (R$)*</Label>
-                  <Input id="amount" name="amount" type="number" value={transactionForm.amount} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" required min="0.01" step="0.01" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                  <Label htmlFor="date" className="sm:text-right col-span-1">Data*</Label>
-                  <Popover>
-                      <PopoverTrigger asChild>
-                          <Button
-                          variant={"outline"}
-                          className={`col-span-1 sm:col-span-3 justify-start text-left font-normal w-full ${!transactionForm.date && "text-muted-foreground"}`}
-                          >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {transactionForm.date ? format(parseISO(transactionForm.date), "PPP", { locale: ptBR }) : <span>Selecione uma data</span>}
-                          </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                          mode="single"
-                          selected={transactionForm.date ? parseISO(transactionForm.date) : undefined}
-                          onSelect={(date) => handleDateChange(date, 'date')}
-                          locale={ptBR}
-                          initialFocus
-                          />
-                      </PopoverContent>
-                  </Popover>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                  <Label htmlFor="paymentMethod" className="sm:text-right">Forma Pgto.*</Label>
-                  <Select name="paymentMethod" value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)} required>
-                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {paymentMethods.map(pm => <SelectItem key={pm} value={pm}>{pm}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                  <Label htmlFor="status" className="sm:text-right">Status*</Label>
-                  <Select name="status" value={transactionForm.status} onValueChange={(value) => handleFormSelectChange('status', value)} required>
-                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {transactionStatuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                  <Label htmlFor="type" className="sm:text-right">Tipo*</Label>
-                  <Select name="type" value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value as TransactionType)} required>
-                    <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="manual">Manual</SelectItem>
-                      <SelectItem value="atendimento">Vinculado a Atendimento</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {transactionForm.type === 'atendimento' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-4 gap-y-2">
-                      <Label htmlFor="patientId" className="sm:text-right">Paciente</Label>
-                      <Select name="patientId" value={transactionForm.patientId || ''} onValueChange={(value) => handleFormSelectChange('patientId', value)}>
-                      <SelectTrigger className="col-span-1 sm:col-span-3"><SelectValue placeholder={isLoadingFirebasePatients ? "Carregando..." : "Selecione (opcional)"} /></SelectTrigger>
-                      <SelectContent>
-                          {isLoadingFirebasePatients ? (
-                              <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                          ) : firebasePatients.length === 0 ? (
-                              <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem>
-                          ) : (
-                            firebasePatients.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)
-                          )}
-                      </SelectContent>
-                      </Select>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 sm:grid-cols-4 items-start gap-x-4 gap-y-2">
-                  <Label htmlFor="notes" className="sm:text-right sm:pt-2">Observações</Label>
-                  <Textarea id="notes" name="notes" value={transactionForm.notes} onChange={handleFormInputChange} className="col-span-1 sm:col-span-3" rows={3} />
-                </div>
-                <DialogFooter>
-                  <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-                  <Button type="submit">{editingTransaction ? 'Salvar Alterações' : 'Adicionar Lançamento'}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        )}
-      </div>
-
-      {currentUserData?.plano !== 'Gratuito' ? (
-        <>
-          <Card className="shadow-md">
-            <CardHeader>
-              <CardTitle>Filtro por Período</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-end">
-              <div className="w-full sm:max-w-xs">
-                <Label htmlFor="period-select">Selecionar Período</Label>
-                <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodOption)}>
-                  <SelectTrigger id="period-select" className="w-full">
-                    <SelectValue placeholder="Selecione o período" />
+        }}>
+          <DialogTrigger asChild>
+            <Button><PlusCircle className="mr-2 h-4 w-4" /> Adicionar Transação</Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>{editingTransaction ? 'Editar Transação' : 'Nova Transação Manual'}</DialogTitle>
+              <DialogDescription>Insira os detalhes da transação financeira.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSaveTransaction} className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="description" className="text-right col-span-1">Descrição*</Label>
+                <Input id="description" value={transactionForm.description} onChange={(e) => handleFormInputChange('description', e.target.value)} className="col-span-3" placeholder="Ex: Consulta, Sessão Extra" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="amount" className="text-right col-span-1">Valor (R$)*</Label>
+                <Input id="amount" type="number" step="0.01" value={transactionForm.amount} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-3" placeholder="0.00" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="date" className="text-right col-span-1">Data*</Label>
+                <Input id="date" type="date" value={transactionForm.date} onChange={(e) => handleDateChange(e.target.value)} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="paymentMethod" className="text-right col-span-1">Método*</Label>
+                <Select value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)}>
+                  <SelectTrigger id="paymentMethod" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{paymentMethods.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="status" className="text-right col-span-1">Status*</Label>
+                <Select value={transactionForm.status} onValueChange={(value) => handleFormSelectChange('status', value)}>
+                  <SelectTrigger id="status" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{transactionStatuses.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="type" className="text-right col-span-1">Tipo*</Label>
+                 <Select value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value)} disabled={editingTransaction?.type === 'atendimento'}>
+                  <SelectTrigger id="type" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{transactionTypes.map(type => <SelectItem key={type} value={type} disabled={editingTransaction?.type === 'atendimento' && type === 'atendimento'}>{type === 'atendimento' ? 'Lançado pela Agenda' : 'Manual'}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                 <Label htmlFor="patientId" className="text-right col-span-1">Associar Paciente</Label>
+                <Select value={transactionForm.patientId} onValueChange={(value) => handleFormSelectChange('patientId', value)} >
+                  <SelectTrigger id="patientId" className="col-span-3">
+                    <SelectValue placeholder="Selecione o paciente (opcional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    {periodOptions.map(option => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
+                     {isLoadingFirebasePatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem> : <> <SelectItem value="">Nenhum</SelectItem> {firebasePatients.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))} </>}
                   </SelectContent>
                 </Select>
               </div>
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="notes" className="text-right col-span-1 pt-2">Observações</Label>
+                <Textarea id="notes" value={transactionForm.notes} onChange={(e) => handleFormInputChange('notes', e.target.value)} className="col-span-3" rows={2} placeholder="Detalhes adicionais sobre a transação"/>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+                <Button type="submit">Salvar Transação</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Recebido</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold">R$ {totalRecebido.toFixed(2)}</div></CardContent>
+        </Card>
+        <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Pendente</CardTitle>
+            <Clock className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold">R$ {totalPendente.toFixed(2)}</div></CardContent>
+        </Card>
+        <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Previsto</CardTitle>
+            <DollarSign className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold">R$ {totalPrevisto.toFixed(2)}</div></CardContent>
+        </Card>
+         <Card className="shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Cancelado</CardTitle>
+            <XCircle className="h-4 w-4 text-destructive" />
+          </CardHeader>
+          <CardContent><div className="text-2xl font-bold">R$ {totalCancelado.toFixed(2)}</div></CardContent>
+        </Card>
+      </div>
+
+      <Card className="shadow-md">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <CardTitle>Transações Financeiras</CardTitle>
+              <CardDescription>Visão geral das suas movimentações.</CardDescription>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select value={selectedPeriod} onValueChange={(value) => { setSelectedPeriod(value as PeriodOption); if (value !== 'custom') setCustomDateRange(undefined); }}>
+                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Período" /></SelectTrigger>
+                <SelectContent>
+                  {periodOptions.map((option) => (<SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>))}
+                </SelectContent>
+              </Select>
               {selectedPeriod === 'custom' && (
-                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end w-full mt-4 sm:mt-0">
-                  <div className="flex-1">
-                    <Label htmlFor="custom-start-date">Data Inicial</Label>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button id="custom-start-date" variant="outline" className="w-full justify-start text-left font-normal">
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {customDateRange?.from ? format(customDateRange.from, 'PPP', { locale: ptBR }) : <span>Data inicial</span>}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar mode="single" selected={customDateRange?.from} onSelect={(date) => setCustomDateRange(prev => ({...prev, from: date }))} locale={ptBR} />
-                        </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="flex-1 mt-2 sm:mt-0">
-                    <Label htmlFor="custom-end-date">Data Final</Label>
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button id="custom-end-date" variant="outline" className="w-full justify-start text-left font-normal">
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {customDateRange?.to ? format(customDateRange.to, 'PPP', { locale: ptBR }) : <span>Data final</span>}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar mode="single" selected={customDateRange?.to} onSelect={(date) => setCustomDateRange(prev => ({...prev, to: date }))} disabled={{ before: customDateRange?.from }} locale={ptBR} />
-                        </PopoverContent>
-                    </Popover>
-                  </div>
-                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button id="date-range-picker" variant={"outline"} className={"w-full sm:w-[260px] justify-start text-left font-normal" + (!customDateRange && " text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customDateRange?.from ? (customDateRange.to ? (<>{format(customDateRange.from, "LLL dd, y", { locale: ptBR })} - {format(customDateRange.to, "LLL dd, y", { locale: ptBR })}</>) : (format(customDateRange.from, "LLL dd, y"))) : (<span>Selecione o período</span>)}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end"><Calendar initialFocus mode="range" defaultMonth={customDateRange?.from} selected={customDateRange} onSelect={setCustomDateRange} numberOfMonths={2} locale={ptBR} /></PopoverContent>
+                </Popover>
               )}
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Faturamento Bruto (Recebido)</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">R$ {summaryData.totalRevenue.toFixed(2)}</div>
-                {summaryData.comparisonPercentage !== null ? (
-                    <p className={`text-xs ${summaryData.comparisonPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage.toFixed(1)}% em relação ao período anterior
-                    </p>
-                ) : (
-                    <p className="text-xs text-muted-foreground">Não há dados do período anterior para comparação.</p>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Atendimentos Pagos</CardTitle>
-                <Users className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{summaryData.paidAppointments}</div>
-                <p className="text-xs text-muted-foreground">No período selecionado</p>
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Média por Atendimento Pago</CardTitle>
-                <Percent className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">R$ {summaryData.averagePerAppointment.toFixed(2)}</div>
-                <p className="text-xs text-muted-foreground">Considerando atendimentos pagos</p>
-              </CardContent>
-            </Card>
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Evolução do Faturamento</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className={`text-2xl font-bold ${getEvolutionTextAndColor(summaryData.comparisonPercentage).colorClass}`}>
-                    {getEvolutionTextAndColor(summaryData.comparisonPercentage).text}
-                </div>
-                {summaryData.comparisonPercentage !== null ? (
-                    <p className="text-xs text-muted-foreground">
-                        {summaryData.comparisonPercentage >= 0 ? '+' : ''}{summaryData.comparisonPercentage.toFixed(1)}% em relação ao período anterior
-                    </p>
-                ) : (
-                    <p className="text-xs text-muted-foreground">Não há dados do período anterior.</p>
-                )}
-              </CardContent>
-            </Card>
+            </div>
           </div>
-
-          <Card className="shadow-md">
-            <CardHeader>
-              <CardTitle>Gráfico de Faturamento no Período</CardTitle>
-              <CardDescription>Evolução do faturamento (status Recebido) por dia no período selecionado.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer config={{ faturamento: { label: 'Faturamento (R$)', color: 'hsl(var(--primary))' } }} className="h-[300px] w-full">
-                <ResponsiveContainer>
-                  <RechartsBarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="name" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                    <YAxis tickFormatter={(value) => `R$${value}`} tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
-                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
-                    <Bar dataKey="faturamento" fill="var(--color-faturamento)" radius={4} />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-
-          {currentUserData?.plano !== 'Essencial' && (
-            <Card className="shadow-md">
-                <CardHeader>
-                <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" />Contas a Receber por Paciente</CardTitle>
-                <CardDescription>Status de pagamento dos atendimentos no período selecionado.</CardDescription>
-                </CardHeader>
-                <CardContent>
+        </CardHeader>
+        <CardContent>
+          {isLoadingTransactions ? (
+            <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando transações...</p></div>
+          ) : filteredTransactions.length > 0 ? (
+            <div className="overflow-x-auto">
                 <Table>
-                    <TableHeader>
-                    <TableRow>
-                        <TableHead>Paciente</TableHead>
-                        <TableHead>Descrição</TableHead>
-                        <TableHead>Vencimento</TableHead>
-                        <TableHead>Data Pgto.</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-center">Dias Atraso</TableHead>
-                        <TableHead className="text-right">Valor (R$)</TableHead>
-                        <TableHead className="text-center">Forma Pgto.</TableHead>
-                    </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                    {receivablesData.length > 0 ? (
-                        receivablesData.map((item) => (
-                        <TableRow key={item.id}>
-                            <TableCell>{item.patientName}</TableCell>
-                            <TableCell>{item.description}</TableCell>
-                            <TableCell>{format(item.dueDate, 'dd/MM/yyyy')}</TableCell>
-                            <TableCell>{item.paymentDate ? format(item.paymentDate, 'dd/MM/yyyy') : '-'}</TableCell>
-                            <TableCell>
-                            <Badge variant={getPaymentStatusBadgeVariant(item.paymentStatusDisplay)} className="capitalize text-xs whitespace-nowrap">
-                                {item.paymentStatusDisplay === 'Pago' && <CheckCircle className="mr-1 h-3 w-3" />}
-                                {item.paymentStatusDisplay === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
-                                {item.paymentStatusDisplay === 'Atrasado' && <AlertTriangle className="mr-1 h-3 w-3" />}
-                                {item.paymentStatusDisplay}
-                            </Badge>
-                            </TableCell>
-                            <TableCell className="text-center">
-                            {item.paymentStatusDisplay === 'Atrasado' && item.daysOverdue !== undefined && item.daysOverdue > 0
-                                ? <span className="text-destructive font-medium">{item.daysOverdue}</span>
-                                : '-'}
-                            </TableCell>
-                            <TableCell className={`text-right font-medium ${item.paymentStatusDisplay === 'Atrasado' ? 'text-destructive' : item.paymentStatusDisplay === 'Pago' ? 'text-green-600' : ''}`}>
-                            {item.amount.toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-center">
-                            <div className="flex items-center justify-center gap-1">
-                                {getPaymentMethodIcon(item.paymentMethod)}
-                                <span className="text-xs text-muted-foreground">{item.paymentMethod || '-'}</span>
-                            </div>
-                            </TableCell>
-                        </TableRow>
-                        ))
-                    ) : (
-                        <TableRow>
-                        <TableCell colSpan={8} className="text-center h-24">
-                            Nenhum atendimento com pendência ou pago encontrado para o período selecionado.
-                        </TableCell>
-                        </TableRow>
-                    )}
-                    </TableBody>
-                </Table>
-                </CardContent>
-            </Card>
-          )}
-
-
-          <Card className="shadow-md">
-            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                <div className="flex-1">
-                    <CardTitle>Todos os Lançamentos Financeiros</CardTitle>
-                    <CardDescription>Lista de todas as transações (incluindo manuais) no período selecionado.</CardDescription>
-                </div>
-                <Button variant="outline" onClick={handleExportExcel} className="w-full mt-2 sm:mt-0 sm:w-auto">
-                    <FileDown className="mr-2 h-4 w-4" /> Exportar Excel (Em breve)
-                </Button>
-            </CardHeader>
-            <CardContent>
-              <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Data</TableHead>
+                    <TableHead className="w-[120px]">Data</TableHead>
                     <TableHead>Descrição</TableHead>
-                    <TableHead>Paciente</TableHead>
-                    <TableHead>Valor (R$)</TableHead>
-                    <TableHead>Forma Pgto.</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
+                    <TableHead className="hidden md:table-cell w-[200px]">Paciente</TableHead>
+                    <TableHead className="w-[130px]">Valor (R$)</TableHead>
+                    <TableHead className="hidden sm:table-cell w-[150px]">Método</TableHead>
+                    <TableHead className="w-[120px]">Status</TableHead>
+                    <TableHead className="text-right w-[100px]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTransactions.length > 0 ? (
-                    filteredTransactions.map((t) => (
-                      <TableRow key={t.id}>
-                        <TableCell>{format(t.date, 'dd/MM/yyyy')}</TableCell>
-                        <TableCell>
-                          {t.description}
-                          {t.notes && <p className="text-xs text-muted-foreground italic mt-1">"{t.notes}"</p>}
-                        </TableCell>
-                        <TableCell>{t.patientName || '-'}</TableCell>
-                        <TableCell className={`font-medium ${t.status === 'Cancelado' ? 'text-muted-foreground line-through' : (t.status === 'Pendente' ? 'text-orange-600' : 'text-green-600')}`}>
-                          {t.amount.toFixed(2)}
-                        </TableCell>
-                        <TableCell>
-                            <div className="flex items-center gap-1">
-                            {getPaymentMethodIcon(t.paymentMethod)}
-                            <span className="text-xs">{t.paymentMethod}</span>
-                            </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getTransactionStatusBadgeVariant(t.status)} className="capitalize text-xs whitespace-nowrap">
-                              {t.status === 'Recebido' && <CheckCircle className="mr-1 h-3 w-3" />}
-                              {t.status === 'Pendente' && <Clock className="mr-1 h-3 w-3" />}
-                              {t.status === 'Cancelado' && <XCircle className="mr-1 h-3 w-3" />}
-                              {t.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
+                  {filteredTransactions.map((transaction) => (
+                    <TableRow key={transaction.id}>
+                      <TableCell>{format(transaction.date, 'dd/MM/yyyy')}</TableCell>
+                      <TableCell className="font-medium max-w-[200px] truncate" title={transaction.description}>
+                        {transaction.description}
+                        {transaction.type === 'atendimento' && <Badge variant="outline" className="ml-2 text-xs bg-blue-100 border-blue-300 text-blue-700">Agenda</Badge>}
+                      </TableCell>
+                       <TableCell className="hidden md:table-cell">
+                        {transaction.patientName || <span className="text-muted-foreground italic">N/A</span>}
+                       </TableCell>
+                      <TableCell className={`font-semibold ${transaction.status === 'Cancelado' ? 'text-destructive line-through' : 'text-foreground'}`}>
+                        {transaction.amount.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <span className="flex items-center gap-1.5">
+                            {getPaymentMethodIcon(transaction.paymentMethod)} {transaction.paymentMethod}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getStatusBadgeVariant(transaction.status)} className="capitalize">{transaction.status}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span className="sr-only">Mais ações</span>
-                              </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleEditTransaction(t)}>
-                                <Edit2 className="mr-2 h-4 w-4" />
-                                Editar
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => openDeleteTransactionDialog(t)} className="text-destructive hover:!bg-destructive/10 focus:!bg-destructive/10 focus:!text-destructive">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Excluir
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              {t.status === 'Pendente' && (
-                                <>
-                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Recebido')}>
-                                    <CheckCircle className="mr-2 h-4 w-4 text-green-500" />
-                                    Marcar como Recebido
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
-                                    <XCircle className="mr-2 h-4 w-4 text-red-500" />
-                                    Marcar como Cancelado
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                              {t.status === 'Recebido' && (
-                                <>
-                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
-                                    <Clock className="mr-2 h-4 w-4 text-orange-500" />
-                                    Marcar como Pendente
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Cancelado')}>
-                                    <XCircle className="mr-2 h-4 w-4 text-red-500" />
-                                    Marcar como Cancelado
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                              {t.status === 'Cancelado' && (
-                                <DropdownMenuItem onClick={() => handleQuickStatusChange(t.id, 'Pendente')}>
-                                  <Clock className="mr-2 h-4 w-4 text-orange-500" />
-                                  Marcar como Pendente
+                                <DropdownMenuItem onClick={() => handleOpenEditDialog(transaction)} disabled={transaction.type === 'atendimento' && editingTransaction?.id !== transaction.id}>
+                                  <Edit2 className="mr-2 h-4 w-4" /> Editar
                                 </DropdownMenuItem>
-                              )}
+                                {transaction.status === 'Pendente' && (
+                                    <DropdownMenuItem onClick={() => handleUpdateTransactionStatus(transaction.id, 'Recebido')}>
+                                    <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Marcar como Recebido
+                                    </DropdownMenuItem>
+                                )}
+                                {transaction.status === 'Recebido' && (
+                                    <DropdownMenuItem onClick={() => handleUpdateTransactionStatus(transaction.id, 'Pendente')}>
+                                    <Clock className="mr-2 h-4 w-4 text-orange-500" /> Marcar como Pendente
+                                    </DropdownMenuItem>
+                                )}
+                                {transaction.status !== 'Cancelado' && (
+                                    <DropdownMenuItem onClick={() => handleUpdateTransactionStatus(transaction.id, 'Cancelado')} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
+                                        <XCircle className="mr-2 h-4 w-4" /> Cancelar Transação
+                                    </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleOpenDeleteDialog(transaction)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
+                                  <Trash2 className="mr-2 h-4 w-4" /> Excluir Permanentemente
+                                </DropdownMenuItem>
                             </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center h-24">
-                        {isLoadingTransactions ? "Carregando lançamentos..." : "Nenhum lançamento encontrado para o período selecionado."}
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  )}
+                  ))}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
-        </>
-      ) : (
-        <Card className="shadow-md">
+            </div>
+          ) : (
+            <p className="text-center text-muted-foreground py-10">Nenhuma transação encontrada para o período selecionado.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {isEssencialPlan && (
+        <Card className="shadow-md bg-amber-50 border-amber-200">
           <CardHeader>
-            <CardTitle className="text-xl font-semibold">Acesso Restrito</CardTitle>
-            <CardDescription>
-              A funcionalidade completa de Controle Financeiro está disponível nos planos Essencial, Profissional e Clínica.
-            </CardDescription>
+            <CardTitle className="flex items-center text-amber-800">
+              <AlertTriangle className="mr-2 h-5 w-5 text-amber-600" />
+              Funcionalidade Limitada no Plano Essencial
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p>Com o plano Gratuito, você tem acesso limitado a esta seção.</p>
-            <Button className="mt-4" onClick={() => console.log("Redirecionar para página de planos")}>
-              Ver Planos
+          <CardContent className="text-amber-700">
+            <p>
+              No plano <strong>Essencial</strong>, o controle financeiro permite o lançamento e acompanhamento de transações gerais.
+              A funcionalidade de <strong>Contas a Receber por Paciente</strong>, com detalhes de pagamentos pendentes, recebidos e atrasados por cada paciente, está disponível nos planos <strong>Profissional</strong> e <strong>Clínica</strong>.
+            </p>
+            <Button variant="link" className="p-0 h-auto mt-2 text-amber-700 hover:text-amber-800" onClick={() => router.push('/configuracoes?tab=plano')}>
+              Conheça os planos Profissional ou Clínica para mais detalhes.
             </Button>
           </CardContent>
         </Card>
       )}
 
+      {/* Receivables section will only be shown if not on Free or Essencial plan */}
+      {!isFreePlan && !isEssencialPlan && (
+        <Card className="shadow-md">
+          <CardHeader>
+            <CardTitle>Contas a Receber Detalhadas (Em Breve)</CardTitle>
+            <CardDescription>
+              Acompanhe os pagamentos pendentes, recebidos e atrasados de cada paciente.
+              Esta funcionalidade está em desenvolvimento e será lançada em breve para os planos Profissional e Clínica.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center py-16 text-muted-foreground">
+            <DollarSign className="mx-auto h-12 w-12" />
+            <p>Em breve: Lista detalhada de recebíveis por paciente.</p>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Delete Transaction Confirmation Dialog */}
       <AlertDialog open={isDeleteTransactionConfirmOpen} onOpenChange={setIsDeleteTransactionConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Exclusão de Lançamento</AlertDialogTitle>
+            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir o lançamento "<strong>{transactionToDelete?.description}</strong>" no valor de R$ {transactionToDelete?.amount.toFixed(2)}? Esta ação não pode ser desfeita.
+              Tem certeza que deseja excluir permanentemente a transação "<strong>{transactionToDelete?.description}</strong>"? Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setTransactionToDelete(null); setIsDeleteTransactionConfirmOpen(false); }}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteTransaction} className="bg-destructive hover:bg-destructive/90">
-              Excluir Lançamento
+            <AlertDialogCancel onClick={() => setTransactionToDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteTransaction} className="bg-destructive hover:bg-destructive/90">
+              Excluir Transação
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   );
 }
-
