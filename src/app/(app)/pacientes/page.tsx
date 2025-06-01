@@ -28,6 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Added AlertDialogTrigger
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -189,10 +190,10 @@ export default function PacientesPage() {
   }, [fetchCurrentUserData]);
 
   useEffect(() => {
-    if (currentUser && currentUserData) { // Ensure currentUserData is also available
+    if (currentUser && currentUserData) { 
       fetchPatients();
     }
-  }, [currentUser, currentUserData]); // Add currentUserData to dependency array
+  }, [currentUser, currentUserData]); 
 
   useEffect(() => {
     if(currentUserData){
@@ -208,7 +209,7 @@ export default function PacientesPage() {
 
 
   const fetchPatients = async () => {
-    if (!currentUser || !currentUserData) return; // Check for currentUserData
+    if (!currentUser || !currentUserData) return; 
     try {
       let q;
       if (currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa) {
