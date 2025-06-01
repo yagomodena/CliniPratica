@@ -456,7 +456,7 @@ export default function PacienteDetalhePage() {
   const [firebaseUserAuth, setFirebaseUserAuth] = useState<FirebaseUser | null | undefined>(undefined);
 
   const [anamneseTemplatesForUser, setAnamneseTemplatesForUser] = useState<AnamneseTemplate[]>([]);
-  const [selectedAnamneseModelKey, setSelectedAnamneseModelKey] = useState<string>('');
+  const [selectedAnamneseModelKey, setSelectedAnamneseModelKey] = useState<string>('none');
   const [isConfirmOverwriteAnamneseOpen, setIsConfirmOverwriteAnamneseOpen] = useState(false);
   const [templateToApply, setTemplateToApply] = useState<AnamneseTemplate | null>(null);
 
@@ -553,10 +553,11 @@ export default function PacienteDetalhePage() {
       }
       setCurrentUserData(uData);
 
-      // Set anamnese templates based on user's area
       const userArea = uData.areaAtuacao || "Outro";
       const templates = ANAMNESE_TEMPLATES[userArea] || ANAMNESE_TEMPLATES["Outro"] || [];
       setAnamneseTemplatesForUser(templates);
+      // Initialize selectedAnamneseModelKey to 'none' or the first available template key
+      setSelectedAnamneseModelKey(templates.length > 0 ? 'none' : 'none');
 
 
       await Promise.all([
@@ -706,7 +707,7 @@ export default function PacienteDetalhePage() {
   const handleCancelEdit = () => {
     if (patient) setEditedPatient({ ...patient });
     setIsEditing(false);
-    setSelectedAnamneseModelKey(''); // Reset selected template on cancel
+    setSelectedAnamneseModelKey('none'); 
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -1111,6 +1112,12 @@ export default function PacienteDetalhePage() {
   };
 
   const applyAnamneseTemplate = (templateKey: string) => {
+    if (templateKey === 'none') {
+        setSelectedAnamneseModelKey('none');
+        // Optionally clear the editor if "Nenhum" is selected explicitly
+        // handleAnamneseChange(''); 
+        return;
+    }
     const selectedTemplate = anamneseTemplatesForUser.find(t => t.key === templateKey);
     if (selectedTemplate) {
       if (editedPatient?.anamnese && editedPatient.anamnese.trim() !== '' && editedPatient.anamnese.trim() !== '<p></p>') {
@@ -1256,8 +1263,10 @@ export default function PacienteDetalhePage() {
                           <SelectValue placeholder="Selecionar modelo (opcional)" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Nenhum (começar em branco)</SelectItem>
-                          {anamneseTemplatesForUser.map((template) => (
+                          <SelectItem value="none">Nenhum (começar em branco)</SelectItem>
+                          {anamneseTemplatesForUser
+                            .filter(template => template.key && template.key.trim() !== "")
+                            .map((template) => (
                             <SelectItem key={template.key} value={template.key}>
                               {template.name}
                             </SelectItem>
@@ -1403,7 +1412,7 @@ export default function PacienteDetalhePage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setIsConfirmOverwriteAnamneseOpen(false); setTemplateToApply(null); setSelectedAnamneseModelKey(''); }}>Não, manter atual</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => { setIsConfirmOverwriteAnamneseOpen(false); setTemplateToApply(null); setSelectedAnamneseModelKey('none'); }}>Não, manter atual</AlertDialogCancel>
             <AlertDialogAction onClick={confirmOverwriteAnamnese}>Sim, aplicar modelo</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
