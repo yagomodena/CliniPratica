@@ -11,7 +11,8 @@ export interface Plan {
   features: PlanFeature[];
   popular?: boolean;
   cta: string;
-  level: number; // Added level for comparison
+  level: number; 
+  stripePriceId: string | null; // Added Stripe Price ID, null for Gratuito
 }
 
 export const plans: Plan[] = [
@@ -19,7 +20,8 @@ export const plans: Plan[] = [
     name: 'Gratuito',
     price: 'R$0',
     priceDetail: ' para sempre',
-    level: 0, // Base level
+    level: 0,
+    stripePriceId: null, // Gratuito plan doesn't have a Stripe Price ID for subscription
     features: [
       { text: 'Até 10 pacientes', included: true },
       { text: 'Agenda básica', included: true },
@@ -32,12 +34,13 @@ export const plans: Plan[] = [
   {
     name: 'Essencial',
     price: 'R$39,90',
-    priceDetail: '/mês', // Updated
+    priceDetail: '/mês',
     level: 1,
+    stripePriceId: 'price_1ROmWcRw8WdJEMXT4GFt0UKv', // Provided Price ID
     features: [
       { text: 'Até 50 pacientes', included: true },
       { text: 'Agenda completa com alertas', included: true },
-      { text: 'Relatórios básicos (Agend. e Novos Pacientes)', included: true }, // Updated
+      { text: 'Relatórios básicos (Agend. e Novos Pacientes)', included: true },
       { text: 'Controle de Lançamentos Financeiros Gerais', included: true },
       { text: 'Suporte por e-mail', included: true },
     ],
@@ -46,9 +49,10 @@ export const plans: Plan[] = [
   },
   {
     name: 'Profissional',
-    price: 'R$69,90', // Assuming this was a typo and should be R$59,90 as per previous requests, or user confirms the new R$69,90 value. For now, I'll keep the user's provided value.
-    priceDetail: '/mês', // Updated
+    price: 'R$69,90',
+    priceDetail: '/mês',
     level: 2,
+    stripePriceId: 'price_1ROmZkRw8WdJEMXTfLK6qKbt', // Provided Price ID
     features: [
       { text: 'Pacientes ilimitados', included: true },
       { text: 'Todas as funcionalidades do Essencial', included: true },
@@ -61,9 +65,10 @@ export const plans: Plan[] = [
   },
   {
     name: 'Clínica',
-    price: 'R$99,90', // Assuming this was a typo and should be R$89,90 as per previous requests, or user confirms the new R$99,90 value.
-    priceDetail: '/mês', // Updated
+    price: 'R$99,90',
+    priceDetail: '/mês',
     level: 3,
+    stripePriceId: 'price_1ROmaJRw8WdJEMXTDMPmD0pz', // Provided Price ID
     features: [
       { text: 'Múltiplos profissionais', included: true },
       { text: 'Todas as funcionalidades do Profissional', included: true },
@@ -73,4 +78,3 @@ export const plans: Plan[] = [
     cta: 'Escolher Clínica',
   },
 ];
-

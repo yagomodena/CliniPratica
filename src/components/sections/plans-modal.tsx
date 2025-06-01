@@ -5,8 +5,8 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Check, AlertTriangle } from 'lucide-react'; // Added AlertTriangle
-import { plans, type Plan } from '@/lib/plans-data'; // Import shared plans data
+import { Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { plans, type Plan } from '@/lib/plans-data';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -18,23 +18,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { loadStripe } from '@stripe/stripe-js';
+import { auth, db } from '@/firebase'; // Import auth and db for Firestore updates
+import { doc, updateDoc } from 'firebase/firestore'; // Import Firestore functions
+import { User as FirebaseUser } from 'firebase/auth';
 
 
 interface PlansModalProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   currentPlanName: string;
-  onSelectPlan: (planName: string) => void; // Callback when a plan is selected
+  onSelectPlan: (planName: string, stripePriceId: string | null) => void; // Updated to pass stripePriceId
+  currentUser: FirebaseUser | null; // Pass current Firebase user
+  currentUserName?: string;
 }
 
-export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan }: PlansModalProps) {
+// Ensure Stripe public key is defined
+const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY
+  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY)
+  : null;
+
+
+export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan, currentUser, currentUserName }: PlansModalProps) {
   const { toast } = useToast();
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [selectedPlanForConfirmation, setSelectedPlanForConfirmation] = useState<Plan | null>(null);
   const [isDowngrade, setIsDowngrade] = useState(false);
+  const [isProcessingCheckout, setIsProcessingCheckout] = useState(false);
 
 
-  const handlePlanSelectionClick = (plan: Plan) => {
+  const handlePlanSelectionClick = async (plan: Plan) => {
     if (plan.name === currentPlanName) {
       toast({
         title: "Plano Atual",
@@ -43,46 +56,118 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
       return;
     }
 
-    // Determine if it's a downgrade
-    const currentPlan = plans.find(p => p.name === currentPlanName);
-    const downgrade = currentPlan ? plan.level < currentPlan.level : false;
-    setIsDowngrade(downgrade);
+    if (plan.name === 'Gratuito') {
+        // Logic for downgrading to Gratuito
+        const currentPlanDetails = plans.find(p => p.name === currentPlanName);
+        if (currentPlanDetails && currentPlanDetails.stripePriceId) { // Check if current plan is paid
+            setIsDowngrade(true);
+            setSelectedPlanForConfirmation(plan);
+            setIsConfirmDialogOpen(true);
+        } else { // If current is already Gratuito or somehow not a Stripe plan
+            onSelectPlan(plan.name, null); // Update locally
+            onOpenChange(false); // Close modal
+        }
+        return;
+    }
 
-    // Set the plan to be confirmed and open the confirmation dialog
-    setSelectedPlanForConfirmation(plan);
-    setIsConfirmDialogOpen(true);
+
+    if (!plan.stripePriceId) {
+        toast({ title: "Erro", description: "ID de preço do Stripe não configurado para este plano.", variant: "destructive" });
+        return;
+    }
+
+    if (!currentUser || !currentUser.email) {
+      toast({ title: "Erro", description: "Usuário não autenticado ou e-mail não encontrado.", variant: "destructive" });
+      return;
+    }
+     if (!stripePromise) {
+      toast({ title: "Erro de Configuração", description: "Chave pública do Stripe não configurada.", variant: "destructive" });
+      return;
+    }
+
+    setIsProcessingCheckout(true);
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceId: plan.stripePriceId,
+          userId: currentUser.uid,
+          userEmail: currentUser.email,
+          userName: currentUserName || currentUser.displayName || currentUser.email,
+        }),
+      });
+
+      const { sessionId, error } = await response.json();
+
+      if (error) {
+        throw new Error(error);
+      }
+
+      if (sessionId) {
+        const stripe = await stripePromise;
+        if (stripe) {
+          const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
+          if (stripeError) {
+            console.error("Stripe redirect error:", stripeError);
+            toast({ title: "Erro no Checkout", description: stripeError.message || "Não foi possível redirecionar para o pagamento.", variant: "destructive" });
+          }
+        } else {
+             toast({ title: "Erro", description: "Stripe.js não carregou.", variant: "destructive" });
+        }
+      }
+    } catch (err: any) {
+      console.error("Failed to create checkout session:", err);
+      toast({ title: "Erro ao Iniciar Pagamento", description: err.message || "Tente novamente mais tarde.", variant: "destructive" });
+    } finally {
+      setIsProcessingCheckout(false);
+    }
   };
 
-   const handleConfirmPlanChange = () => {
-    if (!selectedPlanForConfirmation) return;
+   const handleConfirmPlanChange = async () => {
+    if (!selectedPlanForConfirmation || !currentUser) return;
 
-    // In a real app, you'd likely trigger an API call or further steps here
-    console.log("Confirmando mudança para o plano:", selectedPlanForConfirmation.name);
-    onSelectPlan(selectedPlanForConfirmation.name); // Call the parent callback
+    if (selectedPlanForConfirmation.name === 'Gratuito') {
+        // User is downgrading to Gratuito.
+        // Update Firestore directly. Stripe webhook will handle actual subscription cancellation if user does it via Stripe portal.
+        try {
+            const userDocRef = doc(db, 'usuarios', currentUser.uid);
+            await updateDoc(userDocRef, {
+                plano: 'Gratuito',
+                // Optionally clear Stripe fields, or let webhook handle it.
+                // stripeSubscriptionId: null,
+                // stripePriceId: null,
+                // stripeSubscriptionStatus: 'canceled_locally',
+            });
+            onSelectPlan('Gratuito', null); // Update parent state
+            toast({
+                title: "Plano Alterado para Gratuito",
+                description: `Seu plano foi alterado para Gratuito. Se você tinha uma assinatura ativa, gerencie-a no portal do cliente Stripe.`,
+                variant: "success",
+            });
+        } catch (error) {
+            console.error("Error updating plan to Gratuito in Firestore:", error);
+            toast({ title: "Erro", description: "Não foi possível atualizar seu plano para Gratuito.", variant: "destructive" });
+        }
+    }
+    // For upgrades/changes between paid plans, Stripe checkout handles it.
 
-    toast({
-      title: "Sucesso!",
-      description: `Seu plano foi alterado para ${selectedPlanForConfirmation.name}. A cobrança será ajustada no próximo ciclo.`,
-      variant: "success", // Use success variant
-    });
-
-    // Close both dialogs
     setIsConfirmDialogOpen(false);
     setSelectedPlanForConfirmation(null);
-    onOpenChange(false);
+    onOpenChange(false); // Close the main plans modal as well
   };
 
   const handleCancelConfirmation = () => {
       setIsConfirmDialogOpen(false);
       setSelectedPlanForConfirmation(null);
-      // Keep the main plans modal open unless the user explicitly closes it
   }
 
   return (
      <>
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[80vw] lg:max-w-[900px] max-h-[90vh] overflow-y-auto p-0">
-            {/* Adjusted padding top for header */}
             <DialogHeader className="p-6 pb-4 border-b pt-6">
             <DialogTitle className="text-2xl">Planos Disponíveis</DialogTitle>
             <DialogDescription>
@@ -102,12 +187,11 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                     Mais Popular
                     </div>
                 )}
-                {plan.name === currentPlanName && ( // This condition correctly shows the badge ONLY on the current plan
+                {plan.name === currentPlanName && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold rounded-full shadow-md z-10 whitespace-nowrap">
                     Plano Atual
                     </div>
                 )}
-                {/* Card header moved slightly down */}
                 <CardHeader className="pb-4 pt-2">
                     <CardTitle className="text-xl font-semibold text-center text-card-foreground">{plan.name}</CardTitle>
                     <CardDescription className="text-center text-muted-foreground h-16 flex flex-col justify-center">
@@ -130,10 +214,11 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                     onClick={() => handlePlanSelectionClick(plan)}
                     className="w-full"
                     variant={plan.name === currentPlanName ? 'secondary' : (plan.popular ? 'default' : 'outline')}
-                    disabled={plan.name === currentPlanName}
+                    disabled={plan.name === currentPlanName || isProcessingCheckout}
                     aria-label={plan.name === currentPlanName ? `Plano atual: ${plan.name}` : `Selecionar o plano ${plan.name}`}
                     >
-                    {plan.name === currentPlanName ? 'Plano Atual' : plan.cta}
+                    {isProcessingCheckout && selectedPlanForConfirmation?.name === plan.name ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {isProcessingCheckout && selectedPlanForConfirmation?.name === plan.name ? "Processando..." : (plan.name === currentPlanName ? 'Plano Atual' : plan.cta)}
                     </Button>
                 </CardFooter>
                 </Card>
@@ -141,34 +226,32 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
             </div>
             <DialogFooter className="p-6 border-t">
                 <DialogClose asChild>
-                <Button variant="outline">Fechar</Button>
+                <Button variant="outline" disabled={isProcessingCheckout}>Fechar</Button>
                 </DialogClose>
             </DialogFooter>
         </DialogContent>
         </Dialog>
 
-        {/* Confirmation Dialog */}
          <AlertDialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
             <AlertDialogContent>
                <AlertDialogHeader>
                  <AlertDialogTitle className="flex items-center gap-2">
                      {isDowngrade && <AlertTriangle className="h-5 w-5 text-destructive" />}
-                    Confirmar Mudança de Plano
+                    Confirmar Mudança para Gratuito
                  </AlertDialogTitle>
                  <AlertDialogDescription>
                     {isDowngrade ? (
                         <>
                         Você está mudando do plano <strong>{currentPlanName}</strong> para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
                         <br /><br />
-                        <strong className="text-destructive-foreground">Atenção:</strong> Ao fazer o downgrade, você perderá acesso a funcionalidades exclusivas do plano {currentPlanName}.
+                        <strong className="text-destructive-foreground">Atenção:</strong> Ao fazer o downgrade para o plano Gratuito, você perderá acesso a funcionalidades pagas ao final do seu ciclo de cobrança atual. Sua assinatura com a Stripe não será cancelada automaticamente por esta ação; você precisará gerenciá-la através do portal do cliente Stripe ou ela será cancelada caso o pagamento falhe.
                         <br />
-                        Tem certeza que deseja continuar? A cobrança será ajustada no próximo ciclo.
+                        Tem certeza que deseja continuar e atualizar seu plano em nosso sistema para Gratuito?
                         </>
-                    ) : (
+                    ) : ( // This case should not be reached if selection is not 'Gratuito' and we go to Stripe
                         <>
-                        Você está saindo do plano <strong>{currentPlanName}</strong> e mudando para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
-                        <br />
-                        Tem certeza que deseja continuar? A cobrança será ajustada no próximo ciclo de faturamento.
+                        Você está mudando para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
+                        Tem certeza que deseja continuar?
                         </>
                     )}
                  </AlertDialogDescription>
@@ -176,7 +259,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                <AlertDialogFooter>
                  <AlertDialogCancel onClick={handleCancelConfirmation}>Cancelar</AlertDialogCancel>
                  <AlertDialogAction onClick={handleConfirmPlanChange}>
-                   Confirmar Mudança
+                   Confirmar e Ir para Gratuito
                  </AlertDialogAction>
                </AlertDialogFooter>
             </AlertDialogContent>

@@ -46,7 +46,7 @@ import {
   createUserWithEmailAndPassword as createUserInSecondaryInstance,
   updateProfile
 } from "firebase/auth";
-
+import { plans as allPlansData, type Plan as PlanType } from '@/lib/plans-data'; // Import plans data
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
@@ -86,10 +86,13 @@ export default function ConfiguracoesPage() {
     plano: '',
     fotoPerfilUrl: '',
     nomeEmpresa: '',
+    stripeCustomerId: '', // Added Stripe fields
+    stripeSubscriptionId: '',
+    stripeSubscriptionStatus: '',
   });
 
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null); // Stores full user data from Firestore
+  const [currentUserData, setCurrentUserData] = useState<any>(null); 
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
@@ -121,25 +124,27 @@ export default function ConfiguracoesPage() {
       let data: any = {}; 
       if (userDocSnap.exists()) {
         data = userDocSnap.data();
-        setCurrentUserData({ ...data, uid: userAuth.uid }); // Store full Firestore data
+        setCurrentUserData({ ...data, uid: userAuth.uid });
       } else {
-        console.warn(`Dados do usuário ${userAuth.uid} não encontrados no Firestore. Usando dados do Auth e padrão.`);
         setCurrentUserData({ uid: userAuth.uid, email: userAuth.email, nomeCompleto: userAuth.displayName, plano: 'Gratuito', permissoes: {} });
       }
 
-      const nomeCompleto = userAuth.displayName || data.nomeCompleto || '';
-      const email = userAuth.email || data.email || '';
-      const telefone = data.telefone || userAuth.phoneNumber || '';
-      const areaAtuacao = data.areaAtuacao || '';
-      const plano = data.plano || 'Gratuito';
-      const fotoPerfilUrl = userAuth.photoURL || data.fotoPerfilUrl || '';
-      const nomeEmpresa = data.nomeEmpresa || ''; 
-
-      setProfile({ nomeCompleto, email, telefone, areaAtuacao, plano, fotoPerfilUrl, nomeEmpresa });
+      setProfile({
+        nomeCompleto: userAuth.displayName || data.nomeCompleto || '',
+        email: userAuth.email || data.email || '',
+        telefone: data.telefone || userAuth.phoneNumber || '',
+        areaAtuacao: data.areaAtuacao || '',
+        plano: data.plano || 'Gratuito',
+        fotoPerfilUrl: userAuth.photoURL || data.fotoPerfilUrl || '',
+        nomeEmpresa: data.nomeEmpresa || '',
+        stripeCustomerId: data.stripeCustomerId || '',
+        stripeSubscriptionId: data.stripeSubscriptionId || '',
+        stripeSubscriptionStatus: data.stripeSubscriptionStatus || '',
+      });
     } else {
         setCurrentUser(null);
         setCurrentUserData(null);
-        setProfile({ nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '', nomeEmpresa: '' });
+        setProfile({ nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '', nomeEmpresa: '', stripeCustomerId: '', stripeSubscriptionId: '', stripeSubscriptionStatus: '' });
         setUsers([]);
     }
   }, []);
@@ -223,9 +228,9 @@ export default function ConfiguracoesPage() {
       };
       
       Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
-      await updateDoc(userDocRef, dataToUpdate ); // Changed from setDoc with merge to updateDoc
+      await updateDoc(userDocRef, dataToUpdate ); 
 
-      setCurrentUserData((prev: any) => ({...prev, ...dataToUpdate})); // Update local currentUSerData
+      setCurrentUserData((prev: any) => ({...prev, ...dataToUpdate})); 
 
       toast({ title: "Sucesso!", description: "Seu perfil foi atualizado.", variant: "success"});
     } catch (error) {
@@ -274,39 +279,68 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  const handleSelectPlan = async (planName: PlanName) => {
-    if (!currentUser) {
-        toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive"});
-        return;
+  const handleSelectPlan = async (newPlanName: string, stripePriceId: string | null) => {
+    if (!currentUser || !currentUser.email) {
+      toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
+      return;
     }
-    console.log("Atualizando plano para:", planName);
-    try {
+
+    if (newPlanName === 'Gratuito') {
+      try {
+        // Logic for downgrading to Gratuito
         const userDocRef = doc(db, "usuarios", currentUser.uid);
-        await updateDoc(userDocRef, { plano: planName });
-        setProfile(prev => ({ ...prev, plano: planName }));
-        setCurrentUserData((prev: any) => ({...prev, plano: planName})); // Update local state
-        toast({ title: "Plano Atualizado!", description: `Seu plano foi alterado para ${planName}.`, variant: "success" });
-        setIsPlansModalOpen(false);
-    } catch (error) {
-        console.error("Erro ao atualizar plano no Firestore:", error);
-        toast({ title: "Erro", description: "Não foi possível atualizar o plano.", variant: "destructive"});
+        await updateDoc(userDocRef, {
+          plano: "Gratuito",
+          // It's better to let webhooks handle Stripe field clearing for consistency,
+          // but if immediate local reflection is desired, you might clear some here.
+          // stripeSubscriptionStatus: 'canceled_locally' // Example of a local status
+        });
+        setProfile(prev => ({ ...prev, plano: "Gratuito", stripeSubscriptionStatus: 'canceled_locally' }));
+        setCurrentUserData((prev: any) => ({ ...prev, plano: "Gratuito", stripeSubscriptionStatus: 'canceled_locally' }));
+        toast({ title: "Plano Alterado!", description: `Seu plano foi alterado para Gratuito. Sua assinatura paga será cancelada ao final do período de cobrança atual ou conforme gerenciado no portal Stripe.`, variant: "success" });
+      } catch (error) {
+        console.error("Erro ao atualizar plano para Gratuito no Firestore:", error);
+        toast({ title: "Erro", description: "Não foi possível atualizar o plano para Gratuito.", variant: "destructive" });
+      }
+    } else if (stripePriceId) {
+      // For paid plans, initiate Stripe Checkout (handled by PlansModal now)
+      // This function within configuracoes/page.tsx will be called by PlansModal's onSelectPlan
+      // The actual checkout redirection is handled in PlansModal. Here we primarily update local state if needed
+      // or confirm the process has started.
+      console.log(`Stripe checkout should be initiated by PlansModal for price ID: ${stripePriceId}`);
+      // Local state update will happen via webhook or upon successful redirection from Stripe.
     }
+    setIsPlansModalOpen(false); // Close the modal after selection or initiation
   };
 
+
   const handleCancelSubscription = async () => {
-    if (!currentUser) {
+    if (!currentUser || !currentUser.email) {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive"});
       setIsCancelConfirmOpen(false); return;
     }
+    // This function now primarily updates the local state to "Gratuito"
+    // and informs the user to manage their subscription via Stripe.
+    // A more advanced implementation would call a backend API to cancel the Stripe subscription.
     try {
       const userDocRef = doc(db, "usuarios", currentUser.uid);
-      await updateDoc(userDocRef, { plano: "Gratuito" });
-      setProfile(prev => ({ ...prev, plano: 'Gratuito' }));
-      setCurrentUserData((prev:any) => ({...prev, plano: 'Gratuito'}));
+      await updateDoc(userDocRef, {
+        plano: "Gratuito",
+        stripeSubscriptionStatus: 'canceled_by_user', // A local indicator
+        // Consider if you want to clear stripeSubscriptionId here or let webhook do it.
+        // For now, let webhook be the source of truth for Stripe data.
+      });
+      setProfile(prev => ({ ...prev, plano: 'Gratuito', stripeSubscriptionStatus: 'canceled_by_user' }));
+      setCurrentUserData((prev:any) => ({...prev, plano: 'Gratuito', stripeSubscriptionStatus: 'canceled_by_user'}));
       setIsCancelConfirmOpen(false);
-      toast({ title: "Assinatura Cancelada", description: "Você foi movido para o plano Gratuito.", variant: "default"});
+      toast({
+        title: "Assinatura Marcada para Cancelamento",
+        description: "Seu plano foi alterado para Gratuito em nosso sistema. Por favor, gerencie sua assinatura diretamente no portal do cliente Stripe para efetivar o cancelamento com a operadora de pagamento ou aguarde o final do período de cobrança.",
+        variant: "default",
+        duration: 7000, // Longer duration for important info
+      });
     } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível cancelar a assinatura.", variant: "destructive"});
+      toast({ title: "Erro", description: "Não foi possível atualizar seu plano localmente. Verifique sua assinatura no portal Stripe.", variant: "destructive"});
     }
   };
 
@@ -385,7 +419,7 @@ export default function ConfiguracoesPage() {
         if (tabKey === 'plano') return !!currentUserData.permissoes.configuracoes_acesso_plano_assinatura;
         if (tabKey === 'usuarios') return !!currentUserData.permissoes.configuracoes_acesso_gerenciar_usuarios;
     }
-    return false; // Default deny for sub-users if no explicit permission
+    return false; 
   };
 
   const handleTabChange = (value: string) => {
@@ -401,15 +435,12 @@ export default function ConfiguracoesPage() {
 
     if (allowed) {
       setActiveTab(value);
-    } else if (activeTab !== "perfil") { // Fallback to 'perfil' if current tab is also restricted
+    } else if (activeTab !== "perfil") { 
       setActiveTab("perfil");
     }
-    // If current activeTab is already 'perfil' and user tries to access restricted, it will stay on 'perfil'.
   };
   
   useEffect(() => {
-    // This effect runs when activeTab changes, potentially after URL update or programmatic change.
-    // It re-validates access.
     if (activeTab === "usuarios" && !canAccessTab('usuarios')) {
         if(currentUserData?.cargo !== 'Administrador') toast({ title: "Acesso Negado", description: "Redirecionando para Perfil.", variant: "warning" });
         setActiveTab("perfil");
@@ -418,11 +449,11 @@ export default function ConfiguracoesPage() {
         if(currentUserData?.cargo !== 'Administrador') toast({ title: "Acesso Negado", description: "Redirecionando para Perfil.", variant: "warning" });
         setActiveTab("perfil");
     }
-  }, [activeTab, currentUserData]); // Rerun when activeTab or currentUserData (permissions) change
+  }, [activeTab, currentUserData]); 
 
   const handleOpenUserForm = (user?: User) => { setEditingUser(user || null); setIsUserFormOpen(true); };
 
-  if (!currentUserData) { // Added loading state for initial data fetch
+  if (!currentUserData) { 
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -469,22 +500,52 @@ export default function ConfiguracoesPage() {
               <CardHeader><CardTitle>Plano e Assinatura</CardTitle><CardDescription>Gerencie seu plano atual e detalhes de pagamento.</CardDescription></CardHeader>
               <CardContent className="space-y-6">
                 <Card className="bg-muted/50">
-                  <CardHeader className="pb-4 pt-6"><CardTitle className="text-lg">Plano Atual: {profile.plano || 'Não definido'}</CardTitle></CardHeader>
+                  <CardHeader className="pb-4 pt-6"><CardTitle className="text-lg">Plano Atual: {profile.plano || 'Não definido'}</CardTitle>
+                   {profile.stripeSubscriptionStatus && (
+                      <p className="text-sm text-muted-foreground">
+                        Status da Assinatura: <Badge variant={
+                            profile.stripeSubscriptionStatus === 'active' || profile.stripeSubscriptionStatus === 'trialing' ? 'success'
+                            : profile.stripeSubscriptionStatus === 'past_due' || profile.stripeSubscriptionStatus === 'incomplete' ? 'warning'
+                            : profile.stripeSubscriptionStatus === 'canceled' || profile.stripeSubscriptionStatus === 'unpaid' || profile.stripeSubscriptionStatus === 'canceled_by_user' || profile.stripeSubscriptionStatus === 'active_until_period_end' ? 'destructive'
+                            : 'secondary'
+                        }>
+                            {profile.stripeSubscriptionStatus === 'active' ? 'Ativa'
+                            : profile.stripeSubscriptionStatus === 'trialing' ? 'Em Teste'
+                            : profile.stripeSubscriptionStatus === 'past_due' ? 'Pagamento Pendente'
+                            : profile.stripeSubscriptionStatus === 'incomplete' ? 'Incompleta'
+                            : profile.stripeSubscriptionStatus === 'canceled' ? 'Cancelada'
+                            : profile.stripeSubscriptionStatus === 'unpaid' ? 'Não Paga'
+                            : profile.stripeSubscriptionStatus === 'canceled_by_user' ? 'Cancelada (localmente)'
+                            : profile.stripeSubscriptionStatus === 'active_until_period_end' ? 'Ativa até o fim do período'
+                            : profile.stripeSubscriptionStatus}
+                        </Badge>
+                      </p>
+                    )}
+                  </CardHeader>
                   <CardContent className="space-y-2">
-                    {profile.plano === 'Gratuito' && (<> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Até 10 pacientes ativos</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Agenda básica</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte comunitário</div> </>)}
-                    {profile.plano === 'Essencial' && (<> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Até 50 pacientes</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Agenda completa com alertas</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Relatórios básicos</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte por e-mail</div> </>)}
-                    {profile.plano === 'Profissional' && (<> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Pacientes ilimitados</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Todas as funcionalidades Essencial</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Financeiro completo</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Suporte prioritário</div> </>)}
-                    {profile.plano === 'Clínica' && (<> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Múltiplos profissionais</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Todas as funcionalidades Profissional</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Relatórios avançados</div> <div className="flex items-center"><Check className="h-4 w-4 mr-2 text-green-500" /> Gerente de contas dedicado</div> </>)}
+                    {allPlansData.find(p => p.name === profile.plano)?.features.map((feature, idx) => (
+                       <div key={idx} className={`flex items-center ${feature.included ? 'text-card-foreground' : 'text-muted-foreground line-through'}`}>
+                         <Check className={`h-4 w-4 mr-2 ${feature.included ? 'text-green-500' : 'text-muted-foreground'}`} /> {feature.text}
+                       </div>
+                    ))}
                   </CardContent>
                 </Card>
                 <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-center">
                   <Button onClick={() => setIsPlansModalOpen(true)} className="w-full sm:w-auto">Ver Planos e Fazer Upgrade</Button>
-                  {profile.plano !== 'Gratuito' && (
+                  {profile.plano !== 'Gratuito' && profile.stripeSubscriptionId && (
                     <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
-                      <AlertDialogTrigger asChild><Button variant="outline" className="w-full sm:w-auto text-destructive hover:bg-destructive/10 border-destructive/50 hover:border-destructive/80"><AlertTriangle className="mr-2 h-4 w-4" /> Cancelar Assinatura</Button></AlertDialogTrigger>
-                      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Cancelamento</AlertDialogTitle><AlertDialogDescription>Tem certeza que deseja cancelar sua assinatura do plano {profile.plano}? Você será movido para o plano Gratuito e perderá acesso às funcionalidades pagas ao final do ciclo de cobrança atual.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleCancelSubscription} className="bg-destructive hover:bg-destructive/90">Confirmar Cancelamento</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                      <AlertDialogTrigger asChild><Button variant="outline" className="w-full sm:w-auto text-destructive hover:bg-destructive/10 border-destructive/50 hover:border-destructive/80"><AlertTriangle className="mr-2 h-4 w-4" /> Cancelar Assinatura (Local)</Button></AlertDialogTrigger>
+                      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Cancelamento Local</AlertDialogTitle><AlertDialogDescription>Tem certeza que deseja alterar seu plano para "Gratuito" em nosso sistema? Isso não cancelará sua assinatura com a Stripe automaticamente. Você precisará gerenciar sua assinatura no portal do cliente Stripe.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleCancelSubscription} className="bg-destructive hover:bg-destructive/90">Confirmar e Mudar para Gratuito</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
                     </AlertDialog>
                   )}
+                  {profile.stripeCustomerId && (
+                    <Button variant="outline" onClick={() => {
+                        // TODO: Implement Stripe Customer Portal Session creation
+                        toast({ title: "Portal do Cliente", description: "Acesso ao portal do cliente Stripe ainda não implementado.", variant: "default" });
+                    }} className="w-full sm:w-auto">
+                        Gerenciar Assinatura (Stripe)
+                    </Button>
+                   )}
                 </div>
               </CardContent>
             </Card>
@@ -546,7 +607,14 @@ export default function ConfiguracoesPage() {
         </TabsContent>
       </Tabs>
 
-      <PlansModal isOpen={isPlansModalOpen} onOpenChange={setIsPlansModalOpen} currentPlanName={profile.plano} onSelectPlan={handleSelectPlan} />
+      <PlansModal 
+        isOpen={isPlansModalOpen} 
+        onOpenChange={setIsPlansModalOpen} 
+        currentPlanName={profile.plano} 
+        onSelectPlan={handleSelectPlan} 
+        currentUser={currentUser}
+        currentUserName={profile.nomeCompleto}
+      />
       <Dialog open={isUserFormOpen} onOpenChange={(isOpen) => { setIsUserFormOpen(isOpen); if (!isOpen) setEditingUser(null); }}>
         <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{editingUser ? 'Editar Usuário' : 'Adicionar Novo Usuário'}</DialogTitle><DialogDescription>Preencha os dados do usuário e defina suas permissões de acesso.</DialogDescription></DialogHeader><UserForm onSubmit={handleUserFormSubmit} initialData={editingUser || undefined} onCancel={() => { setIsUserFormOpen(false); setEditingUser(null); }} /></DialogContent>
       </Dialog>

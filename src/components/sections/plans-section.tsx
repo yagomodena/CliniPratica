@@ -3,15 +3,116 @@
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Check } from 'lucide-react';
-import { plans as allPlansData } from '@/lib/plans-data'; 
+import { Check, Loader2 } from 'lucide-react';
+import { plans as allPlansData, type Plan } from '@/lib/plans-data'; 
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/use-toast';
+import { loadStripe } from '@stripe/stripe-js';
+import { useState, useEffect } from 'react';
+import { auth, db } from '@/firebase'; // Import auth and db
+import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import { getDoc, doc } from 'firebase/firestore';
+
+const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY
+  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY)
+  : null;
 
 export function PlansSection() {
   const router = useRouter();
+  const { toast } = useToast();
+  const [isProcessingCheckout, setIsProcessingCheckout] = useState<string | null>(null); // Store priceId being processed
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string>('');
 
-  const handlePlanCTAClick = (planName: string) => {
-    router.push(`/cadastro?plano=${encodeURIComponent(planName)}`);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (user) {
+        const userDocRef = doc(db, "usuarios", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          setCurrentUserName(userDocSnap.data()?.nomeCompleto || user.displayName || user.email || '');
+        } else {
+          setCurrentUserName(user.displayName || user.email || '');
+        }
+      } else {
+        setCurrentUserName('');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+
+  const handlePlanCTAClick = async (plan: Plan) => {
+    if (plan.name === 'Gratuito') {
+      router.push(`/cadastro?plano=${encodeURIComponent(plan.name)}`);
+      return;
+    }
+
+    if (!plan.stripePriceId) {
+      toast({ title: "Erro", description: "ID de preço do Stripe não configurado para este plano.", variant: "destructive" });
+      return;
+    }
+
+    if (!currentUser) {
+      // If user is not logged in, redirect to cadastro with plan info.
+      // Stripe checkout needs user context, so direct checkout isn't ideal here.
+      // Let them sign up first.
+      router.push(`/cadastro?plano=${encodeURIComponent(plan.name)}`);
+      toast({ title: "Primeiro, crie sua conta!", description: "Você precisa estar cadastrado para selecionar um plano pago.", variant: "default" });
+      return;
+    }
+     if (!currentUser.email) {
+      toast({ title: "Erro", description: "Email do usuário não encontrado para iniciar o pagamento.", variant: "destructive" });
+      return;
+    }
+
+    if (!stripePromise) {
+      toast({ title: "Erro de Configuração", description: "Chave pública do Stripe não configurada.", variant: "destructive" });
+      setIsProcessingCheckout(null);
+      return;
+    }
+
+    setIsProcessingCheckout(plan.stripePriceId);
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceId: plan.stripePriceId,
+          userId: currentUser.uid,
+          userEmail: currentUser.email,
+          userName: currentUserName,
+        }),
+      });
+
+      const { sessionId, error } = await response.json();
+
+      if (error) {
+        throw new Error(error);
+      }
+
+      if (sessionId) {
+        const stripe = await stripePromise;
+        if (stripe) {
+          const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
+          if (stripeError) {
+            console.error("Stripe redirect error:", stripeError);
+            toast({ title: "Erro no Checkout", description: stripeError.message || "Não foi possível redirecionar para o pagamento.", variant: "destructive" });
+          }
+        } else {
+           toast({ title: "Erro", description: "Stripe.js não carregou.", variant: "destructive" });
+        }
+      }
+    } catch (err: any) {
+      console.error("Failed to create checkout session:", err);
+      toast({ title: "Erro ao Iniciar Pagamento", description: err.message || "Tente novamente mais tarde.", variant: "destructive" });
+    } finally {
+      setIsProcessingCheckout(null);
+    }
   };
 
   return (
@@ -56,12 +157,14 @@ export function PlansSection() {
               </CardContent>
               <CardFooter>
                 <Button
-                  onClick={() => handlePlanCTAClick(plan.name)}
+                  onClick={() => handlePlanCTAClick(plan)}
                   className="w-full"
                   variant={plan.popular ? 'default' : 'outline'}
-                  aria-label={`Começar com o plano ${plan.name}`}
+                  aria-label={plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher o plano ${plan.name}`}
+                  disabled={isProcessingCheckout === plan.stripePriceId}
                 >
-                  {plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher ${plan.name}`}
+                  {isProcessingCheckout === plan.stripePriceId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {isProcessingCheckout === plan.stripePriceId ? 'Processando...' : (plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher ${plan.name}`)}
                 </Button>
               </CardFooter>
             </Card>
