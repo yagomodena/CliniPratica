@@ -5,8 +5,8 @@ import { useEffect, Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { useForm, Controller } from 'react-hook-form'; // Corrected: Controller imported from react-hook-form
+// import { useFormStatus } from 'react-dom'; // Removido useFormStatus
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Eye, EyeOff } from 'lucide-react';
 
@@ -50,8 +50,8 @@ const areasDeAtuacao = [
   "Outro"
 ];
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
+// Ajustado para receber o estado 'pending' via prop
+function SubmitButton({ pending }: { pending: boolean }) {
   return (
     <Button type="submit" className="w-full" disabled={pending}>
       {pending ? 'Criando conta...' : 'Criar Conta'}
@@ -65,7 +65,8 @@ function CadastroForm() {
   const planFromQuery = searchParams.get('plano') || '';
   const { toast } = useToast();
 
-  const [state, formAction] = useActionState(submitRegistrationForm, initialState);
+  // useActionState agora retorna isPending como terceiro argumento
+  const [state, formAction, isActionPending] = useActionState(submitRegistrationForm, initialState);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -80,7 +81,7 @@ function CadastroForm() {
       companyName: '',
       password: '',
       confirmPassword: '',
-      area: '', // Default to empty, placeholder will show
+      area: '', 
       plan: planFromQuery,
     },
   });
@@ -121,7 +122,6 @@ function CadastroForm() {
             }
         });
       }
-       // Specific handling for password confirmation mismatch not directly tied to Zod path from server state issues
       if (state.issues?.some(issue => issue.toLowerCase().includes('senhas não coincidem'))) {
         form.setError('confirmPassword', {type: 'server', message: 'As senhas não coincidem.'})
       }
@@ -131,8 +131,8 @@ function CadastroForm() {
   if (showPlanAlert) {
     return (
       <AlertDialog open={showPlanAlert} onOpenChange={(isOpen) => {
-        if (!isOpen) { // If user closes the dialog without confirming
-           router.push('/#planos'); // Still redirect
+        if (!isOpen) { 
+           router.push('/#planos'); 
         }
         setShowPlanAlert(isOpen);
       }}>
@@ -154,6 +154,25 @@ function CadastroForm() {
     );
   }
 
+  const onSubmitRHF = (rhfData: RegistrationFormValues) => {
+    const formData = new FormData();
+    (Object.keys(rhfData) as Array<keyof RegistrationFormValues>).forEach((key) => {
+        const value = rhfData[key];
+        if (value !== undefined && value !== null) { 
+            formData.append(key, String(value));
+        } else if (key === 'companyName' && value === undefined) {
+            // Zod schema for companyName is .optional().or(z.literal(''))
+            // If RHF provides undefined, ensure FormData gets an empty string if that's desired for the action.
+            // Or, simply don't append if the action handles undefined as truly optional.
+            // For now, let's ensure empty string if it was undefined from RHF and optional().or(z.literal(''))
+            formData.append(key, '');
+        }
+        // For 'plan', if it's undefined from RHF and schema is .optional(), not appending is fine.
+        // However, 'plan' is driven by planFromQuery and form.reset, so it should always be a string.
+    });
+    formAction(formData);
+  };
+
 
   return (
     <Card className="w-full max-w-lg shadow-xl">
@@ -168,7 +187,8 @@ function CadastroForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={formAction} className="space-y-4">
+        {/* Alterado para usar form.handleSubmit */}
+        <form onSubmit={form.handleSubmit(onSubmitRHF)} className="space-y-4">
           <input type="hidden" {...form.register('plan')} value={planFromQuery} />
 
           <div>
@@ -247,7 +267,7 @@ function CadastroForm() {
                 name="area"
                 control={form.control}
                 render={({ field }) => (
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value || ''}>
                         <SelectTrigger id="area">
                             <SelectValue placeholder="Selecione sua área de atuação" />
                         </SelectTrigger>
@@ -263,7 +283,8 @@ function CadastroForm() {
             />
              {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
           </div>
-          <SubmitButton />
+          {/* Passando isActionPending para o SubmitButton */}
+          <SubmitButton pending={isActionPending} />
         </form>
         <div className="mt-6 text-center text-sm text-muted-foreground">
           Já tem uma conta?{' '}
@@ -291,3 +312,5 @@ export default function CadastroPage() {
   );
 }
 
+
+    
