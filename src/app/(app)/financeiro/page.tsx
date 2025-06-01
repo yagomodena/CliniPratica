@@ -82,6 +82,7 @@ import {
   ReceiptText,
   MoreHorizontal,
   Loader2, 
+  Info, // Added Info icon
 } from 'lucide-react';
 import {
   ChartContainer,
@@ -174,7 +175,8 @@ const periodOptions: { value: PeriodOption; label: string }[] = [
   { value: 'custom', label: 'Período Personalizado' },
 ];
 
-type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date' | 'ownerId' | 'createdAt' | 'updatedAt' | 'nomeEmpresa'> & { date: string };
+type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date' | 'ownerId' | 'createdAt' | 'updatedAt' | 'nomeEmpresa'> & { date: string; amount?: number };
+
 
 type ReceivableEntry = {
   id: string;
@@ -202,7 +204,7 @@ export default function FinanceiroPage() {
   const [editingTransaction, setEditingTransaction] = useState<FinancialTransaction | null>(null);
   const [transactionForm, setTransactionForm] = useState<Partial<NewTransactionForm>>({
     description: '',
-    amount: 0,
+    amount: undefined, // Changed from 0 to undefined
     paymentMethod: 'Pix',
     status: 'Recebido',
     type: 'manual',
@@ -394,11 +396,12 @@ export default function FinanceiroPage() {
     );
   }, [transactions, selectedPeriod, customDateRange, clientNow]);
 
-  const { totalRecebido, totalPendente, totalPrevisto, totalCancelado, chartData } = useMemo(() => {
+  const { totalRecebido, totalPendente, totalPrevisto, totalCancelado, chartData, receivablesData } = useMemo(() => {
     let recebido = 0;
     let pendente = 0;
     let cancelado = 0;
     const monthlySummary: { [key: string]: number } = {};
+    const currentReceivables: ReceivableEntry[] = [];
 
     filteredTransactions.forEach((transaction) => {
       if (transaction.status === 'Recebido') {
@@ -413,11 +416,28 @@ export default function FinanceiroPage() {
         const monthYear = format(transaction.date, 'MMM/yy', { locale: ptBR });
         monthlySummary[monthYear] = (monthlySummary[monthYear] || 0) + transaction.amount;
       }
+
+      if (transaction.status === 'Pendente' && clientNow) {
+         const dueDate = transaction.date; // Assuming transaction.date is the due date for 'Pendente'
+         const overdueDays = differenceInDays(clientNow, dueDate);
+         currentReceivables.push({
+            id: transaction.id,
+            patientName: transaction.patientName,
+            description: transaction.description,
+            dueDate: dueDate,
+            paymentStatusDisplay: overdueDays > 0 ? 'Atrasado' : 'Pendente',
+            daysOverdue: overdueDays > 0 ? overdueDays : undefined,
+            amount: transaction.amount,
+            paymentMethod: transaction.paymentMethod,
+         });
+      }
     });
 
     const chart = Object.entries(monthlySummary)
       .map(([month, total]) => ({ month, total }))
       .sort((a, b) => parseISO(a.month.split('/').reverse().join('-')).getTime() - parseISO(b.month.split('/').reverse().join('-')).getTime());
+
+    const sortedReceivables = currentReceivables.sort((a,b) => a.dueDate.getTime() - b.dueDate.getTime());
 
 
     return {
@@ -426,10 +446,11 @@ export default function FinanceiroPage() {
       totalPrevisto: recebido + pendente,
       totalCancelado: cancelado,
       chartData: chart,
+      receivablesData: sortedReceivables,
     };
-  }, [filteredTransactions]);
+  }, [filteredTransactions, clientNow]);
 
-  const handleFormInputChange = (field: keyof NewTransactionForm, value: string | number | boolean) => {
+  const handleFormInputChange = (field: keyof NewTransactionForm, value: string | number | boolean | undefined) => {
     setTransactionForm(prev => ({ ...prev, [field]: value }));
   };
 
@@ -450,12 +471,12 @@ export default function FinanceiroPage() {
 
     const { description, amount, paymentMethod, status, type, date, patientId, notes } = transactionForm;
     
-    if (!description || !amount || !paymentMethod || !status || !type || !date ) {
+    if (!description || amount === undefined || amount === null || !paymentMethod || !status || !type || !date ) {
       toast({ title: "Erro de Validação", description: "Descrição, Valor, Data, Método de Pagamento, Status e Tipo são obrigatórios.", variant: "destructive" });
       return;
     }
 
-    if (amount <= 0) {
+    if (Number(amount) <= 0) {
        toast({ title: "Valor Inválido", description: "O valor da transação deve ser maior que zero.", variant: "destructive" });
        return;
     }
@@ -497,7 +518,7 @@ export default function FinanceiroPage() {
         toast({ title: "Sucesso!", description: "Transação adicionada.", variant: "success" });
       }
       
-      setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none' });
+      setTransactionForm({ description: '', amount: undefined, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none' });
       setIsAddTransactionDialogOpen(false);
       setEditingTransaction(null);
       if (currentUser && currentUserData) {
@@ -588,6 +609,8 @@ export default function FinanceiroPage() {
 
   const isFreePlan = currentUserData?.plano === 'Gratuito';
   const isEssencialPlan = currentUserData?.plano === 'Essencial';
+  const isProfessionalOrClinicPlan = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
+
 
   if (isLoadingPage) {
     return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando financeiro...</p></div>;
@@ -615,7 +638,7 @@ export default function FinanceiroPage() {
             setIsAddTransactionDialogOpen(isOpen);
             if (!isOpen) {
                 setEditingTransaction(null);
-                setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none'});
+                setTransactionForm({ description: '', amount: undefined, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none'});
             }
         }}>
           <DialogTrigger asChild>
@@ -633,7 +656,7 @@ export default function FinanceiroPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="amount" className="text-right col-span-1">Valor (R$)*</Label>
-                <Input id="amount" type="number" step="0.01" value={transactionForm.amount} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-3" placeholder="0.00" />
+                <Input id="amount" type="number" step="0.01" value={transactionForm.amount ?? ''} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-3" placeholder="0.00" />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="date" className="text-right col-span-1">Data*</Label>
@@ -662,7 +685,7 @@ export default function FinanceiroPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                  <Label htmlFor="patientId" className="text-right col-span-1">Associar Paciente</Label>
-                <Select value={transactionForm.patientId} onValueChange={(value) => handleFormSelectChange('patientId', value)} >
+                <Select value={transactionForm.patientId || 'none'} onValueChange={(value) => handleFormSelectChange('patientId', value === 'none' ? undefined : value)} >
                   <SelectTrigger id="patientId" className="col-span-3">
                     <SelectValue placeholder="Selecione o paciente (opcional)" />
                   </SelectTrigger>
@@ -719,8 +742,8 @@ export default function FinanceiroPage() {
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <CardTitle>Transações Financeiras</CardTitle>
-              <CardDescription>Visão geral das suas movimentações (lançamentos gerais e de agendamentos).</CardDescription>
+              <CardTitle>Transações Financeiras (Lançamentos Gerais)</CardTitle>
+              <CardDescription>Visão geral das suas movimentações (lançamentos manuais e de agendamentos).</CardDescription>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
                 <Select value={selectedPeriod} onValueChange={(value) => { setSelectedPeriod(value as PeriodOption); if (value !== 'custom') setCustomDateRange(undefined); }}>
@@ -824,20 +847,88 @@ export default function FinanceiroPage() {
         </CardContent>
       </Card>
 
-      {isEssencialPlan && (
-        <Card className="shadow-md bg-amber-50 border-amber-200">
+      {isProfessionalOrClinicPlan && (
+         <Card className="shadow-md">
           <CardHeader>
-            <CardTitle className="flex items-center text-amber-800">
-              <AlertTriangle className="mr-2 h-5 w-5 text-amber-600" />
-              Funcionalidade Avançada de Contas a Receber
+            <CardTitle>Contas a Receber por Paciente</CardTitle>
+            <CardDescription>Acompanhe os pagamentos pendentes e atrasados dos seus pacientes.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoadingTransactions ? (
+                 <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando contas a receber...</p></div>
+            ) : receivablesData.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Paciente</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="w-[130px]">Vencimento</TableHead>
+                      <TableHead className="w-[130px]">Status</TableHead>
+                      <TableHead className="w-[110px]">Valor (R$)</TableHead>
+                      <TableHead className="text-right w-[100px]">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {receivablesData.map((receivable) => (
+                      <TableRow key={receivable.id} className={receivable.paymentStatusDisplay === 'Atrasado' ? 'bg-destructive/5 hover:bg-destructive/10' : ''}>
+                        <TableCell className="font-medium">{receivable.patientName || <span className="text-muted-foreground italic">N/A</span>}</TableCell>
+                        <TableCell className="max-w-[250px] truncate" title={receivable.description}>{receivable.description}</TableCell>
+                        <TableCell>{format(receivable.dueDate, 'dd/MM/yyyy')}</TableCell>
+                        <TableCell>
+                          <Badge variant={receivable.paymentStatusDisplay === 'Atrasado' ? 'destructive' : 'warning'} className="capitalize">
+                            {receivable.paymentStatusDisplay}
+                            {receivable.daysOverdue && receivable.daysOverdue > 0 && ` (${receivable.daysOverdue}d)`}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-semibold">{receivable.amount.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                           <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleUpdateTransactionStatus(receivable.id, 'Recebido')}>
+                                  <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Marcar como Recebido
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleOpenEditDialog(transactions.find(t => t.id === receivable.id)!)}>
+                                  <Edit2 className="mr-2 h-4 w-4" /> Editar Lançamento
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleUpdateTransactionStatus(receivable.id, 'Cancelado')} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
+                                        <XCircle className="mr-2 h-4 w-4" /> Cancelar Lançamento
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-10">Nenhuma conta pendente para o período selecionado.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {isEssencialPlan && (
+        <Card className="shadow-md bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700">
+          <CardHeader>
+            <CardTitle className="flex items-center text-blue-800 dark:text-blue-300">
+              <Info className="mr-2 h-5 w-5 text-blue-600 dark:text-blue-400" />
+              Gestão de Contas a Receber
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-amber-700">
+          <CardContent className="text-blue-700 dark:text-blue-300/90">
             <p>
-              No plano <strong>Essencial</strong>, você pode visualizar todos os lançamentos financeiros, incluindo aqueles associados a pacientes na tabela acima.
-              Para uma gestão mais detalhada e dedicada de <strong>Contas a Receber por Paciente</strong> (como controle de vencimentos, geração de faturas específicas, etc.), considere fazer upgrade para os planos <strong>Profissional</strong> ou <strong>Clínica</strong>.
+              No plano <strong>Essencial</strong>, você pode visualizar todos os lançamentos financeiros, incluindo aqueles associados a pacientes na tabela de "Transações Financeiras" acima.
             </p>
-            <Button variant="link" className="p-0 h-auto mt-2 text-amber-700 hover:text-amber-800" onClick={() => router.push('/configuracoes?tab=plano')}>
+            <p className="mt-2">
+              Para uma gestão mais detalhada e dedicada de <strong>Contas a Receber por Paciente</strong> (com acompanhamento de vencimentos, status de pagamento específico, etc.), considere fazer upgrade para os planos <strong>Profissional</strong> ou <strong>Clínica</strong>.
+            </p>
+            <Button variant="link" className="p-0 h-auto mt-3 text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200" onClick={() => router.push('/configuracoes?tab=plano')}>
               Conheça os planos Profissional ou Clínica.
             </Button>
           </CardContent>
@@ -845,18 +936,17 @@ export default function FinanceiroPage() {
       )}
       
       {/* Placeholder for future advanced receivables if plans are Professional or Clinic */}
-      {(!isFreePlan && !isEssencialPlan) && (
+      {isProfessionalOrClinicPlan && (
          <Card className="shadow-md">
           <CardHeader>
             <CardTitle>Gestão Avançada de Contas a Receber (Em Breve)</CardTitle>
             <CardDescription>
-              Uma visão detalhada para gerenciar pagamentos pendentes, recebidos e atrasados de cada paciente.
-              Esta funcionalidade está em desenvolvimento e será lançada em breve para os planos Profissional e Clínica.
+              Ferramentas adicionais para uma gestão ainda mais completa de cobranças, como geração de faturas, relatórios de inadimplência e integração com meios de pagamento, estarão disponíveis em futuras atualizações para os planos Profissional e Clínica.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center py-16 text-muted-foreground">
             <DollarSign className="mx-auto h-12 w-12 opacity-50" />
-            <p>Em breve: Ferramentas avançadas para gestão de recebíveis por paciente.</p>
+            <p>Novas funcionalidades de gestão de recebíveis em desenvolvimento.</p>
           </CardContent>
         </Card>
       )}
