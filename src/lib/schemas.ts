@@ -16,7 +16,7 @@ export const registrationFormSchema = z.object({
   companyName: z.string().max(100, { message: "O nome da empresa deve ter no máximo 100 caracteres."}).optional().or(z.literal('')),
   password: z.string().min(6, { message: "A senha deve ter pelo menos 6 caracteres." }),
   confirmPassword: z.string().min(6, { message: "A confirmação da senha deve ter pelo menos 6 caracteres." }),
-  area: z.string().max(100, { message: "A área de atuação deve ter no máximo 100 caracteres."}).optional().or(z.literal('')),
+  area: z.string().min(3, { message: "A área de atuação deve ter pelo menos 3 caracteres." }).max(100, { message: "A área de atuação deve ter no máximo 100 caracteres."}),
   plan: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "As senhas não coincidem.",
@@ -24,3 +24,4 @@ export const registrationFormSchema = z.object({
 });
 
 export type RegistrationFormValues = z.infer<typeof registrationFormSchema>;
+

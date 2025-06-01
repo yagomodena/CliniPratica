@@ -230,7 +230,7 @@ function CadastroForm() {
           </div>
 
           <div>
-            <Label htmlFor="area">Área de Atuação (Opcional)</Label>
+            <Label htmlFor="area">Área de Atuação*</Label>
             <Input id="area" placeholder="Ex: Psicologia, Nutrição, Fisioterapia" {...form.register('area')} />
              {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
           </div>
