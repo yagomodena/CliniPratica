@@ -371,7 +371,7 @@ export default function FinanceiroPage() {
       case 'last7days':
         return { start: subDays(today, 6), end: endOfDay(today) };
       case 'thisMonth':
-        return { start: startOfMonth(today), end: endOfDay(today) }; // Changed from endOfMonth(today) to endOfDay(today) to include today's transactions if it's "thisMonth"
+        return { start: startOfMonth(today), end: endOfDay(today) }; 
       case 'lastMonth':
         const lastMonthStart = startOfMonth(subMonths(today, 1));
         return { start: lastMonthStart, end: endOfMonth(lastMonthStart) };
@@ -387,7 +387,7 @@ export default function FinanceiroPage() {
 
   const filteredTransactions = useMemo(() => {
     const range = getDateRange(selectedPeriod, customDateRange);
-    if (!range) return transactions; // Or an empty array if no range means no data
+    if (!range) return transactions; 
 
     return transactions.filter((transaction) =>
       isWithinInterval(transaction.date, { start: range.start, end: range.end })
@@ -476,7 +476,7 @@ export default function FinanceiroPage() {
     const transactionData: Omit<FinancialTransaction, 'id' | 'createdAt' | 'updatedAt'> = {
       ownerId: currentUser.uid,
       nomeEmpresa: currentUserData.plano === 'Clínica' ? currentUserData.nomeEmpresa || '' : '',
-      date: Timestamp.fromDate(parsedDate) as any, // Cast for Firestore compatibility
+      date: Timestamp.fromDate(parsedDate) as any, 
       description,
       amount: Number(amount),
       paymentMethod: paymentMethod as PaymentMethod,
@@ -720,7 +720,7 @@ export default function FinanceiroPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <CardTitle>Transações Financeiras</CardTitle>
-              <CardDescription>Visão geral das suas movimentações.</CardDescription>
+              <CardDescription>Visão geral das suas movimentações (lançamentos gerais e de agendamentos).</CardDescription>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
                 <Select value={selectedPeriod} onValueChange={(value) => { setSelectedPeriod(value as PeriodOption); if (value !== 'custom') setCustomDateRange(undefined); }}>
@@ -829,37 +829,38 @@ export default function FinanceiroPage() {
           <CardHeader>
             <CardTitle className="flex items-center text-amber-800">
               <AlertTriangle className="mr-2 h-5 w-5 text-amber-600" />
-              Funcionalidade Limitada no Plano Essencial
+              Funcionalidade Avançada de Contas a Receber
             </CardTitle>
           </CardHeader>
           <CardContent className="text-amber-700">
             <p>
-              No plano <strong>Essencial</strong>, o controle financeiro permite o lançamento e acompanhamento de transações gerais.
-              A funcionalidade de <strong>Contas a Receber por Paciente</strong>, com detalhes de pagamentos pendentes, recebidos e atrasados por cada paciente, está disponível nos planos <strong>Profissional</strong> e <strong>Clínica</strong>.
+              No plano <strong>Essencial</strong>, você pode visualizar todos os lançamentos financeiros, incluindo aqueles associados a pacientes.
+              Para uma gestão mais detalhada de <strong>Contas a Receber por Paciente</strong> (como controle de vencimentos, status de pagamento de faturas específicas, etc.), considere fazer upgrade para os planos <strong>Profissional</strong> ou <strong>Clínica</strong>.
             </p>
             <Button variant="link" className="p-0 h-auto mt-2 text-amber-700 hover:text-amber-800" onClick={() => router.push('/configuracoes?tab=plano')}>
-              Conheça os planos Profissional ou Clínica para mais detalhes.
+              Conheça os planos Profissional ou Clínica.
             </Button>
           </CardContent>
         </Card>
       )}
-
-      {/* Receivables section will only be shown if not on Free or Essencial plan */}
-      {!isFreePlan && !isEssencialPlan && (
-        <Card className="shadow-md">
+      
+      {/* Placeholder for future advanced receivables if plans are Professional or Clinic */}
+      {(!isFreePlan && !isEssencialPlan) && (
+         <Card className="shadow-md">
           <CardHeader>
-            <CardTitle>Contas a Receber Detalhadas (Em Breve)</CardTitle>
+            <CardTitle>Gestão Avançada de Contas a Receber (Em Breve)</CardTitle>
             <CardDescription>
-              Acompanhe os pagamentos pendentes, recebidos e atrasados de cada paciente.
+              Uma visão detalhada para gerenciar pagamentos pendentes, recebidos e atrasados de cada paciente.
               Esta funcionalidade está em desenvolvimento e será lançada em breve para os planos Profissional e Clínica.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center py-16 text-muted-foreground">
-            <DollarSign className="mx-auto h-12 w-12" />
-            <p>Em breve: Lista detalhada de recebíveis por paciente.</p>
+            <DollarSign className="mx-auto h-12 w-12 opacity-50" />
+            <p>Em breve: Ferramentas avançadas para gestão de recebíveis por paciente.</p>
           </CardContent>
         </Card>
       )}
+
 
       <AlertDialog open={isDeleteTransactionConfirmOpen} onOpenChange={setIsDeleteTransactionConfirmOpen}>
         <AlertDialogContent>
