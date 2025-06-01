@@ -15,6 +15,7 @@ import {
   Pilcrow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useEffect } from 'react'; // Added useEffect import
 
 interface TiptapEditorProps {
   content: string;
@@ -112,17 +113,25 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
         // Defaults should be fine for basic lists
       }),
     ],
-    content: content,
+    content: content, // Initial content
     onUpdate: ({ editor: currentEditor }) => {
       onChange(currentEditor.getHTML());
     },
     editorProps: {
       attributes: {
         class:
-          'tiptap-editable-area p-3 focus:outline-none min-h-[150px] w-full text-sm leading-relaxed', // Added tiptap-editable-area
+          'tiptap-editable-area p-3 focus:outline-none min-h-[150px] w-full text-sm leading-relaxed',
       },
     },
   });
+
+  useEffect(() => {
+    if (editor && content !== editor.getHTML()) {
+      // When the `content` prop changes and it's different from the editor's current content,
+      // update the editor's content. The `false` argument prevents an update event.
+      editor.commands.setContent(content, false);
+    }
+  }, [content, editor]); // Re-run if `content` or `editor` instance changes
 
   return (
     <div className="w-full border border-input rounded-md bg-background shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:border-ring">
