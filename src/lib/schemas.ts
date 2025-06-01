@@ -20,7 +20,15 @@ export const registrationFormSchema = z.object({
   plan: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "As senhas não coincidem.",
-  path: ["confirmPassword"], // Define o erro no campo confirmPassword
+  path: ["confirmPassword"],
+}).superRefine((data, ctx) => {
+  if (data.plan === 'Clínica' && (!data.companyName || data.companyName.trim().length < 2)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "O nome da empresa é obrigatório para o plano Clínica e deve ter pelo menos 2 caracteres.",
+      path: ['companyName'],
+    });
+  }
 });
 
 export type RegistrationFormValues = z.infer<typeof registrationFormSchema>;
