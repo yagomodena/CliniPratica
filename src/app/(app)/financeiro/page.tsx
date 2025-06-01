@@ -207,7 +207,7 @@ export default function FinanceiroPage() {
     status: 'Recebido',
     type: 'manual',
     date: format(new Date(), 'yyyy-MM-dd'),
-    patientId: '', 
+    patientId: 'none', 
   });
 
   const [clientNow, setClientNow] = useState<Date | null>(null);
@@ -483,8 +483,8 @@ export default function FinanceiroPage() {
       status: status as TransactionStatus,
       type: type as TransactionType,
       notes: notes || '',
-      patientId: selectedPatient?.id || '',
-      patientName: selectedPatient?.name || '',
+      patientId: patientId === 'none' ? '' : selectedPatient?.id || '',
+      patientName: patientId === 'none' ? '' : selectedPatient?.name || '',
     };
 
     try {
@@ -497,7 +497,7 @@ export default function FinanceiroPage() {
         toast({ title: "Sucesso!", description: "Transação adicionada.", variant: "success" });
       }
       
-      setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
+      setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none' });
       setIsAddTransactionDialogOpen(false);
       setEditingTransaction(null);
       if (currentUser && currentUserData) {
@@ -518,7 +518,7 @@ export default function FinanceiroPage() {
       status: transaction.status,
       type: transaction.type,
       date: format(transaction.date, 'yyyy-MM-dd'),
-      patientId: transaction.patientId || '',
+      patientId: transaction.patientId || 'none',
       notes: transaction.notes || '',
     });
     setIsAddTransactionDialogOpen(true);
@@ -615,7 +615,7 @@ export default function FinanceiroPage() {
             setIsAddTransactionDialogOpen(isOpen);
             if (!isOpen) {
                 setEditingTransaction(null);
-                setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: ''});
+                setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none'});
             }
         }}>
           <DialogTrigger asChild>
@@ -667,7 +667,7 @@ export default function FinanceiroPage() {
                     <SelectValue placeholder="Selecione o paciente (opcional)" />
                   </SelectTrigger>
                   <SelectContent>
-                     {isLoadingFirebasePatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem> : <> <SelectItem value="">Nenhum</SelectItem> {firebasePatients.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))} </>}
+                     {isLoadingFirebasePatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum paciente ativo</SelectItem> : <> <SelectItem value="none">Nenhum</SelectItem> {firebasePatients.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))} </>}
                   </SelectContent>
                 </Select>
               </div>
@@ -834,8 +834,8 @@ export default function FinanceiroPage() {
           </CardHeader>
           <CardContent className="text-amber-700">
             <p>
-              No plano <strong>Essencial</strong>, você pode visualizar todos os lançamentos financeiros, incluindo aqueles associados a pacientes.
-              Para uma gestão mais detalhada de <strong>Contas a Receber por Paciente</strong> (como controle de vencimentos, status de pagamento de faturas específicas, etc.), considere fazer upgrade para os planos <strong>Profissional</strong> ou <strong>Clínica</strong>.
+              No plano <strong>Essencial</strong>, você pode visualizar todos os lançamentos financeiros, incluindo aqueles associados a pacientes na tabela acima.
+              Para uma gestão mais detalhada e dedicada de <strong>Contas a Receber por Paciente</strong> (como controle de vencimentos, geração de faturas específicas, etc.), considere fazer upgrade para os planos <strong>Profissional</strong> ou <strong>Clínica</strong>.
             </p>
             <Button variant="link" className="p-0 h-auto mt-2 text-amber-700 hover:text-amber-800" onClick={() => router.push('/configuracoes?tab=plano')}>
               Conheça os planos Profissional ou Clínica.
@@ -881,3 +881,4 @@ export default function FinanceiroPage() {
     </div>
   );
 }
+
