@@ -70,7 +70,8 @@ type PatientForBirthday = {
 // Alert data structure, now includes Firestore document ID
 type Alert = {
   id: string; // Firestore document ID
-  uid: string;
+  uid: string; // UID of the user who created it, or a relevant UID for clinic context
+  nomeEmpresa?: string; // For clinic-wide alerts
   patientId: string; // Firestore document ID of the patient
   patientName: string;
   patientSlug: string;
@@ -116,7 +117,7 @@ export default function DashboardPage() {
   const [isPlanWarningVisible, setIsPlanWarningVisible] = useState(true);
   
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
-  const [currentUserPlan, setCurrentUserPlan] = useState<string>("");
+  const [currentUserData, setCurrentUserData] = useState<any>(null); // Stores data from 'usuarios' collection
 
   const [clientNow, setClientNow] = useState<Date | null>(null);
   const [clientTodayString, setClientTodayString] = useState<string>('');
@@ -141,7 +142,7 @@ export default function DashboardPage() {
   const [customBirthdayMessage, setCustomBirthdayMessage] = useState('');
 
 
-  const isFreePlan = currentUserPlan === 'Gratuito';
+  const isFreePlan = currentUserData?.plano === 'Gratuito';
 
   useEffect(() => {
     const now = new Date();
@@ -158,7 +159,11 @@ export default function DashboardPage() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
+          setCurrentUserData({ ...data, uid: user.uid }); // Ensure UID is part of currentUserData
           setCurrentUserPlan(data.plano || "Gratuito");
+        } else {
+           setCurrentUserData({ uid: user.uid, plano: "Gratuito" }); // Basic data if Firestore doc doesn't exist
+           setCurrentUserPlan("Gratuito");
         }
       } else {
         setFirebasePatients([]);
@@ -172,17 +177,24 @@ export default function DashboardPage() {
         setRevenueComparisonPercentage(null);
         setIsLoadingRevenue(false);
         setBirthdayPatients([]);
+        setCurrentUserData(null);
+        setCurrentUserPlan("");
       }
     });
     return () => unsubscribe();
   }, []);
 
-  const fetchAlerts = useCallback(async (currentUsuario: FirebaseUser) => {
-    if (!currentUsuario) return;
-    console.log("Buscando alertas para o UID:", currentUsuario.uid); // Diagnostic log
+  const fetchAlerts = useCallback(async (currentAuthUser: FirebaseUser, uData: any) => {
+    if (!currentAuthUser) return;
     try {
       const alertsRef = collection(db, 'alertas');
-      const q = query(alertsRef, where('uid', '==', currentUsuario.uid), orderBy('createdAt', 'desc'));
+      let q;
+      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(alertsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), orderBy('createdAt', 'desc'));
+      } else {
+        q = query(alertsRef, where('uid', '==', currentAuthUser.uid), orderBy('createdAt', 'desc'));
+      }
+      
       const querySnapshot = await getDocs(q);
       const fetchedAlerts: Alert[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -195,21 +207,19 @@ export default function DashboardPage() {
           try {
             createdAtDate = new Date(data.createdAt);
             if (isNaN(createdAtDate.getTime())) {
-              console.warn(`Invalid createdAt date format for alert ${docSnap.id}:`, data.createdAt, "- Using current date as fallback.");
               createdAtDate = new Date();
             }
           } catch (parseError) {
-            console.warn(`Error parsing createdAt for alert ${docSnap.id}:`, data.createdAt, parseError, "- Using current date as fallback.");
             createdAtDate = new Date();
           }
         } else {
-          console.warn(`Missing or unhandled createdAt type for alert ${docSnap.id}, defaulting to now.`);
           createdAtDate = new Date();
         }
 
         fetchedAlerts.push({
           id: docSnap.id,
           uid: data.uid as string,
+          nomeEmpresa: data.nomeEmpresa as string | undefined,
           patientId: data.patientId as string,
           patientName: data.patientName as string,
           patientSlug: data.patientSlug as string,
@@ -220,27 +230,22 @@ export default function DashboardPage() {
       setAlerts(fetchedAlerts);
     } catch (error: any) {
       console.error("Erro ao buscar alertas:", error);
-      let description = "Não foi possível carregar os alertas. Tente recarregar a página.";
-      if (error.code === 'permission-denied') {
-        description = "Permissão negada ao buscar alertas. Verifique as regras de segurança do Firestore.";
-      } else if (error.code === 'failed-precondition') {
-        description = "Falha ao buscar alertas: consulta requer um índice no Firestore. Verifique o console do Firebase para a mensagem de erro original, que geralmente inclui um link direto para criar o índice necessário (geralmente para 'uid' ASC e 'createdAt' DESC na coleção 'alertas'). Certifique-se de que o índice foi criado corretamente e está ATIVADO.";
-      }
-      toast({ title: "Erro ao buscar alertas", description, variant: "destructive" });
+      toast({ title: "Erro ao buscar alertas", description: "Não foi possível carregar os alertas.", variant: "destructive" });
     }
   }, [toast]);
 
-  const fetchTodaysAppointments = useCallback(async (currentUsuario: FirebaseUser, dateString: string) => {
-    if (!currentUsuario || !dateString) return;
+  const fetchTodaysAppointments = useCallback(async (currentAuthUser: FirebaseUser, uData: any, dateString: string) => {
+    if (!currentAuthUser || !dateString) return;
     setIsLoadingTodaysAppointments(true);
     try {
       const apptsRef = collection(db, 'agendamentos');
-      const q = query(
-        apptsRef,
-        where('uid', '==', currentUsuario.uid),
-        where('date', '==', dateString),
-        orderBy('time')
-      );
+      let q;
+      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(apptsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), where('date', '==', dateString), orderBy('time'));
+      } else {
+        q = query(apptsRef, where('uid', '==', currentAuthUser.uid), where('date', '==', dateString), orderBy('time'));
+      }
+      
       const querySnapshot = await getDocs(q);
       const fetchedAppointments: AppointmentForDashboard[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -255,40 +260,47 @@ export default function DashboardPage() {
       setTodaysFirebaseAppointments(fetchedAppointments);
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos de hoje:", error);
-      let description = "Não foi possível carregar os agendamentos de hoje.";
-      if (error.code === 'failed-precondition') {
-        description = "Falha ao buscar agendamentos de hoje: consulta requer um índice no Firestore (geralmente para 'uid', 'date' e 'time' na coleção 'agendamentos'). Verifique o console do Firebase.";
-      }
-      toast({ title: "Erro nos agendamentos", description, variant: "destructive" });
+      toast({ title: "Erro nos agendamentos", description: "Não foi possível carregar os agendamentos de hoje.", variant: "destructive" });
       setTodaysFirebaseAppointments([]);
     } finally {
       setIsLoadingTodaysAppointments(false);
     }
   }, [toast]);
 
-  const fetchWeeklyAppointments = useCallback(async (currentUsuario: FirebaseUser, now: Date) => {
-    if (!currentUsuario || !now) return;
+  const fetchWeeklyAppointments = useCallback(async (currentAuthUser: FirebaseUser, uData: any, now: Date) => {
+    if (!currentAuthUser || !now) return;
     setIsLoadingWeeklyAppointments(true);
     const weekDaysPt = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-    const daysOfWeekData: WeeklyAppointmentChartData[] = weekDaysPt.slice(1).concat(weekDaysPt[0]).map(day => ({ day, appointments: 0 })); // Seg-Dom
+    const daysOfWeekData: WeeklyAppointmentChartData[] = weekDaysPt.slice(1).concat(weekDaysPt[0]).map(day => ({ day, appointments: 0 }));
 
     try {
-      const startOfCurrentWeek = startOfWeek(now, { weekStartsOn: 1 }); // Monday
-      const endOfCurrentWeek = endOfWeek(now, { weekStartsOn: 1 }); // Sunday
+      const startOfCurrentWeek = startOfWeek(now, { weekStartsOn: 1 });
+      const endOfCurrentWeek = endOfWeek(now, { weekStartsOn: 1 });
 
       const apptsRef = collection(db, 'agendamentos');
-      const q = query(
-        apptsRef,
-        where('uid', '==', currentUsuario.uid),
-        where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
-        where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
-      );
+      let q;
+      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+         q = query(
+          apptsRef,
+          where('nomeEmpresa', '==', uData.nomeEmpresa),
+          where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
+          where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
+        );
+      } else {
+         q = query(
+          apptsRef,
+          where('uid', '==', currentAuthUser.uid),
+          where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
+          where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
+        );
+      }
+     
       const querySnapshot = await getDocs(q);
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
         try {
           const apptDate = parseISO(data.date as string);
-          const dayIndex = (getDay(apptDate) + 6) % 7; // 0=Seg, 1=Ter, ..., 6=Dom
+          const dayIndex = (getDay(apptDate) + 6) % 7;
           if (daysOfWeekData[dayIndex]) {
             daysOfWeekData[dayIndex].appointments += 1;
           }
@@ -300,14 +312,14 @@ export default function DashboardPage() {
     } catch (error: any) {
       console.error("Erro ao buscar agendamentos da semana:", error);
       toast({ title: "Erro nos agendamentos da semana", description: "Não foi possível carregar os dados do gráfico.", variant: "destructive" });
-      setActualWeeklyAppointmentsData(daysOfWeekData); // Set to default empty week on error
+      setActualWeeklyAppointmentsData(daysOfWeekData);
     } finally {
       setIsLoadingWeeklyAppointments(false);
     }
   }, [toast]);
 
-  const fetchMonthlyRevenueData = useCallback(async (currentUsuario: FirebaseUser, now: Date) => {
-    if (!currentUsuario || !now) return;
+  const fetchMonthlyRevenueData = useCallback(async (currentAuthUser: FirebaseUser, uData: any, now: Date) => {
+    if (!currentAuthUser || !now) return;
     setIsLoadingRevenue(true);
 
     let currentMonthTotal = 0;
@@ -315,31 +327,27 @@ export default function DashboardPage() {
 
     try {
       const transactionsRef = collection(db, 'financialTransactions');
-
-      // Current Month
-      const startOfCurrentMonth = startOfMonth(now);
-      const endOfCurrentMonth = endOfMonth(now);
-      const currentMonthQuery = query(
-        transactionsRef,
-        where('ownerId', '==', currentUsuario.uid),
+      const baseQueryConditions = (targetDate: Date) => [
         where('status', '==', 'Recebido'),
-        where('date', '>=', Timestamp.fromDate(startOfCurrentMonth)),
-        where('date', '<=', Timestamp.fromDate(endOfCurrentMonth))
-      );
+        where('date', '>=', Timestamp.fromDate(startOfMonth(targetDate))),
+        where('date', '<=', Timestamp.fromDate(endOfMonth(targetDate)))
+      ];
+
+      let currentMonthQuery;
+      let previousMonthQuery;
+
+      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+        currentMonthQuery = query(transactionsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), ...baseQueryConditions(now));
+        previousMonthQuery = query(transactionsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), ...baseQueryConditions(subMonths(now, 1)));
+      } else {
+        currentMonthQuery = query(transactionsRef, where('ownerId', '==', currentAuthUser.uid), ...baseQueryConditions(now));
+        previousMonthQuery = query(transactionsRef, where('ownerId', '==', currentAuthUser.uid), ...baseQueryConditions(subMonths(now, 1)));
+      }
+      
       const currentMonthSnapshot = await getDocs(currentMonthQuery);
       currentMonthSnapshot.forEach(doc => currentMonthTotal += (doc.data().amount as number || 0));
       setMonthlyRevenue(currentMonthTotal);
 
-      // Previous Month
-      const startOfPreviousMonth = startOfMonth(subMonths(now, 1));
-      const endOfPreviousMonth = endOfMonth(subMonths(now, 1));
-      const previousMonthQuery = query(
-        transactionsRef,
-        where('ownerId', '==', currentUsuario.uid),
-        where('status', '==', 'Recebido'),
-        where('date', '>=', Timestamp.fromDate(startOfPreviousMonth)),
-        where('date', '<=', Timestamp.fromDate(endOfPreviousMonth))
-      );
       const previousMonthSnapshot = await getDocs(previousMonthQuery);
       previousMonthSnapshot.forEach(doc => previousMonthTotal += (doc.data().amount as number || 0));
 
@@ -347,18 +355,14 @@ export default function DashboardPage() {
         const percentage = ((currentMonthTotal - previousMonthTotal) / previousMonthTotal) * 100;
         setRevenueComparisonPercentage(percentage);
       } else if (currentMonthTotal > 0) {
-        setRevenueComparisonPercentage(100); // Or handle as "N/A" or "∞"
+        setRevenueComparisonPercentage(100);
       } else {
         setRevenueComparisonPercentage(0);
       }
 
     } catch (error: any) {
       console.error("Erro ao buscar faturamento do mês:", error);
-      let description = "Não foi possível carregar os dados de faturamento.";
-      if (error.code === 'failed-precondition') {
-        description = "A consulta de faturamento requer um índice no Firestore. Verifique o console do Firebase (para 'ownerId', 'status', e 'date' na coleção 'financialTransactions').";
-      }
-      toast({ title: "Erro no Faturamento", description, variant: "destructive" });
+      toast({ title: "Erro no Faturamento", description: "Não foi possível carregar os dados de faturamento.", variant: "destructive" });
       setMonthlyRevenue(null);
       setRevenueComparisonPercentage(null);
     } finally {
@@ -368,17 +372,21 @@ export default function DashboardPage() {
 
 
   useEffect(() => {
-    if (usuario && clientNow && clientTodayString) {
+    if (usuario && currentUserData && clientNow && clientTodayString) {
       const fetchAllDashboardData = async () => {
-        setIsLoadingFirebasePatients(true); // Start loading patients
+        setIsLoadingFirebasePatients(true);
         try {
-          // Fetch Patients & Birthdays
           const patientsRef = collection(db, 'pacientes');
-          const pq = query(patientsRef, where('uid', '==', usuario.uid), where('status', '==', 'Ativo'));
+          let pq;
+           if (currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa) {
+            pq = query(patientsRef, where('nomeEmpresa', '==', currentUserData.nomeEmpresa), where('status', '==', 'Ativo'));
+           } else {
+            pq = query(patientsRef, where('uid', '==', usuario.uid), where('status', '==', 'Ativo'));
+           }
           const patientsSnapshot = await getDocs(pq);
           const fetchedPatients: PatientForSelect[] = [];
           const fetchedBirthdayPatientsData: PatientForBirthday[] = [];
-          const todayDate = clientNow; // Use client's current date for birthday check
+          const todayDate = clientNow;
           const currentMonth = getMonth(todayDate);
           const currentDay = getDate(todayDate);
 
@@ -398,7 +406,7 @@ export default function DashboardPage() {
                     name: data.name as string,
                     dob: data.dob as string,
                     slug: data.slug as string,
-                    phone: data.phone as string, // Ensure phone is included
+                    phone: data.phone as string,
                   });
                 }
               } catch (e) {
@@ -408,14 +416,13 @@ export default function DashboardPage() {
           });
           setFirebasePatients(fetchedPatients);
           setBirthdayPatients(fetchedBirthdayPatientsData);
-          setIsLoadingFirebasePatients(false); // Finish loading patients
+          setIsLoadingFirebasePatients(false);
 
-          // Fetch other data concurrently
           await Promise.all([
-            fetchAlerts(usuario),
-            fetchTodaysAppointments(usuario, clientTodayString),
-            fetchWeeklyAppointments(usuario, clientNow),
-            fetchMonthlyRevenueData(usuario, clientNow)
+            fetchAlerts(usuario, currentUserData),
+            fetchTodaysAppointments(usuario, currentUserData, clientTodayString),
+            fetchWeeklyAppointments(usuario, currentUserData, clientNow),
+            fetchMonthlyRevenueData(usuario, currentUserData, clientNow)
           ]);
 
         } catch (error) {
@@ -431,7 +438,7 @@ export default function DashboardPage() {
       };
       fetchAllDashboardData();
     }
-  }, [usuario, clientNow, clientTodayString, toast, fetchAlerts, fetchTodaysAppointments, fetchWeeklyAppointments, fetchMonthlyRevenueData]);
+  }, [usuario, currentUserData, clientNow, clientTodayString, toast, fetchAlerts, fetchTodaysAppointments, fetchWeeklyAppointments, fetchMonthlyRevenueData]);
 
 
   const [alertForm, setAlertForm] = useState<AlertForm>({
@@ -449,7 +456,7 @@ export default function DashboardPage() {
 
   const handleAddAlert = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!usuario) {
+    if (!usuario || !currentUserData) {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
     }
@@ -469,14 +476,18 @@ export default function DashboardPage() {
     }
 
     try {
-      const newAlertData = {
-        uid: usuario.uid,
+      const newAlertData: Partial<Alert> = {
+        uid: usuario.uid, // Creator's UID
         patientId: selectedPatient.id,
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-        createdAt: serverTimestamp(),
+        createdAt: serverTimestamp() as any, // Firestore will convert this
       };
+      if(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa){
+        newAlertData.nomeEmpresa = currentUserData.nomeEmpresa;
+      }
+
       await addDoc(collection(db, 'alertas'), newAlertData);
 
       setAlertForm({ patientId: '', reason: '' });
@@ -486,16 +497,10 @@ export default function DashboardPage() {
         description: `Alerta adicionado para ${selectedPatient.name}.`,
         variant: "success",
       });
-      await fetchAlerts(usuario);
+      await fetchAlerts(usuario, currentUserData);
     } catch (error: any) {
       console.error("Erro ao adicionar alerta:", error);
-      let description = "Não foi possível salvar o alerta.";
-      if (error.code === 'permission-denied') {
-        description = "Permissão negada ao salvar o alerta. Verifique as regras de segurança do Firestore.";
-      } else if (error.code === 'failed-precondition') {
-        description = "Falha ao salvar o alerta: A operação pode requerer um índice no Firestore que ainda não está ativo. Verifique o console do Firebase.";
-      }
-      toast({ title: "Erro ao adicionar alerta", description, variant: "destructive" });
+      toast({ title: "Erro ao adicionar alerta", description: "Não foi possível salvar o alerta.", variant: "destructive" });
     }
   };
 
@@ -510,7 +515,7 @@ export default function DashboardPage() {
 
   const handleEditAlert = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!editingAlert || !alertForm.patientId || !alertForm.reason.trim() || !usuario) {
+    if (!editingAlert || !alertForm.patientId || !alertForm.reason.trim() || !usuario || !currentUserData) {
       toast({
         title: "Erro de Validação",
         description: "Por favor, preencha todos os campos.",
@@ -527,12 +532,16 @@ export default function DashboardPage() {
 
     try {
       const alertRef = doc(db, 'alertas', editingAlert.id);
-      await updateDoc(alertRef, {
+      const updatedAlertData: Partial<Alert> = {
         patientId: selectedPatient.id,
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-      });
+      };
+      // Ensure 'uid' and 'nomeEmpresa' (if applicable) are not accidentally overwritten
+      // They should be set at creation and typically not changed.
+
+      await updateDoc(alertRef, updatedAlertData);
 
       setEditingAlert(null);
       setAlertForm({ patientId: '', reason: '' });
@@ -542,20 +551,16 @@ export default function DashboardPage() {
         description: "Alerta atualizado com sucesso.",
         variant: "success",
       });
-      await fetchAlerts(usuario);
+      await fetchAlerts(usuario, currentUserData);
     } catch (error: any) {
       console.error("Erro ao editar alerta:", error);
-      let description = "Não foi possível atualizar o alerta.";
-      if (error.code === 'permission-denied') {
-        description = "Permissão negada ao atualizar o alerta. Verifique as regras de segurança do Firestore.";
-      }
-      toast({ title: "Erro", description, variant: "destructive" });
+      toast({ title: "Erro", description: "Não foi possível atualizar o alerta.", variant: "destructive" });
     }
   };
 
 
   const handleResolveAlert = async (alertId: string) => {
-    if (!usuario) return;
+    if (!usuario || !currentUserData) return;
     try {
       await deleteDoc(doc(db, 'alertas', alertId));
       toast({
@@ -563,27 +568,27 @@ export default function DashboardPage() {
         description: "O alerta foi removido.",
         variant: "success"
       });
-      await fetchAlerts(usuario);
+      await fetchAlerts(usuario, currentUserData);
     } catch (error: any) {
       console.error("Erro ao resolver alerta:", error);
-      let description = "Não foi possível remover o alerta.";
-      if (error.code === 'permission-denied') {
-        description = "Permissão negada ao remover o alerta. Verifique as regras de segurança do Firestore.";
-      }
-      toast({ title: "Erro", description, variant: "destructive" });
+      toast({ title: "Erro", description: "Não foi possível remover o alerta.", variant: "destructive" });
     }
   };
 
 
   const handleSelectPlan = (planName: PlanName) => {
     console.log("Updating plan to:", planName);
-    setCurrentUserPlan(planName);
+    // This would typically involve updating Firestore and potentially redirecting or refreshing user data
+    // For now, just updating local state for modal behavior
+    if (currentUserData) {
+        setCurrentUserData((prev: any) => ({...prev, plano: planName}));
+    }
   };
 
   const openBirthdayMessageDialog = (patient: PatientForBirthday) => {
     setSelectedBirthdayPatient(patient);
-    setBirthdayMessageType('predefined'); // Reset to predefined
-    setCustomBirthdayMessage(''); // Clear custom message
+    setBirthdayMessageType('predefined');
+    setCustomBirthdayMessage('');
     setIsBirthdayMessageDialogOpen(true);
   };
 
@@ -1084,7 +1089,7 @@ export default function DashboardPage() {
       <PlansModal
         isOpen={isPlansModalOpen}
         onOpenChange={setIsPlansModalOpen}
-        currentPlanName={currentUserPlan}
+        currentPlanName={currentUserData?.plano || ""}
         onSelectPlan={handleSelectPlan}
       />
 

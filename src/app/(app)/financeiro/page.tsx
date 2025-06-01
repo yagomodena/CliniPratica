@@ -104,7 +104,7 @@ import { ptBR } from 'date-fns/locale';
 import type { DateRange } from 'react-day-picker';
 import { Badge } from '@/components/ui/badge';
 import { auth, db } from '@/firebase';
-import { User as FirebaseUser, onAuthStateChanged, getAuth } from 'firebase/auth'; // Added getAuth
+import { User as FirebaseUser, onAuthStateChanged, getAuth } from 'firebase/auth';
 import {
   collection,
   query,
@@ -132,7 +132,8 @@ import {
 
 export interface FinancialTransaction {
   id: string; 
-  ownerId: string; 
+  ownerId: string; // UID of the individual user who created/owns it OR a relevant UID for clinic context
+  nomeEmpresa?: string; // For clinic-wide transactions
   date: Date; 
   description: string;
   patientId?: string;
@@ -171,7 +172,7 @@ const periodOptions: { value: PeriodOption; label: string }[] = [
   { value: 'custom', label: 'Período Personalizado' },
 ];
 
-type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date' | 'ownerId' | 'createdAt' | 'updatedAt'> & { date: string };
+type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date' | 'ownerId' | 'createdAt' | 'updatedAt' | 'nomeEmpresa'> & { date: string };
 
 type ReceivableEntry = {
   id: string;
@@ -207,7 +208,7 @@ export default function FinanceiroPage() {
 
   const [clientNow, setClientNow] = useState<Date | null>(null);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [currentUserPlan, setCurrentUserPlan] = useState<string | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [firebasePatients, setFirebasePatients] = useState<PatientForSelect[]>([]);
   const [isLoadingFirebasePatients, setIsLoadingFirebasePatients] = useState(true);
 
@@ -223,12 +224,12 @@ export default function FinanceiroPage() {
         const userDocRef = doc(db, 'usuarios', user.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
-          setCurrentUserPlan(userDocSnap.data()?.plano || "Gratuito");
+          setCurrentUserData({ ...userDocSnap.data(), uid: user.uid });
         } else {
-          setCurrentUserPlan("Gratuito"); // Default if user data not found
+          setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
         }
       } else {
-        setCurrentUserPlan(null);
+        setCurrentUserData(null);
         setTransactions([]);
         setIsLoadingTransactions(false);
         setFirebasePatients([]);
@@ -242,12 +243,18 @@ export default function FinanceiroPage() {
     setClientNow(new Date());
   }, []);
 
-  const fetchFinancialTransactions = useCallback(async (user: FirebaseUser) => {
-    if (!user) return;
+  const fetchFinancialTransactions = useCallback(async (userAuth: FirebaseUser, uData: any) => {
+    if (!userAuth) return;
     setIsLoadingTransactions(true);
     try {
       const transactionsRef = collection(db, 'financialTransactions');
-      const q = query(transactionsRef, where('ownerId', '==', user.uid), orderBy('date', 'desc'));
+      let q;
+      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(transactionsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), orderBy('date', 'desc'));
+      } else {
+        q = query(transactionsRef, where('ownerId', '==', userAuth.uid), orderBy('date', 'desc'));
+      }
+      
       const querySnapshot = await getDocs(q);
       const fetchedTransactions: FinancialTransaction[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -255,6 +262,7 @@ export default function FinanceiroPage() {
         fetchedTransactions.push({
           id: docSnap.id,
           ownerId: data.ownerId,
+          nomeEmpresa: data.nomeEmpresa,
           date: (data.date as Timestamp).toDate(),
           description: data.description,
           patientId: data.patientId,
@@ -272,22 +280,23 @@ export default function FinanceiroPage() {
       setTransactions(fetchedTransactions);
     } catch (error: any) {
       console.error("Erro ao buscar transações financeiras:", error);
-      let description = "Não foi possível carregar os lançamentos.";
-      if (error.code === 'failed-precondition') {
-         description = "A consulta requer um índice no Firestore. Verifique o console do Firebase (geralmente para 'ownerId' e 'date' na coleção 'financialTransactions').";
-      }
-      toast({ title: "Erro nos Lançamentos", description, variant: "destructive" });
+      toast({ title: "Erro nos Lançamentos", description: "Não foi possível carregar os lançamentos.", variant: "destructive" });
     } finally {
       setIsLoadingTransactions(false);
     }
   }, [toast]);
 
-  const fetchPatientsForSelect = useCallback(async (user: FirebaseUser) => {
-    if (!user) return;
+  const fetchPatientsForSelect = useCallback(async (userAuth: FirebaseUser, uData: any) => {
+    if (!userAuth) return;
     setIsLoadingFirebasePatients(true);
     try {
       const patientsRef = collection(db, 'pacientes');
-      const q = query(patientsRef, where('uid', '==', user.uid), where('status', '==', 'Ativo'), orderBy('name'));
+      let q;
+      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(patientsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), where('status', '==', 'Ativo'), orderBy('name'));
+      } else {
+        q = query(patientsRef, where('uid', '==', userAuth.uid), where('status', '==', 'Ativo'), orderBy('name'));
+      }
       const querySnapshot = await getDocs(q);
       const fetchedPatients: PatientForSelect[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -308,11 +317,11 @@ export default function FinanceiroPage() {
 
 
   useEffect(() => {
-    if (currentUser) {
-      fetchFinancialTransactions(currentUser);
-      fetchPatientsForSelect(currentUser);
+    if (currentUser && currentUserData) {
+      fetchFinancialTransactions(currentUser, currentUserData);
+      fetchPatientsForSelect(currentUser, currentUserData);
     }
-  }, [currentUser, fetchFinancialTransactions, fetchPatientsForSelect]);
+  }, [currentUser, currentUserData, fetchFinancialTransactions, fetchPatientsForSelect]);
 
 
   const getDateRangeForPeriod = useCallback((period: PeriodOption, range?: DateRange): { start: Date; end: Date } => {
@@ -350,7 +359,6 @@ export default function FinanceiroPage() {
           start = startOfDay(range.from);
           end = endOfDay(range.from);
         } else {
-          // Fallback to current month if custom range is incomplete
           start = startOfMonth(now); 
           end = endOfMonth(now);
         }
@@ -380,23 +388,23 @@ export default function FinanceiroPage() {
 
     switch (periodType) {
       case 'today':
-        prevEnd = subDays(currentStart, 1); // Yesterday
+        prevEnd = subDays(currentStart, 1);
         prevStart = startOfDay(prevEnd);
         break;
       case 'yesterday':
-        prevEnd = subDays(currentStart, 1); // Day before yesterday
+        prevEnd = subDays(currentStart, 1);
         prevStart = startOfDay(prevEnd);
         break;
       case 'last7days':
         prevEnd = subDays(currentStart, 1);
-        prevStart = subDays(prevEnd, 6); // The 7 days before the current 7-day range
+        prevStart = subDays(prevEnd, 6);
         break;
       case 'thisMonth':
-        prevStart = startOfMonth(subMonths(currentStart, 1)); // Last month
+        prevStart = startOfMonth(subMonths(currentStart, 1));
         prevEnd = endOfMonth(prevStart);
         break;
       case 'lastMonth':
-        prevStart = startOfMonth(subMonths(currentStart, 1)); // Month before last month
+        prevStart = startOfMonth(subMonths(currentStart, 1));
         prevEnd = endOfMonth(prevStart);
         break;
       case 'custom':
@@ -404,7 +412,7 @@ export default function FinanceiroPage() {
         prevEnd = subDays(currentStart, 1);
         prevStart = subDays(prevEnd, diff);
         break;
-      default: // Fallback, should ideally not be reached
+      default:
         prevStart = startOfMonth(subMonths(currentStart, 1));
         prevEnd = endOfMonth(prevStart);
     }
@@ -424,7 +432,6 @@ export default function FinanceiroPage() {
     const revenueFromAppointments = currentPeriodTransactions.filter(t => t.type === 'atendimento').reduce((sum, t) => sum + t.amount, 0);
     const averagePerAppointment = paidAppointments > 0 ? revenueFromAppointments / paidAppointments : 0;
 
-    // Calculate previous period revenue
     const { start: prevPeriodStart, end: prevPeriodEnd } = getPreviousPeriodRange(currentPeriodStart, currentPeriodEnd, selectedPeriod);
     const previousPeriodTransactions = transactions.filter(t =>
         t.status === 'Recebido' && isWithinInterval(t.date, { start: prevPeriodStart, end: prevPeriodEnd })
@@ -435,12 +442,10 @@ export default function FinanceiroPage() {
     if (previousPeriodRevenue > 0) {
       comparisonPercentage = ((totalRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100;
     } else if (totalRevenue > 0) {
-      comparisonPercentage = 100; // Infinite increase if previous was 0 and current is > 0
+      comparisonPercentage = 100;
     } else if (previousPeriodRevenue === 0 && totalRevenue === 0) {
-      comparisonPercentage = 0; // No change
+      comparisonPercentage = 0;
     }
-    // If previousPeriodRevenue > 0 and totalRevenue is 0, comparisonPercentage will be -100, which is correct.
-
     return {
       totalRevenue,
       paidAppointments,
@@ -533,7 +538,7 @@ export default function FinanceiroPage() {
 
   const handleSubmitTransaction = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!currentUser) {
+    if (!currentUser || !currentUserData) {
       toast({ title: 'Erro', description: 'Usuário não autenticado.', variant: 'destructive' });
       return;
     }
@@ -545,9 +550,9 @@ export default function FinanceiroPage() {
     const transactionDate = parseISO(transactionForm.date as string);
     const selectedPatient = firebasePatients.find(p => p.id === transactionForm.patientId);
 
-    const transactionDataToSave = {
+    const transactionDataToSave: Partial<FinancialTransaction> = {
       ownerId: currentUser.uid,
-      date: Timestamp.fromDate(transactionDate),
+      date: Timestamp.fromDate(transactionDate) as any, // Firestore will handle conversion
       description: transactionForm.description!,
       patientId: transactionForm.patientId || null,
       patientName: selectedPatient?.name || (transactionForm.type === 'manual' ? null : transactionForm.patientName),
@@ -557,8 +562,13 @@ export default function FinanceiroPage() {
       status: transactionForm.status as TransactionStatus,
       notes: transactionForm.notes || '',
       type: transactionForm.type as TransactionType,
-      updatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp() as any,
     };
+
+    if(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa) {
+        transactionDataToSave.nomeEmpresa = currentUserData.nomeEmpresa;
+    }
+
 
     try {
       if (editingTransaction) {
@@ -576,7 +586,7 @@ export default function FinanceiroPage() {
       setIsAddTransactionDialogOpen(false);
       setEditingTransaction(null);
       setTransactionForm({ description: '', amount: 0, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: '' });
-      await fetchFinancialTransactions(currentUser); 
+      await fetchFinancialTransactions(currentUser, currentUserData); 
     } catch (error) {
         console.error("Erro ao salvar lançamento:", error);
         toast({ title: "Erro ao Salvar", description: "Não foi possível salvar o lançamento.", variant: "destructive"});
@@ -604,7 +614,7 @@ export default function FinanceiroPage() {
     try {
         await deleteDoc(doc(db, 'financialTransactions', transactionToDelete.id));
         toast({ title: 'Lançamento Excluído', description: `O lançamento "${transactionToDelete.description}" foi removido.`, variant: 'destructive' });
-        await fetchFinancialTransactions(currentUser); 
+        await fetchFinancialTransactions(currentUser, currentUserData); 
     } catch (error) {
         console.error("Erro ao excluir lançamento:", error);
         toast({ title: "Erro ao Excluir", description: "Não foi possível remover o lançamento.", variant: "destructive"});
@@ -626,7 +636,7 @@ export default function FinanceiroPage() {
         updatedAt: serverTimestamp(),
       });
       toast({ title: 'Status Atualizado!', description: `Status do lançamento alterado para ${newStatus}.`, variant: 'success'});
-      await fetchFinancialTransactions(currentUser);
+      await fetchFinancialTransactions(currentUser, currentUserData);
     } catch (error) {
       console.error("Erro ao atualizar status do lançamento:", error);
       toast({ title: "Erro ao Atualizar Status", description: "Não foi possível atualizar o status do lançamento.", variant: "destructive"});
@@ -683,7 +693,7 @@ export default function FinanceiroPage() {
   };
 
 
-  if (!clientNow || isLoadingTransactions || !currentUser || currentUserPlan === null) { // Add currentUserPlan check
+  if (!clientNow || isLoadingTransactions || !currentUser || !currentUserData) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <p className="text-xl text-muted-foreground">Carregando dados financeiros...</p>
@@ -696,7 +706,7 @@ export default function FinanceiroPage() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-3xl font-bold text-foreground">Controle Financeiro</h1>
-        {currentUserPlan !== 'Gratuito' && (
+        {currentUserData?.plano !== 'Gratuito' && (
           <Dialog open={isAddTransactionDialogOpen} onOpenChange={(isOpen) => {
             setIsAddTransactionDialogOpen(isOpen);
             if (!isOpen) {
@@ -807,7 +817,7 @@ export default function FinanceiroPage() {
         )}
       </div>
 
-      {currentUserPlan !== 'Gratuito' ? (
+      {currentUserData?.plano !== 'Gratuito' ? (
         <>
           <Card className="shadow-md">
             <CardHeader>
@@ -939,7 +949,7 @@ export default function FinanceiroPage() {
             </CardContent>
           </Card>
 
-          {currentUserPlan !== 'Essencial' && (
+          {currentUserData?.plano !== 'Essencial' && (
             <Card className="shadow-md">
                 <CardHeader>
                 <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" />Contas a Receber por Paciente</CardTitle>

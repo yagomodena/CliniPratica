@@ -98,7 +98,7 @@ export default function RelatoriosPage() {
 
   const [clinicUnits, setClinicUnits] = useState<UnitForFilter[]>([
     { id: 'all', name: 'Todas as Unidades' },
-    { id: 'unit1', name: 'Unidade Principal (Exemplo)' }
+    // { id: 'unit1', name: 'Unidade Principal (Exemplo)' } // Example, real units would need to be fetched/managed
   ]);
   const [selectedUnitId, setSelectedUnitId] = useState<string>('all');
 
@@ -112,16 +112,17 @@ export default function RelatoriosPage() {
         const userDocRef = doc(db, 'usuarios', user.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
-          const uData = userDocSnap.data();
+          const uData = { ...userDocSnap.data(), uid: user.uid }; // Ensure UID is part of currentUserData
           setCurrentUserData(uData);
-          if (uData?.plano === 'Clínica') {
+          if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
             fetchClinicProfessionals(uData.nomeEmpresa);
           }
         } else {
-          setCurrentUserData({ plano: "Gratuito" });
+          setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
         }
       } else {
         setCurrentUserData(null);
+        setClinicProfessionals([{ id: 'all', nomeCompleto: 'Todos os Profissionais' }]);
       }
     });
     return () => unsubscribe();
@@ -135,12 +136,13 @@ export default function RelatoriosPage() {
     setIsLoadingProfessionals(true);
     try {
       const usersRef = collection(db, 'usuarios');
+      // Fetch users that belong to the same company
       const q = query(usersRef, where('nomeEmpresa', '==', adminCompanyName), orderBy('nomeCompleto'));
       const usersSnapshot = await getDocs(q);
       
       const professionals: UserForFilter[] = [{ id: 'all', nomeCompleto: 'Todos os Profissionais' }];
-      usersSnapshot.forEach(doc => {
-        professionals.push({ id: doc.id, nomeCompleto: doc.data().nomeCompleto as string });
+      usersSnapshot.forEach(docSnap => {
+        professionals.push({ id: docSnap.id, nomeCompleto: docSnap.data().nomeCompleto as string });
       });
       setClinicProfessionals(professionals);
     } catch (error) {
@@ -151,17 +153,23 @@ export default function RelatoriosPage() {
     }
   };
   
-  const getTargetUid = useCallback(() => {
-    if (currentUserData?.plano === 'Clínica' && selectedProfessionalId !== 'all') {
-      return selectedProfessionalId;
+
+  const getQueryFilters = useCallback(() => {
+    if (currentUserData?.plano === 'Clínica' && currentUserData.nomeEmpresa) {
+      if (selectedProfessionalId && selectedProfessionalId !== 'all') {
+        return { filterField: 'uid', filterValue: selectedProfessionalId };
+      }
+      return { filterField: 'nomeEmpresa', filterValue: currentUserData.nomeEmpresa };
+    } else if (currentUser?.uid) {
+      return { filterField: 'uid', filterValue: currentUser.uid };
     }
-    return currentUser?.uid;
-  }, [currentUser?.uid, currentUserData?.plano, selectedProfessionalId]);
+    return null;
+  }, [currentUser, currentUserData, selectedProfessionalId]);
 
 
   const fetchMonthlyAppointmentsCounts = useCallback(async (currentDate: Date) => {
-    const targetUid = getTargetUid();
-    if (!targetUid || !currentDate) {
+    const filters = getQueryFilters();
+     if (!filters || !currentDate) {
         setIsLoadingMonthlyAppointments(false);
         const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(currentDate || new Date(), 5 - i);
@@ -184,7 +192,7 @@ export default function RelatoriosPage() {
       const apptsRef = collection(db, 'agendamentos');
       const q = query(
         apptsRef,
-        where('uid', '==', targetUid),
+        where(filters.filterField, '==', filters.filterValue),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd')),
         where('date', '<=', format(endOfDay(currentDate), 'yyyy-MM-dd')), 
         where('status', '!=', 'cancelado') 
@@ -215,11 +223,11 @@ export default function RelatoriosPage() {
     } finally {
       setIsLoadingMonthlyAppointments(false);
     }
-  }, [getTargetUid]);
+  }, [getQueryFilters]);
 
   const fetchCancelledAppointmentsCounts = useCallback(async (currentDate: Date) => {
-    const targetUid = getTargetUid();
-    if (!targetUid || !currentDate) {
+    const filters = getQueryFilters();
+    if (!filters || !currentDate) {
         setIsLoadingCancelledAppointments(false);
         const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(currentDate || new Date(), 5 - i);
@@ -241,7 +249,7 @@ export default function RelatoriosPage() {
       const apptsRef = collection(db, 'agendamentos');
       const q = query(
         apptsRef,
-        where('uid', '==', targetUid),
+        where(filters.filterField, '==', filters.filterValue),
         where('status', '==', 'cancelado'),
         where('date', '>=', format(sixMonthsAgo, 'yyyy-MM-dd')),
         where('date', '<=', format(endOfDay(currentDate), 'yyyy-MM-dd'))
@@ -272,11 +280,11 @@ export default function RelatoriosPage() {
     } finally {
       setIsLoadingCancelledAppointments(false);
     }
-  }, [getTargetUid]);
+  }, [getQueryFilters]);
 
   const fetchNewPatientsPerMonth = useCallback(async (currentDate: Date) => {
-    const targetUid = getTargetUid();
-    if (!targetUid || !currentDate) {
+    const filters = getQueryFilters();
+     if (!filters || !currentDate) {
         setIsLoadingNewPatients(false);
         const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(currentDate || new Date(), 5 - i);
@@ -300,7 +308,7 @@ export default function RelatoriosPage() {
       const patientsRef = collection(db, 'pacientes');
       const q = query(
         patientsRef,
-        where('uid', '==', targetUid),
+        where(filters.filterField, '==', filters.filterValue),
         where('createdAt', '>=', sixMonthsAgoTimestamp),
         where('createdAt', '<=', currentEndTimestamp)
       );
@@ -325,11 +333,11 @@ export default function RelatoriosPage() {
     } finally {
       setIsLoadingNewPatients(false);
     }
-  }, [getTargetUid]);
+  }, [getQueryFilters]);
 
   const fetchActiveInactivePatientCounts = useCallback(async () => {
-    const targetUid = getTargetUid();
-    if (!targetUid) {
+    const filters = getQueryFilters();
+     if (!filters) {
         setIsLoadingActiveInactiveData(false);
         setActiveInactivePatientData([{ name: 'Ativos', count: 0 }, { name: 'Inativos', count: 0 }]);
         return;
@@ -337,8 +345,9 @@ export default function RelatoriosPage() {
     setIsLoadingActiveInactiveData(true);
     try {
       const patientsRef = collection(db, 'pacientes');
-      const activeQuery = query(patientsRef, where('uid', '==', targetUid), where('status', '==', 'Ativo'));
-      const inactiveQuery = query(patientsRef, where('uid', '==', targetUid), where('status', '==', 'Inativo'));
+      const activeQuery = query(patientsRef, where(filters.filterField, '==', filters.filterValue), where('status', '==', 'Ativo'));
+      const inactiveQuery = query(patientsRef, where(filters.filterField, '==', filters.filterValue), where('status', '==', 'Inativo'));
+      
       const activeSnapshot = await getCountFromServer(activeQuery);
       const inactiveSnapshot = await getCountFromServer(inactiveQuery);
       const activeCount = activeSnapshot.data().count;
@@ -353,11 +362,11 @@ export default function RelatoriosPage() {
     } finally {
       setIsLoadingActiveInactiveData(false);
     }
-  }, [getTargetUid]);
+  }, [getQueryFilters]);
 
   const fetchPatientReturnRateData = useCallback(async (currentDate: Date) => {
-    const targetUid = getTargetUid();
-     if (!targetUid || !currentDate) {
+    const filters = getQueryFilters();
+     if (!filters || !currentDate) {
         setIsLoadingPatientReturnRate(false);
         const defaultRates = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(currentDate || new Date(), 5 - i);
@@ -375,7 +384,7 @@ export default function RelatoriosPage() {
         const apptsRef = collection(db, 'agendamentos');
         const q = query(
             apptsRef,
-            where('uid', '==', targetUid),
+            where(filters.filterField, '==', filters.filterValue),
             where('status', '!=', 'cancelado'),
             where('date', '>=', format(lookbackStartDate, 'yyyy-MM-dd')),
             where('date', '<=', format(appointmentsQueryRangeEnd, 'yyyy-MM-dd'))
@@ -437,17 +446,17 @@ export default function RelatoriosPage() {
 
     setPatientReturnRateData(monthlyReturnRates);
     setIsLoadingPatientReturnRate(false);
-  }, [getTargetUid]);
+  }, [getQueryFilters]);
 
 
   useEffect(() => {
-    if (currentUser && clientNow) {
+    if (currentUserData && clientNow) { // Changed from currentUser to currentUserData
       fetchMonthlyAppointmentsCounts(clientNow);
       fetchNewPatientsPerMonth(clientNow);
       fetchActiveInactivePatientCounts();
       fetchCancelledAppointmentsCounts(clientNow);
       fetchPatientReturnRateData(clientNow);
-    } else if (!currentUser && clientNow) {
+    } else if (!currentUserData && clientNow) { // Check for !currentUserData
         const defaultMonths = Array.from({ length: 6 }).map((_, i) => {
             const targetMonthDate = subMonths(clientNow, 5 - i);
             return { month: `${format(targetMonthDate, "MMM", { locale: ptBR })}/${String(getYear(targetMonthDate)).slice(-2)}`, total: 0 };
@@ -469,9 +478,9 @@ export default function RelatoriosPage() {
         setIsLoadingPatientReturnRate(false);
     }
   }, [
-      currentUser, 
+      currentUserData, // Changed from currentUser
       clientNow, 
-      getTargetUid,
+      selectedProfessionalId, // Added dependency for re-fetching on filter change
       fetchMonthlyAppointmentsCounts, 
       fetchNewPatientsPerMonth, 
       fetchActiveInactivePatientCounts, 
@@ -677,7 +686,3 @@ export default function RelatoriosPage() {
   );
 }
 
-
-    
-
-    
