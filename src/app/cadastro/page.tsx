@@ -5,7 +5,7 @@ import { useEffect, Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
+import { useFormStatus, Controller } from 'react-dom'; // Added Controller
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Eye, EyeOff } from 'lucide-react';
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Added Select components
 import { useToast } from '@/hooks/use-toast';
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
 import { submitRegistrationForm, type FormState as RegistrationFormState } from '@/actions/register';
@@ -37,6 +38,17 @@ const initialState: RegistrationFormState = {
   fields: {},
   issues: []
 };
+
+const areasDeAtuacao = [
+  "Psicologia",
+  "Nutrição",
+  "Fisioterapia",
+  "Odontologia",
+  "Fonoaudiologia",
+  "Estética e Terapias",
+  "Terapia Ocupacional",
+  "Outro"
+];
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -68,7 +80,7 @@ function CadastroForm() {
       companyName: '',
       password: '',
       confirmPassword: '',
-      area: '',
+      area: '', // Default to empty, placeholder will show
       plan: planFromQuery,
     },
   });
@@ -175,7 +187,7 @@ function CadastroForm() {
             {form.formState.errors.phone && <p className="text-sm text-destructive mt-1">{form.formState.errors.phone.message}</p>}
           </div>
           <div>
-            <Label htmlFor="companyName">Nome da Empresa (Opcional)</Label>
+            <Label htmlFor="companyName">Nome da Empresa {planFromQuery === 'Clínica' ? '*' : '(Opcional)'}</Label>
             <Input id="companyName" placeholder="Nome da sua clínica ou consultório" {...form.register('companyName')} />
             {form.formState.errors.companyName && <p className="text-sm text-destructive mt-1">{form.formState.errors.companyName.message}</p>}
           </div>
@@ -231,7 +243,24 @@ function CadastroForm() {
 
           <div>
             <Label htmlFor="area">Área de Atuação*</Label>
-            <Input id="area" placeholder="Ex: Psicologia, Nutrição, Fisioterapia" {...form.register('area')} />
+            <Controller
+                name="area"
+                control={form.control}
+                render={({ field }) => (
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <SelectTrigger id="area">
+                            <SelectValue placeholder="Selecione sua área de atuação" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {areasDeAtuacao.map((areaOption) => (
+                                <SelectItem key={areaOption} value={areaOption}>
+                                    {areaOption}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+            />
              {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
           </div>
           <SubmitButton />
