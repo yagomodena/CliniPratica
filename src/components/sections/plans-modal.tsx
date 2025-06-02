@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { Check, AlertTriangle, Loader2, ExternalLink } from 'lucide-react';
 import { plans, type Plan } from '@/lib/plans-data';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -18,29 +18,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { loadStripe } from '@stripe/stripe-js';
-import { auth, db } from '@/firebase'; // Import auth and db for Firestore updates
-import { doc, updateDoc } from 'firebase/firestore'; // Import Firestore functions
+import { auth, db } from '@/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
 
 
 interface PlansModalProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   currentPlanName: string;
-  onSelectPlan: (planName: string, stripePriceId: string | null) => void; // Updated to pass stripePriceId
-  currentUser: FirebaseUser | null; // Pass current Firebase user
+  onSelectPlan: (planName: string, mercadoPagoPlanId: string | null) => void;
+  currentUser: FirebaseUser | null;
   currentUserName?: string;
 }
 
-// Ensure Stripe public key is defined
-const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY
-  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY)
-  : null;
-
-
 export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan, currentUser, currentUserName }: PlansModalProps) {
   const { toast } = useToast();
+  const router = useRouter();
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [selectedPlanForConfirmation, setSelectedPlanForConfirmation] = useState<Plan | null>(null);
   const [isDowngrade, setIsDowngrade] = useState(false);
@@ -57,94 +52,67 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
     }
 
     if (plan.name === 'Gratuito') {
-        // Logic for downgrading to Gratuito
         const currentPlanDetails = plans.find(p => p.name === currentPlanName);
-        if (currentPlanDetails && currentPlanDetails.stripePriceId) { // Check if current plan is paid
+        if (currentPlanDetails && currentPlanDetails.mercadoPagoPreapprovalPlanId) { // Check if current plan is paid
             setIsDowngrade(true);
             setSelectedPlanForConfirmation(plan);
             setIsConfirmDialogOpen(true);
-        } else { // If current is already Gratuito or somehow not a Stripe plan
-            onSelectPlan(plan.name, null); // Update locally
-            onOpenChange(false); // Close modal
+        } else {
+            onSelectPlan(plan.name, null);
+            onOpenChange(false);
         }
         return;
     }
 
-
-    if (!plan.stripePriceId) {
-        toast({ title: "Erro", description: "ID de preço do Stripe não configurado para este plano.", variant: "destructive" });
+    if (!plan.mercadoPagoPreapprovalPlanId) {
+        toast({ title: "Erro", description: "ID do plano de pré-aprovação do Mercado Pago não configurado.", variant: "destructive" });
         return;
     }
 
     if (!currentUser || !currentUser.email) {
-      toast({ title: "Erro", description: "Usuário não autenticado ou e-mail não encontrado.", variant: "destructive" });
-      return;
-    }
-     if (!stripePromise) {
-      toast({ title: "Erro de Configuração", description: "Chave pública do Stripe não configurada.", variant: "destructive" });
+      toast({ title: "Ação Necessária", description: "Por favor, faça login ou crie uma conta para selecionar um plano pago.", variant: "destructive" });
+      // Optionally redirect to login/signup
+      // router.push(`/cadastro?plano=${encodeURIComponent(plan.name)}&redirect=/configuracoes?tab=plano`);
+      onOpenChange(false);
       return;
     }
 
     setIsProcessingCheckout(true);
-    try {
-      const response = await fetch('/api/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          priceId: plan.stripePriceId,
-          userId: currentUser.uid,
-          userEmail: currentUser.email,
-          userName: currentUserName || currentUser.displayName || currentUser.email,
-        }),
-      });
-
-      const { sessionId, error } = await response.json();
-
-      if (error) {
-        throw new Error(error);
-      }
-
-      if (sessionId) {
-        const stripe = await stripePromise;
-        if (stripe) {
-          const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
-          if (stripeError) {
-            console.error("Stripe redirect error:", stripeError);
-            toast({ title: "Erro no Checkout", description: stripeError.message || "Não foi possível redirecionar para o pagamento.", variant: "destructive" });
-          }
-        } else {
-             toast({ title: "Erro", description: "Stripe.js não carregou.", variant: "destructive" });
-        }
-      }
-    } catch (err: any) {
-      console.error("Failed to create checkout session:", err);
-      toast({ title: "Erro ao Iniciar Pagamento", description: err.message || "Tente novamente mais tarde.", variant: "destructive" });
-    } finally {
-      setIsProcessingCheckout(false);
+    // For Mercado Pago preapproval plans, we redirect directly to the checkout URL.
+    // We can append `external_reference` for tracking if needed and supported by MP in this context.
+    // Example: `&external_reference=${currentUser.uid}` (ensure URL encoding)
+    // Also `payer_email` can sometimes be prefilled: `&payer_email=${encodeURIComponent(currentUser.email)}`
+    // The user's actual subscription will be linked via webhooks based on payer_email or external_reference.
+    let checkoutUrl = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${plan.mercadoPagoPreapprovalPlanId}`;
+    checkoutUrl += `&external_reference=${encodeURIComponent(currentUser.uid)}`;
+    if (currentUser.email) {
+        checkoutUrl += `&payer_email=${encodeURIComponent(currentUser.email)}`;
     }
+
+    window.location.href = checkoutUrl;
+    // No need to set isProcessingCheckout back to false here as the page will redirect.
+    // If the redirect fails or is blocked, the user remains on the page, and isProcessingCheckout should be reset
+    // or a more robust error handling for redirect failure should be implemented.
+    // For now, assume redirect will happen. If it's an SPA-like behavior without full redirect, reset would be needed.
   };
 
    const handleConfirmPlanChange = async () => {
     if (!selectedPlanForConfirmation || !currentUser) return;
 
     if (selectedPlanForConfirmation.name === 'Gratuito') {
-        // User is downgrading to Gratuito.
-        // Update Firestore directly. Stripe webhook will handle actual subscription cancellation if user does it via Stripe portal.
         try {
             const userDocRef = doc(db, 'usuarios', currentUser.uid);
             await updateDoc(userDocRef, {
                 plano: 'Gratuito',
-                // Optionally clear Stripe fields, or let webhook handle it.
-                // stripeSubscriptionId: null,
-                // stripePriceId: null,
-                // stripeSubscriptionStatus: 'canceled_locally',
+                mercadoPagoSubscriptionId: null,
+                mercadoPagoPreapprovalPlanId: null,
+                mercadoPagoSubscriptionStatus: 'cancelled_locally', // Indicates user action
+                mercadoPagoNextPaymentDate: null,
             });
-            onSelectPlan('Gratuito', null); // Update parent state
+            onSelectPlan('Gratuito', null);
             toast({
                 title: "Plano Alterado para Gratuito",
-                description: `Seu plano foi alterado para Gratuito. Se você tinha uma assinatura ativa, gerencie-a no portal do cliente Stripe.`,
+                description: `Seu plano foi alterado para Gratuito. Se você tinha uma assinatura ativa, gerencie-a na sua conta Mercado Pago.`,
                 variant: "success",
             });
         } catch (error) {
@@ -152,11 +120,9 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
             toast({ title: "Erro", description: "Não foi possível atualizar seu plano para Gratuito.", variant: "destructive" });
         }
     }
-    // For upgrades/changes between paid plans, Stripe checkout handles it.
-
     setIsConfirmDialogOpen(false);
     setSelectedPlanForConfirmation(null);
-    onOpenChange(false); // Close the main plans modal as well
+    onOpenChange(false);
   };
 
   const handleCancelConfirmation = () => {
@@ -244,11 +210,11 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                         <>
                         Você está mudando do plano <strong>{currentPlanName}</strong> para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
                         <br /><br />
-                        <strong className="text-destructive-foreground">Atenção:</strong> Ao fazer o downgrade para o plano Gratuito, você perderá acesso a funcionalidades pagas ao final do seu ciclo de cobrança atual. Sua assinatura com a Stripe não será cancelada automaticamente por esta ação; você precisará gerenciá-la através do portal do cliente Stripe ou ela será cancelada caso o pagamento falhe.
+                        <strong className="text-destructive-foreground">Atenção:</strong> Ao fazer o downgrade para o plano Gratuito, você perderá acesso a funcionalidades pagas. Sua assinatura com o Mercado Pago <strong className="text-destructive-foreground">não</strong> será cancelada automaticamente por esta ação; você precisará gerenciá-la diretamente na sua conta do Mercado Pago.
                         <br />
                         Tem certeza que deseja continuar e atualizar seu plano em nosso sistema para Gratuito?
                         </>
-                    ) : ( // This case should not be reached if selection is not 'Gratuito' and we go to Stripe
+                    ) : (
                         <>
                         Você está mudando para o plano <strong>{selectedPlanForConfirmation?.name}</strong>.
                         Tem certeza que deseja continuar?
@@ -258,7 +224,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                </AlertDialogHeader>
                <AlertDialogFooter>
                  <AlertDialogCancel onClick={handleCancelConfirmation}>Cancelar</AlertDialogCancel>
-                 <AlertDialogAction onClick={handleConfirmPlanChange}>
+                 <AlertDialogAction onClick={handleConfirmPlanChange} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
                    Confirmar e Ir para Gratuito
                  </AlertDialogAction>
                </AlertDialogFooter>

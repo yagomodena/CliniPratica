@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CreditCard, User, Newspaper, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye, EyeOff, ListChecks, Loader2 } from "lucide-react";
+import { Check, CreditCard, User, Newspaper, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye, EyeOff, ListChecks, Loader2, ExternalLink } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
 import {
@@ -20,7 +20,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -33,16 +32,16 @@ import {
   DialogClose
 } from "@/components/ui/dialog";
 import { UserForm, type UserFormData, type User, menuItemsConfig } from '@/components/forms/user-form';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { auth, db, firebaseConfig } from '@/firebase';
 import { User as FirebaseUser, updateProfile as updateAuthProfile, EmailAuthProvider, reauthenticateWithCredential, updatePassword, onAuthStateChanged } from 'firebase/auth';
-import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc, query, where, getDocs, orderBy, Timestamp } from "firebase/firestore";
 
 import { initializeApp as initializeSecondaryApp, deleteApp as deleteSecondaryApp } from "firebase/app";
-import { 
-  getAuth as getAuthForSecondaryInstance, 
+import {
+  getAuth as getAuthForSecondaryInstance,
   createUserWithEmailAndPassword as createUserInSecondaryInstance,
   updateProfile
 } from "firebase/auth";
@@ -86,13 +85,14 @@ export default function ConfiguracoesPage() {
     plano: '',
     fotoPerfilUrl: '',
     nomeEmpresa: '',
-    stripeCustomerId: '', // Added Stripe fields
-    stripeSubscriptionId: '',
-    stripeSubscriptionStatus: '',
+    mercadoPagoSubscriptionId: '',
+    mercadoPagoSubscriptionStatus: '',
+    mercadoPagoPreapprovalPlanId: '',
+    mercadoPagoNextPaymentDate: null as Timestamp | null,
   });
 
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null); 
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
@@ -120,8 +120,8 @@ export default function ConfiguracoesPage() {
       setCurrentUser(userAuth);
       const userDocRef = doc(db, 'usuarios', userAuth.uid);
       const userDocSnap = await getDoc(userDocRef);
-      
-      let data: any = {}; 
+
+      let data: any = {};
       if (userDocSnap.exists()) {
         data = userDocSnap.data();
         setCurrentUserData({ ...data, uid: userAuth.uid });
@@ -137,14 +137,18 @@ export default function ConfiguracoesPage() {
         plano: data.plano || 'Gratuito',
         fotoPerfilUrl: userAuth.photoURL || data.fotoPerfilUrl || '',
         nomeEmpresa: data.nomeEmpresa || '',
-        stripeCustomerId: data.stripeCustomerId || '',
-        stripeSubscriptionId: data.stripeSubscriptionId || '',
-        stripeSubscriptionStatus: data.stripeSubscriptionStatus || '',
+        mercadoPagoSubscriptionId: data.mercadoPagoSubscriptionId || '',
+        mercadoPagoSubscriptionStatus: data.mercadoPagoSubscriptionStatus || '',
+        mercadoPagoPreapprovalPlanId: data.mercadoPagoPreapprovalPlanId || '',
+        mercadoPagoNextPaymentDate: data.mercadoPagoNextPaymentDate || null,
       });
     } else {
         setCurrentUser(null);
         setCurrentUserData(null);
-        setProfile({ nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '', nomeEmpresa: '', stripeCustomerId: '', stripeSubscriptionId: '', stripeSubscriptionStatus: '' });
+        setProfile({
+            nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '', nomeEmpresa: '',
+            mercadoPagoSubscriptionId: '', mercadoPagoSubscriptionStatus: '', mercadoPagoPreapprovalPlanId: '', mercadoPagoNextPaymentDate: null,
+        });
         setUsers([]);
     }
   }, []);
@@ -180,7 +184,7 @@ export default function ConfiguracoesPage() {
           criadoEm: data.criadoEm?.toDate()?.toISOString() || new Date().toISOString(),
           fotoPerfilUrl: data.fotoPerfilUrl || '',
           nomeEmpresa: data.nomeEmpresa || '',
-          plano: data.plano || '', 
+          plano: data.plano || '',
           telefone: data.telefone || '',
         });
       });
@@ -213,7 +217,7 @@ export default function ConfiguracoesPage() {
       return;
     }
     try {
-      await updateAuthProfile(currentUser, { 
+      await updateAuthProfile(currentUser, {
         displayName: profile.nomeCompleto,
         photoURL: profile.fotoPerfilUrl,
       });
@@ -224,13 +228,13 @@ export default function ConfiguracoesPage() {
         telefone: profile.telefone,
         areaAtuacao: profile.areaAtuacao,
         fotoPerfilUrl: profile.fotoPerfilUrl,
-        nomeEmpresa: profile.nomeEmpresa, 
+        nomeEmpresa: profile.nomeEmpresa,
       };
-      
-      Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
-      await updateDoc(userDocRef, dataToUpdate ); 
 
-      setCurrentUserData((prev: any) => ({...prev, ...dataToUpdate})); 
+      Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
+      await updateDoc(userDocRef, dataToUpdate );
+
+      setCurrentUserData((prev: any) => ({...prev, ...dataToUpdate}));
 
       toast({ title: "Sucesso!", description: "Seu perfil foi atualizado.", variant: "success"});
     } catch (error) {
@@ -279,7 +283,7 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  const handleSelectPlan = async (newPlanName: string, stripePriceId: string | null) => {
+  const handleSelectPlan = (newPlanName: string, mercadoPagoPlanId: string | null) => {
     if (!currentUser || !currentUser.email) {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
@@ -287,30 +291,42 @@ export default function ConfiguracoesPage() {
 
     if (newPlanName === 'Gratuito') {
       try {
-        // Logic for downgrading to Gratuito
         const userDocRef = doc(db, "usuarios", currentUser.uid);
-        await updateDoc(userDocRef, {
+        updateDoc(userDocRef, {
           plano: "Gratuito",
-          // It's better to let webhooks handle Stripe field clearing for consistency,
-          // but if immediate local reflection is desired, you might clear some here.
-          // stripeSubscriptionStatus: 'canceled_locally' // Example of a local status
+          mercadoPagoSubscriptionId: null,
+          mercadoPagoPreapprovalPlanId: null,
+          mercadoPagoSubscriptionStatus: 'cancelled_locally',
+          mercadoPagoNextPaymentDate: null,
         });
-        setProfile(prev => ({ ...prev, plano: "Gratuito", stripeSubscriptionStatus: 'canceled_locally' }));
-        setCurrentUserData((prev: any) => ({ ...prev, plano: "Gratuito", stripeSubscriptionStatus: 'canceled_locally' }));
-        toast({ title: "Plano Alterado!", description: `Seu plano foi alterado para Gratuito. Sua assinatura paga será cancelada ao final do período de cobrança atual ou conforme gerenciado no portal Stripe.`, variant: "success" });
+        setProfile(prev => ({ ...prev, plano: "Gratuito", mercadoPagoSubscriptionStatus: 'cancelled_locally', mercadoPagoSubscriptionId: '', mercadoPagoPreapprovalPlanId: '', mercadoPagoNextPaymentDate: null }));
+        setCurrentUserData((prev: any) => ({ ...prev, plano: "Gratuito", mercadoPagoSubscriptionStatus: 'cancelled_locally', mercadoPagoSubscriptionId: null, mercadoPagoPreapprovalPlanId: null, mercadoPagoNextPaymentDate: null }));
+        toast({ title: "Plano Alterado!", description: `Seu plano foi alterado para Gratuito. Se você tinha uma assinatura ativa, gerencie-a no Mercado Pago.`, variant: "success" });
       } catch (error) {
         console.error("Erro ao atualizar plano para Gratuito no Firestore:", error);
         toast({ title: "Erro", description: "Não foi possível atualizar o plano para Gratuito.", variant: "destructive" });
       }
-    } else if (stripePriceId) {
-      // For paid plans, initiate Stripe Checkout (handled by PlansModal now)
-      // This function within configuracoes/page.tsx will be called by PlansModal's onSelectPlan
-      // The actual checkout redirection is handled in PlansModal. Here we primarily update local state if needed
-      // or confirm the process has started.
-      console.log(`Stripe checkout should be initiated by PlansModal for price ID: ${stripePriceId}`);
-      // Local state update will happen via webhook or upon successful redirection from Stripe.
+    } else if (mercadoPagoPlanId) {
+      // Redirect to Mercado Pago preapproval URL
+      const planDetails = allPlansData.find(p => p.mercadoPagoPreapprovalPlanId === mercadoPagoPlanId);
+      if (planDetails?.mercadoPagoPreapprovalPlanId) {
+         // For Mercado Pago, we redirect to their preapproval URL.
+         // We might append user info or an external_reference to the URL if MP supports it for pre-filling or tracking.
+         // Example: `&external_reference=${currentUser.uid}`
+         // For now, just the direct link.
+         // The actual subscription linking will happen via webhook.
+         let mpLink = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${mercadoPagoPlanId}`;
+         // Optionally pass payer email if supported and desired
+         // mpLink += `&payer_email=${encodeURIComponent(currentUser.email)}`;
+         // Optionally pass external_reference if supported and desired
+         // mpLink += `&external_reference=${encodeURIComponent(currentUser.uid)}`;
+         
+         window.location.href = mpLink;
+      } else {
+        toast({ title: "Erro", description: "Link de assinatura do Mercado Pago não encontrado.", variant: "destructive" });
+      }
     }
-    setIsPlansModalOpen(false); // Close the modal after selection or initiation
+    setIsPlansModalOpen(false);
   };
 
 
@@ -319,28 +335,25 @@ export default function ConfiguracoesPage() {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive"});
       setIsCancelConfirmOpen(false); return;
     }
-    // This function now primarily updates the local state to "Gratuito"
-    // and informs the user to manage their subscription via Stripe.
-    // A more advanced implementation would call a backend API to cancel the Stripe subscription.
     try {
       const userDocRef = doc(db, "usuarios", currentUser.uid);
       await updateDoc(userDocRef, {
         plano: "Gratuito",
-        stripeSubscriptionStatus: 'canceled_by_user', // A local indicator
-        // Consider if you want to clear stripeSubscriptionId here or let webhook do it.
-        // For now, let webhook be the source of truth for Stripe data.
+        mercadoPagoSubscriptionStatus: 'cancelled_by_user',
+        // Note: Actual cancellation happens in Mercado Pago or via their webhook if user cancels there.
+        // We don't clear mercadoPagoSubscriptionId here, webhook for 'cancelled' status should handle that if needed.
       });
-      setProfile(prev => ({ ...prev, plano: 'Gratuito', stripeSubscriptionStatus: 'canceled_by_user' }));
-      setCurrentUserData((prev:any) => ({...prev, plano: 'Gratuito', stripeSubscriptionStatus: 'canceled_by_user'}));
+      setProfile(prev => ({ ...prev, plano: 'Gratuito', mercadoPagoSubscriptionStatus: 'cancelled_by_user' }));
+      setCurrentUserData((prev:any) => ({...prev, plano: 'Gratuito', mercadoPagoSubscriptionStatus: 'cancelled_by_user'}));
       setIsCancelConfirmOpen(false);
       toast({
         title: "Assinatura Marcada para Cancelamento",
-        description: "Seu plano foi alterado para Gratuito em nosso sistema. Por favor, gerencie sua assinatura diretamente no portal do cliente Stripe para efetivar o cancelamento com a operadora de pagamento ou aguarde o final do período de cobrança.",
+        description: "Seu plano foi alterado para Gratuito em nosso sistema. Por favor, gerencie sua assinatura diretamente no Mercado Pago para efetivar o cancelamento com a operadora de pagamento ou aguarde o final do período de cobrança.",
         variant: "default",
-        duration: 7000, // Longer duration for important info
+        duration: 9000,
       });
     } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível atualizar seu plano localmente. Verifique sua assinatura no portal Stripe.", variant: "destructive"});
+      toast({ title: "Erro", description: "Não foi possível atualizar seu plano localmente. Verifique sua assinatura no Mercado Pago.", variant: "destructive"});
     }
   };
 
@@ -382,7 +395,7 @@ export default function ConfiguracoesPage() {
         toast({ title: "Usuário Adicionado", description: `${data.email} adicionado.`, variant: "success" });
       }
       setIsUserFormOpen(false); setEditingUser(null);
-      if (currentUserData?.plano === 'Clínica') fetchClinicUsers(); 
+      if (currentUserData?.plano === 'Clínica') fetchClinicUsers();
     } catch (error: any) {
       let message = `Falha ao processar usuário: ${error.message}`;
       if (error.code === 'auth/email-already-in-use') message = 'Este e-mail já está em uso.';
@@ -419,7 +432,7 @@ export default function ConfiguracoesPage() {
         if (tabKey === 'plano') return !!currentUserData.permissoes.configuracoes_acesso_plano_assinatura;
         if (tabKey === 'usuarios') return !!currentUserData.permissoes.configuracoes_acesso_gerenciar_usuarios;
     }
-    return false; 
+    return false;
   };
 
   const handleTabChange = (value: string) => {
@@ -435,11 +448,11 @@ export default function ConfiguracoesPage() {
 
     if (allowed) {
       setActiveTab(value);
-    } else if (activeTab !== "perfil") { 
+    } else if (activeTab !== "perfil") {
       setActiveTab("perfil");
     }
   };
-  
+
   useEffect(() => {
     if (activeTab === "usuarios" && !canAccessTab('usuarios')) {
         if(currentUserData?.cargo !== 'Administrador') toast({ title: "Acesso Negado", description: "Redirecionando para Perfil.", variant: "warning" });
@@ -449,11 +462,44 @@ export default function ConfiguracoesPage() {
         if(currentUserData?.cargo !== 'Administrador') toast({ title: "Acesso Negado", description: "Redirecionando para Perfil.", variant: "warning" });
         setActiveTab("perfil");
     }
-  }, [activeTab, currentUserData]); 
+  }, [activeTab, currentUserData]);
 
   const handleOpenUserForm = (user?: User) => { setEditingUser(user || null); setIsUserFormOpen(true); };
 
-  if (!currentUserData) { 
+  const getMercadoPagoSubscriptionStatusText = (status: string | undefined) => {
+    if (!status) return 'Não disponível';
+    switch (status.toLowerCase()) {
+      case 'authorized': return 'Ativa';
+      case 'paused': return 'Pausada';
+      case 'cancelled': return 'Cancelada';
+      case 'pending_cancel': return 'Cancelamento Pendente';
+      case 'ended': return 'Finalizada';
+      case 'charged_back': return 'Chargeback';
+      case 'pending': return 'Pendente';
+      case 'payment_required': return 'Pagamento Necessário';
+      case 'cancelled_locally': return 'Cancelada (Localmente)';
+      case 'cancelled_by_user': return 'Cancelada pelo Usuário (Localmente)';
+      default: return status;
+    }
+  };
+
+  const getMercadoPagoStatusBadgeVariant = (status: string | undefined) => {
+    if (!status) return 'secondary';
+    switch (status.toLowerCase()) {
+      case 'authorized': return 'success';
+      case 'pending':
+      case 'payment_required':
+      case 'paused': return 'warning';
+      case 'cancelled':
+      case 'ended':
+      case 'charged_back':
+      case 'cancelled_locally':
+      case 'cancelled_by_user': return 'destructive';
+      default: return 'secondary';
+    }
+  };
+
+  if (!currentUserData) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -501,24 +547,14 @@ export default function ConfiguracoesPage() {
               <CardContent className="space-y-6">
                 <Card className="bg-muted/50">
                   <CardHeader className="pb-4 pt-6"><CardTitle className="text-lg">Plano Atual: {profile.plano || 'Não definido'}</CardTitle>
-                   {profile.stripeSubscriptionStatus && (
+                   {profile.mercadoPagoSubscriptionStatus && (
                       <p className="text-sm text-muted-foreground">
-                        Status da Assinatura: <Badge variant={
-                            profile.stripeSubscriptionStatus === 'active' || profile.stripeSubscriptionStatus === 'trialing' ? 'success'
-                            : profile.stripeSubscriptionStatus === 'past_due' || profile.stripeSubscriptionStatus === 'incomplete' ? 'warning'
-                            : profile.stripeSubscriptionStatus === 'canceled' || profile.stripeSubscriptionStatus === 'unpaid' || profile.stripeSubscriptionStatus === 'canceled_by_user' || profile.stripeSubscriptionStatus === 'active_until_period_end' ? 'destructive'
-                            : 'secondary'
-                        }>
-                            {profile.stripeSubscriptionStatus === 'active' ? 'Ativa'
-                            : profile.stripeSubscriptionStatus === 'trialing' ? 'Em Teste'
-                            : profile.stripeSubscriptionStatus === 'past_due' ? 'Pagamento Pendente'
-                            : profile.stripeSubscriptionStatus === 'incomplete' ? 'Incompleta'
-                            : profile.stripeSubscriptionStatus === 'canceled' ? 'Cancelada'
-                            : profile.stripeSubscriptionStatus === 'unpaid' ? 'Não Paga'
-                            : profile.stripeSubscriptionStatus === 'canceled_by_user' ? 'Cancelada (localmente)'
-                            : profile.stripeSubscriptionStatus === 'active_until_period_end' ? 'Ativa até o fim do período'
-                            : profile.stripeSubscriptionStatus}
+                        Status da Assinatura (Mercado Pago): <Badge variant={getMercadoPagoStatusBadgeVariant(profile.mercadoPagoSubscriptionStatus)}>
+                            {getMercadoPagoSubscriptionStatusText(profile.mercadoPagoSubscriptionStatus)}
                         </Badge>
+                        {profile.mercadoPagoNextPaymentDate && (profile.mercadoPagoSubscriptionStatus === 'authorized' || profile.mercadoPagoSubscriptionStatus === 'pending_cancel') &&
+                          <span className="ml-2 text-xs">(Próximo vencimento: {format(profile.mercadoPagoNextPaymentDate.toDate(), 'dd/MM/yyyy')})</span>
+                        }
                       </p>
                     )}
                   </CardHeader>
@@ -532,18 +568,18 @@ export default function ConfiguracoesPage() {
                 </Card>
                 <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-center">
                   <Button onClick={() => setIsPlansModalOpen(true)} className="w-full sm:w-auto">Ver Planos e Fazer Upgrade</Button>
-                  {profile.plano !== 'Gratuito' && profile.stripeSubscriptionId && (
+                  {profile.plano !== 'Gratuito' && profile.mercadoPagoSubscriptionId && (
                     <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
                       <AlertDialogTrigger asChild><Button variant="outline" className="w-full sm:w-auto text-destructive hover:bg-destructive/10 border-destructive/50 hover:border-destructive/80"><AlertTriangle className="mr-2 h-4 w-4" /> Cancelar Assinatura (Local)</Button></AlertDialogTrigger>
-                      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Cancelamento Local</AlertDialogTitle><AlertDialogDescription>Tem certeza que deseja alterar seu plano para "Gratuito" em nosso sistema? Isso não cancelará sua assinatura com a Stripe automaticamente. Você precisará gerenciar sua assinatura no portal do cliente Stripe.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleCancelSubscription} className="bg-destructive hover:bg-destructive/90">Confirmar e Mudar para Gratuito</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Confirmar Cancelamento Local</AlertDialogTitle><AlertDialogDescription>Tem certeza que deseja alterar seu plano para "Gratuito" em nosso sistema? Isso não cancelará sua assinatura com o Mercado Pago automaticamente. Você precisará gerenciar sua assinatura no portal do Mercado Pago.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction onClick={handleCancelSubscription} className="bg-destructive hover:bg-destructive/90">Confirmar e Mudar para Gratuito</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
                     </AlertDialog>
                   )}
-                  {profile.stripeCustomerId && (
+                   {profile.mercadoPagoSubscriptionId && (
                     <Button variant="outline" onClick={() => {
-                        // TODO: Implement Stripe Customer Portal Session creation
-                        toast({ title: "Portal do Cliente", description: "Acesso ao portal do cliente Stripe ainda não implementado.", variant: "default" });
+                        const mpSubscriptionLink = `https://www.mercadopago.com.br/subscriptions/detail/${profile.mercadoPagoSubscriptionId}`;
+                        window.open(mpSubscriptionLink, '_blank');
                     }} className="w-full sm:w-auto">
-                        Gerenciar Assinatura (Stripe)
+                        Gerenciar Assinatura (Mercado Pago) <ExternalLink className="ml-2 h-4 w-4"/>
                     </Button>
                    )}
                 </div>
@@ -607,11 +643,11 @@ export default function ConfiguracoesPage() {
         </TabsContent>
       </Tabs>
 
-      <PlansModal 
-        isOpen={isPlansModalOpen} 
-        onOpenChange={setIsPlansModalOpen} 
-        currentPlanName={profile.plano} 
-        onSelectPlan={handleSelectPlan} 
+      <PlansModal
+        isOpen={isPlansModalOpen}
+        onOpenChange={setIsPlansModalOpen}
+        currentPlanName={profile.plano}
+        onSelectPlan={handleSelectPlan}
         currentUser={currentUser}
         currentUserName={profile.nomeCompleto}
       />

@@ -4,24 +4,21 @@
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check, Loader2 } from 'lucide-react';
-import { plans as allPlansData, type Plan } from '@/lib/plans-data'; 
+import { plans as allPlansData, type Plan } from '@/lib/plans-data';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { loadStripe } from '@stripe/stripe-js';
 import { useState, useEffect } from 'react';
-import { auth, db } from '@/firebase'; // Import auth and db
+import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import { getDoc, doc } from 'firebase/firestore';
-
-const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY
-  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY)
-  : null;
 
 export function PlansSection() {
   const router = useRouter();
   const { toast } = useToast();
-  const [isProcessingCheckout, setIsProcessingCheckout] = useState<string | null>(null); // Store priceId being processed
+  const [isProcessingCheckout, setIsProcessingCheckout] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  // currentUserName is not strictly needed here if we only pass UID and Email to MP,
+  // but keeping it for consistency if MP API might use it in the future or for logs.
   const [currentUserName, setCurrentUserName] = useState<string>('');
 
 
@@ -50,69 +47,34 @@ export function PlansSection() {
       return;
     }
 
-    if (!plan.stripePriceId) {
-      toast({ title: "Erro", description: "ID de preço do Stripe não configurado para este plano.", variant: "destructive" });
+    if (!plan.mercadoPagoPreapprovalPlanId) {
+      toast({ title: "Erro", description: "ID do plano de pré-aprovação do Mercado Pago não configurado.", variant: "destructive" });
       return;
     }
 
     if (!currentUser) {
-      // If user is not logged in, redirect to cadastro with plan info.
-      // Stripe checkout needs user context, so direct checkout isn't ideal here.
-      // Let them sign up first.
       router.push(`/cadastro?plano=${encodeURIComponent(plan.name)}`);
-      toast({ title: "Primeiro, crie sua conta!", description: "Você precisa estar cadastrado para selecionar um plano pago.", variant: "default" });
-      return;
-    }
-     if (!currentUser.email) {
-      toast({ title: "Erro", description: "Email do usuário não encontrado para iniciar o pagamento.", variant: "destructive" });
+      toast({ title: "Crie sua conta primeiro!", description: `Você será redirecionado para o cadastro do plano ${plan.name}.`, variant: "default" });
       return;
     }
 
-    if (!stripePromise) {
-      toast({ title: "Erro de Configuração", description: "Chave pública do Stripe não configurada.", variant: "destructive" });
-      setIsProcessingCheckout(null);
-      return;
+    if (!currentUser.email) {
+        toast({ title: "Erro de Autenticação", description: "Email do usuário não encontrado. Por favor, tente fazer login novamente.", variant: "destructive" });
+        return;
     }
 
-    setIsProcessingCheckout(plan.stripePriceId);
-    try {
-      const response = await fetch('/api/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          priceId: plan.stripePriceId,
-          userId: currentUser.uid,
-          userEmail: currentUser.email,
-          userName: currentUserName,
-        }),
-      });
+    setIsProcessingCheckout(plan.mercadoPagoPreapprovalPlanId);
 
-      const { sessionId, error } = await response.json();
+    // Redirect to Mercado Pago preapproval URL
+    // Append external_reference (Firebase UID) and payer_email for tracking and prefill
+    let checkoutUrl = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${plan.mercadoPagoPreapprovalPlanId}`;
+    checkoutUrl += `&external_reference=${encodeURIComponent(currentUser.uid)}`;
+    checkoutUrl += `&payer_email=${encodeURIComponent(currentUser.email)}`;
+    // Potentially add more prefill data if MP supports it, e.g., payer name (though MP checkout usually handles this)
 
-      if (error) {
-        throw new Error(error);
-      }
-
-      if (sessionId) {
-        const stripe = await stripePromise;
-        if (stripe) {
-          const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
-          if (stripeError) {
-            console.error("Stripe redirect error:", stripeError);
-            toast({ title: "Erro no Checkout", description: stripeError.message || "Não foi possível redirecionar para o pagamento.", variant: "destructive" });
-          }
-        } else {
-           toast({ title: "Erro", description: "Stripe.js não carregou.", variant: "destructive" });
-        }
-      }
-    } catch (err: any) {
-      console.error("Failed to create checkout session:", err);
-      toast({ title: "Erro ao Iniciar Pagamento", description: err.message || "Tente novamente mais tarde.", variant: "destructive" });
-    } finally {
-      setIsProcessingCheckout(null);
-    }
+    window.location.href = checkoutUrl;
+    // isProcessingCheckout will remain true as the page redirects.
+    // If navigation fails, user might be stuck with a loading button, consider a timeout or error handler for window.location.href
   };
 
   return (
@@ -124,7 +86,7 @@ export function PlansSection() {
         <p className="text-lg text-muted-foreground text-center mb-12 md:mb-16 max-w-2xl mx-auto">
           Escolha o plano ideal para você e comece a transformar a gestão do seu consultório hoje mesmo. <strong>Todos os planos pagos incluem 1 mês grátis!</strong>
         </p>
-        
+
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 items-stretch">
           {allPlansData.map((plan) => (
             <Card
@@ -161,10 +123,10 @@ export function PlansSection() {
                   className="w-full"
                   variant={plan.popular ? 'default' : 'outline'}
                   aria-label={plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher o plano ${plan.name}`}
-                  disabled={isProcessingCheckout === plan.stripePriceId}
+                  disabled={isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId}
                 >
-                  {isProcessingCheckout === plan.stripePriceId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {isProcessingCheckout === plan.stripePriceId ? 'Processando...' : (plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher ${plan.name}`)}
+                  {isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId ? 'Processando...' : (plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher ${plan.name}`)}
                 </Button>
               </CardFooter>
             </Card>
