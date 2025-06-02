@@ -32,7 +32,7 @@ import {
   DialogClose
 } from "@/components/ui/dialog";
 import { UserForm, type UserFormData, type User, menuItemsConfig } from '@/components/forms/user-form';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { auth, db, firebaseConfig } from '@/firebase';
@@ -45,7 +45,9 @@ import {
   createUserWithEmailAndPassword as createUserInSecondaryInstance,
   updateProfile
 } from "firebase/auth";
-import { plans as allPlansData, type Plan as PlanType } from '@/lib/plans-data'; // Import plans data
+import { plans as allPlansData, type Plan as PlanType } from '@/lib/plans-data';
+import { format } from 'date-fns';
+
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 
@@ -307,20 +309,13 @@ export default function ConfiguracoesPage() {
         toast({ title: "Erro", description: "Não foi possível atualizar o plano para Gratuito.", variant: "destructive" });
       }
     } else if (mercadoPagoPlanId) {
-      // Redirect to Mercado Pago preapproval URL
       const planDetails = allPlansData.find(p => p.mercadoPagoPreapprovalPlanId === mercadoPagoPlanId);
       if (planDetails?.mercadoPagoPreapprovalPlanId) {
-         // For Mercado Pago, we redirect to their preapproval URL.
-         // We might append user info or an external_reference to the URL if MP supports it for pre-filling or tracking.
-         // Example: `&external_reference=${currentUser.uid}`
-         // For now, just the direct link.
-         // The actual subscription linking will happen via webhook.
          let mpLink = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${mercadoPagoPlanId}`;
-         // Optionally pass payer email if supported and desired
-         // mpLink += `&payer_email=${encodeURIComponent(currentUser.email)}`;
-         // Optionally pass external_reference if supported and desired
-         // mpLink += `&external_reference=${encodeURIComponent(currentUser.uid)}`;
-         
+         mpLink += `&external_reference=${encodeURIComponent(currentUser.uid)}`;
+         if (currentUser.email) {
+          mpLink += `&payer_email=${encodeURIComponent(currentUser.email)}`;
+         }
          window.location.href = mpLink;
       } else {
         toast({ title: "Erro", description: "Link de assinatura do Mercado Pago não encontrado.", variant: "destructive" });
@@ -340,8 +335,6 @@ export default function ConfiguracoesPage() {
       await updateDoc(userDocRef, {
         plano: "Gratuito",
         mercadoPagoSubscriptionStatus: 'cancelled_by_user',
-        // Note: Actual cancellation happens in Mercado Pago or via their webhook if user cancels there.
-        // We don't clear mercadoPagoSubscriptionId here, webhook for 'cancelled' status should handle that if needed.
       });
       setProfile(prev => ({ ...prev, plano: 'Gratuito', mercadoPagoSubscriptionStatus: 'cancelled_by_user' }));
       setCurrentUserData((prev:any) => ({...prev, plano: 'Gratuito', mercadoPagoSubscriptionStatus: 'cancelled_by_user'}));
