@@ -32,7 +32,7 @@ import {
   DialogClose
 } from "@/components/ui/dialog";
 import { UserForm, type UserFormData, type User, menuItemsConfig } from '@/components/forms/user-form';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { auth, db, firebaseConfig } from '@/firebase';
