@@ -14,13 +14,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/icons/logo';
-import { Menu, LayoutDashboard, Users, Calendar, BarChart, Settings, User, CreditCard, LogOut, Landmark } from 'lucide-react';
+import { Menu, LayoutDashboard, Users, Calendar, BarChart, Settings, User, CreditCard, LogOut, Landmark, Shield } from 'lucide-react'; // Added Shield
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getDoc, doc, onSnapshot, Unsubscribe } from "firebase/firestore"; // Added onSnapshot and Unsubscribe
+import { getDoc, doc, onSnapshot, Unsubscribe } from "firebase/firestore";
 import { useToast } from '@/hooks/use-toast';
 import type { UserPermissions } from '@/components/forms/user-form';
 
@@ -31,11 +31,13 @@ const navLinks = [
   { href: '/financeiro', label: 'Financeiro', icon: Landmark, permissionKey: 'financeiro' as const },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart, permissionKey: 'relatorios' as const },
   { href: '/configuracoes', label: 'Configurações', icon: Settings, permissionKey: 'configuracoes' as const },
+  { href: '/admin', label: 'Admin', icon: Shield, permissionKey: 'admin_area' as const }, // Added Admin link
 ];
 
 type MenuItemId = typeof navLinks[number]['permissionKey'];
 
 const freePlanAllowed = ['/dashboard', '/pacientes', '/agenda', '/configuracoes'];
+const ADMIN_EMAIL = 'yagobmodena1@gmail.com';
 
 export function AppHeader() {
   const router = useRouter();
@@ -52,7 +54,6 @@ export function AppHeader() {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUsuario(user);
 
-      // Clean up previous Firestore listener if user changes or logs out
       if (unsubscribeFirestore) {
         unsubscribeFirestore();
         unsubscribeFirestore = null;
@@ -60,11 +61,10 @@ export function AppHeader() {
 
       if (user) {
         const docRef = doc(db, "usuarios", user.uid);
-        // Set up real-time listener for user document
         unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            setCurrentUserData({ ...data, uid: user.uid }); // Ensure uid is part of currentUserData
+            setCurrentUserData({ ...data, uid: user.uid });
             setUserPermissions(data.permissoes || {});
           } else {
             console.warn(`User document not found for UID: ${user.uid}. Defaulting plan.`);
@@ -73,7 +73,6 @@ export function AppHeader() {
           }
         }, (error) => {
           console.error("Error listening to user document:", error);
-          // Handle error, e.g., by setting default data or showing a toast
           setCurrentUserData({ plano: "Gratuito", uid: user.uid });
           setUserPermissions({});
           toast({ title: "Erro ao Carregar Perfil", description: "Não foi possível carregar os dados do seu perfil em tempo real.", variant: "destructive" });
@@ -90,7 +89,7 @@ export function AppHeader() {
         unsubscribeFirestore();
       }
     };
-  }, [toast]); // Added toast to dependency array
+  }, [toast]);
 
   const handleLogout = async () => {
     try {
@@ -103,6 +102,10 @@ export function AppHeader() {
   };
 
   const isAccessible = (href: string, permissionKey?: MenuItemId) => {
+    if (permissionKey === 'admin_area') {
+      return usuario?.email === ADMIN_EMAIL;
+    }
+
     if (currentUserData?.cargo === 'Administrador') {
       if (currentUserData?.plano === 'Gratuito') {
         return freePlanAllowed.includes(href);
@@ -112,23 +115,23 @@ export function AppHeader() {
 
     if (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador') {
       if (permissionKey && userPermissions) {
-        if (userPermissions[permissionKey] === false) {
+        if (userPermissions[permissionKey as keyof UserPermissions] === false) {
           return false;
         }
-        if (userPermissions[permissionKey] === undefined && permissionKey !== 'dashboard') {
+        if (userPermissions[permissionKey as keyof UserPermissions] === undefined && permissionKey !== 'dashboard') {
             return false;
         }
-        if (userPermissions[permissionKey] === undefined && permissionKey === 'dashboard') {
+        if (userPermissions[permissionKey as keyof UserPermissions] === undefined && permissionKey === 'dashboard') {
             return true;
         }
-        if (userPermissions[permissionKey] === true) {
+        if (userPermissions[permissionKey as keyof UserPermissions] === true) {
             return true;
         }
       } else if (permissionKey && !userPermissions) {
-          return false; 
+          return false;
       }
     }
-    
+
     if (currentUserData?.plano === 'Gratuito') {
       return freePlanAllowed.includes(href);
     }
@@ -139,9 +142,9 @@ export function AppHeader() {
     if (!isAccessible(href, permissionKey)) {
       toast({
         title: "Acesso Negado",
-        description: (currentUserData?.plano === 'Gratuito' && !freePlanAllowed.includes(href)) || (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador' && (!userPermissions || userPermissions[permissionKey!] === false || userPermissions[permissionKey!] === undefined && permissionKey !== 'dashboard'))
+        description: (currentUserData?.plano === 'Gratuito' && !freePlanAllowed.includes(href) && permissionKey !== 'admin_area') || (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador' && (!userPermissions || userPermissions[permissionKey! as keyof UserPermissions] === false || (userPermissions[permissionKey! as keyof UserPermissions] === undefined && permissionKey !== 'dashboard')))
           ? "Você não tem permissão para acessar esta área."
-          : "Essa funcionalidade está disponível apenas para planos pagos.",
+          : "Essa funcionalidade está disponível apenas para planos pagos ou usuários específicos.",
         variant: "destructive",
       });
       return;
@@ -149,7 +152,7 @@ export function AppHeader() {
     router.push(href);
     setIsMobileMenuOpen(false);
   }
-  
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
       <div className="container mx-auto flex h-16 max-w-screen-2xl items-center justify-between px-4">
@@ -159,18 +162,18 @@ export function AppHeader() {
           </Link>
           <nav className="flex items-center gap-4 text-sm lg:gap-6">
             {navLinks.map((link) => (
-              <button
-                key={link.href}
-                onClick={() => handleNavigation(link.href, link.permissionKey)}
-                className={cn(
-                  "transition-colors hover:text-foreground/80",
-                  pathname === link.href ? "text-foreground font-semibold" : "text-foreground/60",
-                  !isAccessible(link.href, link.permissionKey) ? "text-muted-foreground cursor-not-allowed opacity-60" : ""
-                )}
-                 disabled={!isAccessible(link.href, link.permissionKey)}
-              >
-                {link.label}
-              </button>
+              isAccessible(link.href, link.permissionKey) && ( // Conditionally render based on access
+                <button
+                  key={link.href}
+                  onClick={() => handleNavigation(link.href, link.permissionKey)}
+                  className={cn(
+                    "transition-colors hover:text-foreground/80",
+                    pathname === link.href ? "text-foreground font-semibold" : "text-foreground/60",
+                  )}
+                >
+                  {link.label}
+                </button>
+              )
             ))}
           </nav>
         </div>
@@ -194,16 +197,17 @@ export function AppHeader() {
           <SheetContent side="left" className="pr-0 sm:max-w-xs">
             <nav className="grid gap-y-4 pt-6">
               {navLinks.map((link) => (
-                <Button
-                  key={link.href}
-                  variant={pathname === link.href ? "secondary" : "ghost"}
-                  className="w-full justify-start h-10 px-4 text-base"
-                  onClick={() => handleNavigation(link.href, link.permissionKey)}
-                  disabled={!isAccessible(link.href, link.permissionKey)}
-                >
-                  <link.icon className="mr-2 h-4 w-4" />
-                  {link.label}
-                </Button>
+                isAccessible(link.href, link.permissionKey) && ( // Conditionally render based on access
+                  <Button
+                    key={link.href}
+                    variant={pathname === link.href ? "secondary" : "ghost"}
+                    className="w-full justify-start h-10 px-4 text-base"
+                    onClick={() => handleNavigation(link.href, link.permissionKey)}
+                  >
+                    <link.icon className="mr-2 h-4 w-4" />
+                    {link.label}
+                  </Button>
+                )
               ))}
             </nav>
           </SheetContent>
