@@ -123,10 +123,16 @@ export function PlansSection() {
                   className="w-full"
                   variant={plan.popular ? 'default' : 'outline'}
                   aria-label={plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher o plano ${plan.name}`}
-                  disabled={isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId}
+                  disabled={!!isProcessingCheckout}
                 >
-                  {isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId ? 'Processando...' : (plan.name === 'Gratuito' ? 'Começar Gratuitamente' : `Escolher ${plan.name}`)}
+                  {plan.name !== 'Gratuito' && isProcessingCheckout && isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  {plan.name === 'Gratuito'
+                    ? 'Começar Gratuitamente'
+                    : isProcessingCheckout && isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId
+                    ? 'Processando...'
+                    : `Escolher ${plan.name}`}
                 </Button>
               </CardFooter>
             </Card>
