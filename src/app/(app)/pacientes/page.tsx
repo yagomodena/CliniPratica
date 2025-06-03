@@ -51,6 +51,7 @@ import {
 import { getAuth, type User as FirebaseUser } from 'firebase/auth';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
+import { z } from 'zod';
 
 type HistoryItem = { date: string; type: string; notes: string };
 type DocumentItem = { name: string; uploadDate: string; url: string };
@@ -287,9 +288,13 @@ export default function PacientesPage() {
 
     const nomeEmpresaParaSalvar = currentUserData.plano === 'Clínica' ? (currentUserData.nomeEmpresa || '') : '';
 
-    if (!newPatient.name || !newPatient.email) {
-      toast({ title: "Erro de Validação", description: "Nome e Email são obrigatórios.", variant: "destructive" });
+    if (!newPatient.name) {
+      toast({ title: "Erro de Validação", description: "Nome é obrigatório.", variant: "destructive" });
       return;
+    }
+    if (newPatient.email && !z.string().email().safeParse(newPatient.email).success) {
+        toast({ title: "Email Inválido", description: "Por favor, insira um email válido ou deixe o campo em branco.", variant: "destructive" });
+        return;
     }
     if (newPatient.objetivoPaciente && !patientObjectives.find(o => o.name === newPatient.objetivoPaciente && o.status === 'active')) {
         toast({ title: "Objetivo Inválido", description: "O objetivo selecionado não está ativo ou não existe.", variant: "destructive" });
@@ -306,6 +311,7 @@ export default function PacientesPage() {
     try {
       await addDoc(collection(db, 'pacientes'), {
         ...newPatient,
+        email: newPatient.email || '', // Garante que o email seja uma string vazia se não fornecido
         uid: currentUser.uid, // Creator's UID
         nomeEmpresa: nomeEmpresaParaSalvar, // Clinic's name if applicable
         status: newPatient.status || 'Ativo',
@@ -578,7 +584,7 @@ export default function PacientesPage() {
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="email" className="text-right">
-                    Email*
+                    Email
                   </Label>
                   <Input
                     id="email"
@@ -587,7 +593,6 @@ export default function PacientesPage() {
                     value={newPatient.email}
                     onChange={handleInputChange}
                     className="col-span-3"
-                    required
                   />
                 </div>
                 <div className="grid grid-cols-4 items-center gap-4">
