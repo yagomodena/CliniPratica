@@ -14,8 +14,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/icons/logo';
-import { Menu, LayoutDashboard, Users, Calendar, BarChart, Settings, User, CreditCard, LogOut, Landmark, Shield } from 'lucide-react'; // Added Shield
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Menu, LayoutDashboard, Users, Calendar, BarChart, Settings, User, CreditCard, LogOut, Landmark, Shield } from 'lucide-react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"; // Added SheetHeader, SheetTitle
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/firebase';
@@ -31,7 +31,7 @@ const navLinks = [
   { href: '/financeiro', label: 'Financeiro', icon: Landmark, permissionKey: 'financeiro' as const },
   { href: '/relatorios', label: 'Relatórios', icon: BarChart, permissionKey: 'relatorios' as const },
   { href: '/configuracoes', label: 'Configurações', icon: Settings, permissionKey: 'configuracoes' as const },
-  { href: '/admin', label: 'Admin', icon: Shield, permissionKey: 'admin_area' as const }, // Added Admin link
+  { href: '/admin', label: 'Admin', icon: Shield, permissionKey: 'admin_area' as const },
 ];
 
 type MenuItemId = typeof navLinks[number]['permissionKey'];
@@ -142,7 +142,7 @@ export function AppHeader() {
     if (!isAccessible(href, permissionKey)) {
       toast({
         title: "Acesso Negado",
-        description: (currentUserData?.plano === 'Gratuito' && !freePlanAllowed.includes(href) && permissionKey !== 'admin_area') || (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador' && (!userPermissions || userPermissions[permissionKey! as keyof UserPermissions] === false || (userPermissions[permissionKey! as keyof UserPermissions] === undefined && permissionKey !== 'dashboard')))
+        description: (currentUserData?.plano === 'Gratuito' && !freePlanAllowed.includes(href) && permissionKey !== 'admin_area') || (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador' && (!userPermissions || userPermissions[permissionKey!] === false || (userPermissions[permissionKey!] === undefined && permissionKey !== 'dashboard')))
           ? "Você não tem permissão para acessar esta área."
           : "Essa funcionalidade está disponível apenas para planos pagos ou usuários específicos.",
         variant: "destructive",
@@ -162,7 +162,7 @@ export function AppHeader() {
           </Link>
           <nav className="flex items-center gap-4 text-sm lg:gap-6">
             {navLinks.map((link) => (
-              isAccessible(link.href, link.permissionKey) && ( // Conditionally render based on access
+              isAccessible(link.href, link.permissionKey) && (
                 <button
                   key={link.href}
                   onClick={() => handleNavigation(link.href, link.permissionKey)}
@@ -195,9 +195,12 @@ export function AppHeader() {
             </Link>
           </div>
           <SheetContent side="left" className="pr-0 sm:max-w-xs">
-            <nav className="grid gap-y-4 pt-6">
+            <SheetHeader className="p-4 border-b">
+              <SheetTitle className="text-lg">Menu Principal</SheetTitle>
+            </SheetHeader>
+            <nav className="grid gap-y-4 pt-6 px-4">
               {navLinks.map((link) => (
-                isAccessible(link.href, link.permissionKey) && ( // Conditionally render based on access
+                isAccessible(link.href, link.permissionKey) && (
                   <Button
                     key={link.href}
                     variant={pathname === link.href ? "secondary" : "ghost"}
