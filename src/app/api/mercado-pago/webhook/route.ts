@@ -134,14 +134,37 @@ export async function POST(req: NextRequest) {
       const currentPlanName = currentPlanDoc.exists() ? currentPlanDoc.data()?.plano : 'Gratuito';
       const newPlanName = planDetails ? planDetails.name : currentPlanName;
 
+      let statusCobranca: 'ativo' | 'pendente' | 'cancelado' = 'pendente'; // Default to pendente
+
+      switch (status) {
+        case 'authorized':
+          statusCobranca = 'ativo';
+          break;
+        case 'paused':
+        case 'pending_cancel': // Still active until period end, but attention needed
+        case 'pending': // Initial state for Boleto, PIX, etc.
+        case 'payment_required':
+          statusCobranca = 'pendente';
+          break;
+        case 'cancelled': // User or MP cancelled
+        case 'ended': // Subscription naturally ended
+        case 'charged_back': // Chargeback occurred
+          statusCobranca = 'cancelado';
+          break;
+        default:
+          console.warn(`Unhandled Mercado Pago subscription status '${status}' for preapproval ${preapprovalId}. Setting statusCobranca to 'pendente'.`);
+          statusCobranca = 'pendente';
+      }
 
       const updateData: any = {
         mercadoPagoSubscriptionId: preapprovalId,
         mercadoPagoPreapprovalPlanId: preapprovalPlanId,
         mercadoPagoSubscriptionStatus: status,
         plano: newPlanName,
+        statusCobranca: statusCobranca, // Set new billing status
         updatedAt: serverTimestamp(),
       };
+
        if (mpSubscription.next_payment_date) {
           updateData.mercadoPagoNextPaymentDate = Timestamp.fromDate(new Date(mpSubscription.next_payment_date));
       } else {
@@ -149,22 +172,18 @@ export async function POST(req: NextRequest) {
       }
 
 
-      if (status === 'cancelled' || status === 'paused' || status === 'ended') {
-        updateData.plano = 'Gratuito'; // Downgrade to free
-        if (status === 'cancelled' || status === 'ended') {
-            // Clear subscription specific fields if fully cancelled/ended
+      if (statusCobranca === 'cancelado') {
+        updateData.plano = 'Gratuito'; // Downgrade to free if subscription is cancelled/ended
+        // Clear subscription specific fields if fully cancelled/ended for good
+        if (status === 'cancelled' || status === 'ended' || status === 'charged_back') {
             updateData.mercadoPagoSubscriptionId = null;
             updateData.mercadoPagoPreapprovalPlanId = null;
-            updateData.mercadoPagoSubscriptionStatus = status; // keep 'cancelled' or 'ended'
             updateData.mercadoPagoNextPaymentDate = null;
         }
-      } else if (status === 'authorized') {
-        // Subscription is active
-        // Plan name is already set from planDetails
       }
 
       await updateDoc(userDocRef, updateData);
-      console.log(`User ${userIdToUpdate} updated. MP Sub ID: ${preapprovalId}, Status: ${status}, Plan: ${newPlanName}`);
+      console.log(`User ${userIdToUpdate} updated. MP Sub ID: ${preapprovalId}, MP Status: ${status}, App Plan: ${newPlanName}, Status Cobrança: ${statusCobranca}`);
 
     } catch (error: any) {
       console.error('Error processing Mercado Pago preapproval webhook:', error.message, error.stack);
@@ -193,15 +212,16 @@ export async function POST(req: NextRequest) {
         const payerEmail = mpPayment.payer?.email;
         const paymentStatus = mpPayment.status; // 'approved', 'pending', 'rejected', etc.
         const externalReference = mpPayment.external_reference; // Could be our Firebase UID if set
+        const preapprovalId = mpPayment.preapproval_id; // Check if this payment is linked to a subscription
 
-        // If a payment is approved, and it's NOT tied to a preapproval (subscription),
-        // you might handle it here (e.g., for one-time purchases).
-        // For subscriptions, the 'preapproval' webhook type is generally more direct.
-        if (paymentStatus === 'approved' && !mpPayment.preapproval_id) {
-            console.log(`One-time payment ${paymentId} approved.`);
+        // If a payment is related to a subscription, its status might influence the subscription status.
+        // However, the `preapproval` webhook event is generally more direct for subscription lifecycle.
+        // This `payment` event might be useful for logging individual payment attempts within a subscription.
+        if (preapprovalId && (paymentStatus === 'rejected' || paymentStatus === 'cancelled' || paymentStatus === 'refunded' || paymentStatus === 'charged_back')) {
+            console.log(`Payment ${paymentId} for subscription ${preapprovalId} has status: ${paymentStatus}. Attempting to update user's statusCobranca to 'pendente'.`);
             let userIdToUpdate: string | null = null;
             if (externalReference) {
-                 userIdToUpdate = externalReference;
+                userIdToUpdate = externalReference;
             } else if (payerEmail) {
                 const usersRef = collection(db, 'usuarios');
                 const q = query(usersRef, where('email', '==', payerEmail));
@@ -210,12 +230,24 @@ export async function POST(req: NextRequest) {
             }
 
             if (userIdToUpdate) {
-                // Logic for one-time payment affecting user status (if any)
-                console.log(`Approved one-time payment for user: ${userIdToUpdate}`);
-                // Example: await updateDoc(doc(db, 'usuarios', userIdToUpdate), { lastPaymentDate: serverTimestamp() });
-            } else {
-                console.warn(`User not found for one-time payment ${paymentId}. PayerEmail: ${payerEmail}, ExtRef: ${externalReference}`);
+                 const userDocRef = doc(db, 'usuarios', userIdToUpdate);
+                 const userDoc = await getDoc(userDocRef);
+                 if (userDoc.exists() && userDoc.data()?.mercadoPagoSubscriptionId === preapprovalId) {
+                    // Only update if the current statusCobranca is 'ativo', to avoid overriding a more definitive 'cancelado' status from a preapproval event.
+                    if (userDoc.data()?.statusCobranca === 'ativo') {
+                        await updateDoc(userDocRef, {
+                            statusCobranca: 'pendente',
+                            updatedAt: serverTimestamp(),
+                        });
+                        console.log(`User ${userIdToUpdate} statusCobranca set to 'pendente' due to payment issue for subscription ${preapprovalId}.`);
+                    } else {
+                         console.log(`User ${userIdToUpdate} statusCobranca is already '${userDoc.data()?.statusCobranca}', not changing to 'pendente' for payment ${paymentId}.`);
+                    }
+                 }
             }
+        } else if (paymentStatus === 'approved' && !preapprovalId) {
+            console.log(`One-time payment ${paymentId} approved.`);
+            // Handle one-time payments if your app supports them
         }
     } catch (error: any) {
          console.error('Error processing Mercado Pago payment webhook (type: payment):', error.message, error.stack);

@@ -78,13 +78,13 @@ export async function submitRegistrationForm(
       nomeEmpresa: companyName || '',
       areaAtuacao: area || '',
       plano: plan || 'Gratuito', // Default to Gratuito if plan is not passed
+      statusCobranca: 'ativo', // Novo campo, default para ativo
       fotoPerfilUrl: '', // Pode ser atualizado depois
       cargo: 'Administrador',
       permissoes: {
         dashboard: true,
         pacientes: true,
         agendas: true,
-        // mensagens: true, // Mensagens removido
         financeiro: true,
         relatorios: true,
         configuracoes: true,

@@ -4,7 +4,7 @@
 import { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send, Info, AlertTriangle as AlertTriangleIcon } from "lucide-react"; // Renamed AlertTriangle to AlertTriangleIcon
 import {
   ChartContainer,
   ChartTooltip,
@@ -44,7 +44,9 @@ import {
   deleteDoc,
   serverTimestamp,
   Timestamp,
-  orderBy
+  orderBy,
+  onSnapshot, // Added onSnapshot
+  Unsubscribe // Added Unsubscribe
 } from "firebase/firestore";
 import { MessageCircle } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -106,6 +108,7 @@ const chartConfig = {
 };
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
+type StatusCobranca = 'ativo' | 'pendente' | 'cancelado' | string; // Allow string for potential future statuses
 
 export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -118,6 +121,8 @@ export default function DashboardPage() {
   
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
   const [currentUserData, setCurrentUserData] = useState<any>(null); // Stores data from 'usuarios' collection
+  const [billingStatus, setBillingStatus] = useState<StatusCobranca | null>(null);
+
 
   const [clientNow, setClientNow] = useState<Date | null>(null);
   const [clientTodayString, setClientTodayString] = useState<string>('');
@@ -151,19 +156,45 @@ export default function DashboardPage() {
   }, []);
 
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+ useEffect(() => {
+    let unsubscribeFirestore: Unsubscribe | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUsuario(user);
+
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+        unsubscribeFirestore = null;
+      }
+
       if (user) {
         const docRef = doc(db, "usuarios", user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setCurrentUserData({ ...data, uid: user.uid, plano: data.plano || "Gratuito" });
-        } else {
-           setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
-        }
+        unsubscribeFirestore = onSnapshot(docRef, (docSnap) => { // Listen for real-time updates
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setCurrentUserData({ ...data, uid: user.uid, plano: data.plano || "Gratuito" });
+            setBillingStatus(data.statusCobranca || 'ativo'); // Update billing status from snapshot
+             setIsPlanWarningVisible(data.plano === 'Gratuito');
+          } else {
+            console.warn("User document not found for UID:", user.uid);
+            setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
+            setBillingStatus('ativo'); // Default if no doc
+            setIsPlanWarningVisible(true);
+          }
+        }, (error) => {
+          console.error("Error listening to user document for dashboard:", error);
+          // Fallback in case of listener error
+          setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
+          setBillingStatus('ativo');
+          setIsPlanWarningVisible(true);
+          toast({
+              title: "Erro ao carregar dados do usuário",
+              description: "Não foi possível carregar suas informações em tempo real.",
+              variant: "warning"
+          });
+        });
       } else {
+        // Clear all user-dependent data
         setFirebasePatients([]);
         setAlerts([]);
         setIsLoadingFirebasePatients(false);
@@ -176,10 +207,18 @@ export default function DashboardPage() {
         setIsLoadingRevenue(false);
         setBirthdayPatients([]);
         setCurrentUserData(null);
+        setBillingStatus(null);
+        setIsPlanWarningVisible(false);
       }
     });
-    return () => unsubscribe();
-  }, []);
+    return () => {
+        unsubscribeAuth();
+        if (unsubscribeFirestore) {
+          unsubscribeFirestore();
+        }
+    };
+  }, [toast]);
+
 
   const fetchAlerts = useCallback(async (currentAuthUser: FirebaseUser, uData: any) => {
     if (!currentAuthUser) return;
@@ -624,7 +663,7 @@ export default function DashboardPage() {
         <Card className="bg-accent/20 border-accent shadow-md relative">
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
             <div className="flex items-center">
-              <AlertCircle className="h-4 w-4 text-accent mr-2" />
+              <Info className="h-4 w-4 text-accent mr-2" /> {/* Changed from AlertCircle */}
               <CardTitle className="text-sm font-bold text-black">
                 Aviso de Plano
               </CardTitle>
@@ -651,6 +690,45 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {billingStatus === 'pendente' && (
+        <Card className="bg-orange-50 border-orange-300 dark:bg-orange-900/30 dark:border-orange-700 shadow-md">
+          <CardHeader className="flex flex-row items-start space-y-0 pb-2">
+            <AlertTriangleIcon className="h-5 w-5 text-orange-500 mr-2 mt-0.5" />
+            <div className="flex-1">
+                <CardTitle className="text-base font-semibold text-orange-700 dark:text-orange-300">Pagamento Pendente</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-orange-600 dark:text-orange-300/90">
+              Sua assinatura está com o pagamento pendente. Por favor, verifique sua conta do Mercado Pago para regularizar a situação e evitar a interrupção dos serviços.
+            </p>
+            <Button variant="link" className="p-0 h-auto mt-2 text-orange-700 hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200" asChild>
+              <Link href="/configuracoes?tab=plano">Verificar Assinatura</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {billingStatus === 'cancelado' && (
+        <Card className="bg-red-50 border-red-300 dark:bg-red-900/30 dark:border-red-700 shadow-md">
+          <CardHeader className="flex flex-row items-start space-y-0 pb-2">
+            <XIcon className="h-5 w-5 text-red-500 mr-2 mt-0.5" />
+             <div className="flex-1">
+                <CardTitle className="text-base font-semibold text-red-700 dark:text-red-300">Assinatura Cancelada</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-red-600 dark:text-red-300/90">
+              Sua assinatura foi cancelada. Para continuar utilizando todos os recursos do CliniPrática, por favor, escolha um novo plano.
+            </p>
+             <Button variant="link" className="p-0 h-auto mt-2 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200" onClick={() => setIsPlansModalOpen(true)}>
+              Ver Planos e Reativar
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
 
       <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         <Card className="shadow-md">
@@ -1088,9 +1166,10 @@ export default function DashboardPage() {
         onOpenChange={setIsPlansModalOpen}
         currentPlanName={currentUserData?.plano || ""}
         onSelectPlan={handleSelectPlan}
+        currentUser={usuario} // Pass the Firebase auth user
+        currentUserName={currentUserData?.nomeCompleto || usuario?.displayName} // Pass current user's name
       />
 
     </div>
   );
 }
-

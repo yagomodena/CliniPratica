@@ -9,8 +9,9 @@ import Link from "next/link";
 import { useRouter } from 'next/navigation';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/firebase';
+import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth'; // Added signOut
+import { auth, db } from '@/firebase'; // Added db
+import { doc, getDoc } from 'firebase/firestore'; // Added doc, getDoc
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -22,6 +23,16 @@ import {
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, // Added AlertDialog imports
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,6 +46,9 @@ export default function LoginPage() {
   const [resetEmail, setResetEmail] = useState('');
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
 
+  const [isAccountSuspendedAlertOpen, setIsAccountSuspendedAlertOpen] = useState(false);
+
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -42,6 +56,22 @@ export default function LoginPage() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+
+      // Check Firestore for statusCobranca
+      const userDocRef = doc(db, 'usuarios', user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (userDocSnap.exists()) {
+        const userData = userDocSnap.data();
+        if (userData.statusCobranca === 'cancelado') {
+          await signOut(auth); // Sign out the user
+          setIsLoading(false);
+          setIsAccountSuspendedAlertOpen(true); // Show suspension alert
+          // Do not proceed with login toast or redirect
+          return;
+        }
+      }
+      // If status is not 'cancelado' or doc doesn't exist (shouldn't happen for logged in user), proceed.
 
       toast({
         title: 'Login realizado com sucesso!',
@@ -84,7 +114,9 @@ export default function LoginPage() {
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      if (!isAccountSuspendedAlertOpen) { // Only set isLoading to false if not showing the alert
+         setIsLoading(false);
+      }
     }
   };
 
@@ -125,6 +157,7 @@ export default function LoginPage() {
   };
 
   return (
+    <>
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
@@ -229,5 +262,25 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+
+    <AlertDialog open={isAccountSuspendedAlertOpen} onOpenChange={setIsAccountSuspendedAlertOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Conta Suspensa</AlertDialogTitle>
+            <AlertDialogDescription>
+              Sua conta foi suspensa devido à assinatura cancelada. Para reativar, por favor, escolha um novo plano ou entre em contato com o suporte.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => {
+                setIsAccountSuspendedAlertOpen(false);
+                router.push('/#planos'); // Redirect to plans section
+            }}>
+              Ver Planos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

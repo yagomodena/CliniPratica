@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Check, CreditCard, User, Newspaper, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye, EyeOff, ListChecks, Loader2, ExternalLink } from "lucide-react";
+import { Check, CreditCard, User, Newspaper, KeyRound, Save, AlertTriangle, UserPlus, UsersRound, Edit, Trash2, Eye, EyeOff, ListChecks, Loader2, ExternalLink, Info } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
 import {
@@ -37,7 +37,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { auth, db, firebaseConfig } from '@/firebase';
 import { User as FirebaseUser, updateProfile as updateAuthProfile, EmailAuthProvider, reauthenticateWithCredential, updatePassword, onAuthStateChanged } from 'firebase/auth';
-import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc, query, where, getDocs, orderBy, Timestamp } from "firebase/firestore";
+import { collection, setDoc, getDoc, doc, serverTimestamp, updateDoc, deleteDoc, query, where, getDocs, orderBy, Timestamp, onSnapshot, Unsubscribe } from "firebase/firestore";
 
 import { initializeApp as initializeSecondaryApp, deleteApp as deleteSecondaryApp } from "firebase/app";
 import {
@@ -77,9 +77,24 @@ const initialUpdates: UpdateEntry[] = [
   },
 ];
 
+type ProfileState = {
+    nomeCompleto: string;
+    email: string;
+    telefone: string;
+    areaAtuacao: string;
+    plano: string;
+    fotoPerfilUrl: string;
+    nomeEmpresa: string;
+    mercadoPagoSubscriptionId: string;
+    mercadoPagoSubscriptionStatus: string;
+    mercadoPagoPreapprovalPlanId: string;
+    mercadoPagoNextPaymentDate: Timestamp | null;
+    statusCobranca: string; // Added statusCobranca
+};
+
 
 export default function ConfiguracoesPage() {
-  const [profile, setProfile] = useState({
+  const [profile, setProfile] = useState<ProfileState>({
     nomeCompleto: '',
     email: '',
     telefone: '',
@@ -91,6 +106,7 @@ export default function ConfiguracoesPage() {
     mercadoPagoSubscriptionStatus: '',
     mercadoPagoPreapprovalPlanId: '',
     mercadoPagoNextPaymentDate: null as Timestamp | null,
+    statusCobranca: '', // Initialized statusCobranca
   });
 
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -116,52 +132,58 @@ export default function ConfiguracoesPage() {
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
 
-  const fetchUserProfileAndData = useCallback(async () => {
-    const userAuth = auth.currentUser;
-    if (userAuth) {
+  useEffect(() => {
+    let unsubscribeFirestore: Unsubscribe | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (userAuth) => {
       setCurrentUser(userAuth);
-      const userDocRef = doc(db, 'usuarios', userAuth.uid);
-      const userDocSnap = await getDoc(userDocRef);
-
-      let data: any = {};
-      if (userDocSnap.exists()) {
-        data = userDocSnap.data();
-        setCurrentUserData({ ...data, uid: userAuth.uid });
-      } else {
-        setCurrentUserData({ uid: userAuth.uid, email: userAuth.email, nomeCompleto: userAuth.displayName, plano: 'Gratuito', permissoes: {} });
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore(); // Clean up previous listener
       }
+      if (userAuth) {
+        const userDocRef = doc(db, 'usuarios', userAuth.uid);
+        unsubscribeFirestore = onSnapshot(userDocRef, (userDocSnap) => { // Listen for real-time updates
+          let data: any = {};
+          if (userDocSnap.exists()) {
+            data = userDocSnap.data();
+            setCurrentUserData({ ...data, uid: userAuth.uid });
+          } else {
+            setCurrentUserData({ uid: userAuth.uid, email: userAuth.email, nomeCompleto: userAuth.displayName, plano: 'Gratuito', permissoes: {}, statusCobranca: 'ativo' });
+          }
 
-      setProfile({
-        nomeCompleto: userAuth.displayName || data.nomeCompleto || '',
-        email: userAuth.email || data.email || '',
-        telefone: data.telefone || userAuth.phoneNumber || '',
-        areaAtuacao: data.areaAtuacao || '',
-        plano: data.plano || 'Gratuito',
-        fotoPerfilUrl: userAuth.photoURL || data.fotoPerfilUrl || '',
-        nomeEmpresa: data.nomeEmpresa || '',
-        mercadoPagoSubscriptionId: data.mercadoPagoSubscriptionId || '',
-        mercadoPagoSubscriptionStatus: data.mercadoPagoSubscriptionStatus || '',
-        mercadoPagoPreapprovalPlanId: data.mercadoPagoPreapprovalPlanId || '',
-        mercadoPagoNextPaymentDate: data.mercadoPagoNextPaymentDate || null,
-      });
-    } else {
+          setProfile({
+            nomeCompleto: userAuth.displayName || data.nomeCompleto || '',
+            email: userAuth.email || data.email || '',
+            telefone: data.telefone || userAuth.phoneNumber || '',
+            areaAtuacao: data.areaAtuacao || '',
+            plano: data.plano || 'Gratuito',
+            statusCobranca: data.statusCobranca || 'ativo', // Set statusCobranca
+            fotoPerfilUrl: userAuth.photoURL || data.fotoPerfilUrl || '',
+            nomeEmpresa: data.nomeEmpresa || '',
+            mercadoPagoSubscriptionId: data.mercadoPagoSubscriptionId || '',
+            mercadoPagoSubscriptionStatus: data.mercadoPagoSubscriptionStatus || '',
+            mercadoPagoPreapprovalPlanId: data.mercadoPagoPreapprovalPlanId || '',
+            mercadoPagoNextPaymentDate: data.mercadoPagoNextPaymentDate || null,
+          });
+        });
+      } else {
         setCurrentUser(null);
         setCurrentUserData(null);
         setProfile({
             nomeCompleto: '', email: '', telefone: '', areaAtuacao: '', plano: 'Gratuito', fotoPerfilUrl: '', nomeEmpresa: '',
-            mercadoPagoSubscriptionId: '', mercadoPagoSubscriptionStatus: '', mercadoPagoPreapprovalPlanId: '', mercadoPagoNextPaymentDate: null,
+            mercadoPagoSubscriptionId: '', mercadoPagoSubscriptionStatus: '', mercadoPagoPreapprovalPlanId: '', mercadoPagoNextPaymentDate: null, statusCobranca: ''
         });
         setUsers([]);
-    }
+      }
+    });
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
   }, []);
 
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      fetchUserProfileAndData();
-    });
-    return () => unsubscribe();
-  }, [fetchUserProfileAndData]);
 
   const fetchClinicUsers = useCallback(async () => {
     if (currentUserData?.plano !== 'Clínica' || !profile.nomeEmpresa || !auth.currentUser) {
@@ -231,12 +253,14 @@ export default function ConfiguracoesPage() {
         areaAtuacao: profile.areaAtuacao,
         fotoPerfilUrl: profile.fotoPerfilUrl,
         nomeEmpresa: profile.nomeEmpresa,
+        // statusCobranca is managed by webhooks, not user profile edits
       };
 
       Object.keys(dataToUpdate).forEach(key => dataToUpdate[key] === undefined && delete dataToUpdate[key]);
       await updateDoc(userDocRef, dataToUpdate );
 
-      setCurrentUserData((prev: any) => ({...prev, ...dataToUpdate}));
+      // No need to update setCurrentUserData here if using onSnapshot, it will update automatically.
+      // setCurrentUserData((prev: any) => ({...prev, ...dataToUpdate}));
 
       toast({ title: "Sucesso!", description: "Seu perfil foi atualizado.", variant: "success"});
     } catch (error) {
@@ -300,9 +324,9 @@ export default function ConfiguracoesPage() {
           mercadoPagoPreapprovalPlanId: null,
           mercadoPagoSubscriptionStatus: 'cancelled_locally',
           mercadoPagoNextPaymentDate: null,
+          statusCobranca: 'ativo', // Reset billing status to active for free plan
         });
-        setProfile(prev => ({ ...prev, plano: "Gratuito", mercadoPagoSubscriptionStatus: 'cancelled_locally', mercadoPagoSubscriptionId: '', mercadoPagoPreapprovalPlanId: '', mercadoPagoNextPaymentDate: null }));
-        setCurrentUserData((prev: any) => ({ ...prev, plano: "Gratuito", mercadoPagoSubscriptionStatus: 'cancelled_locally', mercadoPagoSubscriptionId: null, mercadoPagoPreapprovalPlanId: null, mercadoPagoNextPaymentDate: null }));
+        // State updates will be handled by onSnapshot
         toast({ title: "Plano Alterado!", description: `Seu plano foi alterado para Gratuito. Se você tinha uma assinatura ativa, gerencie-a no Mercado Pago.`, variant: "success" });
       } catch (error) {
         console.error("Erro ao atualizar plano para Gratuito no Firestore:", error);
@@ -334,10 +358,10 @@ export default function ConfiguracoesPage() {
       const userDocRef = doc(db, "usuarios", currentUser.uid);
       await updateDoc(userDocRef, {
         plano: "Gratuito",
-        mercadoPagoSubscriptionStatus: 'cancelled_by_user',
+        mercadoPagoSubscriptionStatus: 'cancelled_by_user', // Or a more specific MP status if their API returns one for cancellation intent
+        statusCobranca: 'ativo', // Reset billing status, user will be on free plan. MP webhook will update if it becomes fully 'cancelled'
       });
-      setProfile(prev => ({ ...prev, plano: 'Gratuito', mercadoPagoSubscriptionStatus: 'cancelled_by_user' }));
-      setCurrentUserData((prev:any) => ({...prev, plano: 'Gratuito', mercadoPagoSubscriptionStatus: 'cancelled_by_user'}));
+      // State updates handled by onSnapshot
       setIsCancelConfirmOpen(false);
       toast({
         title: "Assinatura Marcada para Cancelamento",
@@ -381,7 +405,7 @@ export default function ConfiguracoesPage() {
         if (data.nomeCompleto) await updateProfile(newAuthUser, { displayName: data.nomeCompleto });
         const newUserDoc = {
           email: data.email, cargo: data.cargo || 'Colaborador', permissoes: data.permissoes, nomeCompleto: data.nomeCompleto || '',
-          ownerId: currentUser.uid, nomeEmpresa: profile.nomeEmpresa || '', plano: 'Clínica', createdAt: serverTimestamp(),
+          ownerId: currentUser.uid, nomeEmpresa: profile.nomeEmpresa || '', plano: 'Clínica', statusCobranca: 'ativo', createdAt: serverTimestamp(),
           fotoPerfilUrl: '', telefone: data.telefone || '', areaAtuacao: data.areaAtuacao || '',
         };
         await setDoc(doc(db, 'usuarios', newAuthUser.uid), newUserDoc);
@@ -464,12 +488,12 @@ export default function ConfiguracoesPage() {
     switch (status.toLowerCase()) {
       case 'authorized': return 'Ativa';
       case 'paused': return 'Pausada';
-      case 'cancelled': return 'Cancelada';
-      case 'pending_cancel': return 'Cancelamento Pendente';
-      case 'ended': return 'Finalizada';
-      case 'charged_back': return 'Chargeback';
-      case 'pending': return 'Pendente';
-      case 'payment_required': return 'Pagamento Necessário';
+      case 'cancelled': return 'Cancelada (MP)';
+      case 'pending_cancel': return 'Cancelamento Pendente (MP)';
+      case 'ended': return 'Finalizada (MP)';
+      case 'charged_back': return 'Chargeback (MP)';
+      case 'pending': return 'Pendente (MP)';
+      case 'payment_required': return 'Pagamento Necessário (MP)';
       case 'cancelled_locally': return 'Cancelada (Localmente)';
       case 'cancelled_by_user': return 'Cancelada pelo Usuário (Localmente)';
       default: return status;
@@ -487,12 +511,35 @@ export default function ConfiguracoesPage() {
       case 'ended':
       case 'charged_back':
       case 'cancelled_locally':
-      case 'cancelled_by_user': return 'destructive';
+      case 'cancelled_by_user': 
+      case 'pending_cancel': // Also a warning/destructive state
+        return 'destructive';
       default: return 'secondary';
     }
   };
 
-  if (!currentUserData) {
+  const getStatusCobrancaText = (status: string | undefined) => {
+    if (!status) return 'Indefinido';
+    switch (status.toLowerCase()) {
+      case 'ativo': return 'Ativa';
+      case 'pendente': return 'Pendente';
+      case 'cancelado': return 'Cancelada';
+      default: return status;
+    }
+  };
+
+  const getStatusCobrancaBadgeVariant = (status: string | undefined) => {
+    if (!status) return 'secondary';
+    switch (status.toLowerCase()) {
+      case 'ativo': return 'success';
+      case 'pendente': return 'warning';
+      case 'cancelado': return 'destructive';
+      default: return 'secondary';
+    }
+  };
+
+
+  if (!currentUserData && !currentUser) { // More robust loading check
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -539,17 +586,25 @@ export default function ConfiguracoesPage() {
               <CardHeader><CardTitle>Plano e Assinatura</CardTitle><CardDescription>Gerencie seu plano atual e detalhes de pagamento.</CardDescription></CardHeader>
               <CardContent className="space-y-6">
                 <Card className="bg-muted/50">
-                  <CardHeader className="pb-4 pt-6"><CardTitle className="text-lg">Plano Atual: {profile.plano || 'Não definido'}</CardTitle>
-                   {profile.mercadoPagoSubscriptionStatus && (
-                      <p className="text-sm text-muted-foreground">
-                        Status da Assinatura (Mercado Pago): <Badge variant={getMercadoPagoStatusBadgeVariant(profile.mercadoPagoSubscriptionStatus)}>
-                            {getMercadoPagoSubscriptionStatusText(profile.mercadoPagoSubscriptionStatus)}
-                        </Badge>
-                        {profile.mercadoPagoNextPaymentDate && (profile.mercadoPagoSubscriptionStatus === 'authorized' || profile.mercadoPagoSubscriptionStatus === 'pending_cancel') &&
-                          <span className="ml-2 text-xs">(Próximo vencimento: {format(profile.mercadoPagoNextPaymentDate.toDate(), 'dd/MM/yyyy')})</span>
-                        }
-                      </p>
-                    )}
+                  <CardHeader className="pb-4 pt-6">
+                    <CardTitle className="text-lg">Plano Atual: {profile.plano || 'Não definido'}</CardTitle>
+                     <div className="flex flex-col space-y-1 mt-1">
+                        {profile.mercadoPagoSubscriptionStatus && (
+                            <p className="text-sm text-muted-foreground">
+                            Status da Assinatura (MP): <Badge variant={getMercadoPagoStatusBadgeVariant(profile.mercadoPagoSubscriptionStatus)}>
+                                {getMercadoPagoSubscriptionStatusText(profile.mercadoPagoSubscriptionStatus)}
+                            </Badge>
+                            {profile.mercadoPagoNextPaymentDate && (profile.mercadoPagoSubscriptionStatus === 'authorized' || profile.mercadoPagoSubscriptionStatus === 'pending_cancel') &&
+                                <span className="ml-2 text-xs">(Próximo vencimento: {format(profile.mercadoPagoNextPaymentDate.toDate(), 'dd/MM/yyyy')})</span>
+                            }
+                            </p>
+                        )}
+                        <p className="text-sm text-muted-foreground">
+                            Status da Cobrança (Sistema): <Badge variant={getStatusCobrancaBadgeVariant(profile.statusCobranca)}>
+                                {getStatusCobrancaText(profile.statusCobranca)}
+                            </Badge>
+                        </p>
+                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {allPlansData.find(p => p.name === profile.plano)?.features.map((feature, idx) => (
