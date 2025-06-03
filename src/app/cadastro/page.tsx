@@ -17,9 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
 import { submitRegistrationForm, type FormState as RegistrationFormState } from '@/actions/register';
 import { Logo } from '@/components/icons/logo';
-import { auth, db } from "../../firebase";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { plans as allPlansData } from '@/lib/plans-data'; // Import plans data
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +32,9 @@ const initialState: RegistrationFormState = {
   message: '',
   status: 'idle',
   fields: {},
-  issues: []
+  issues: [],
+  userId: undefined, // Added
+  userEmail: undefined, // Added
 };
 
 const areasDeAtuacao = [
@@ -48,7 +48,6 @@ const areasDeAtuacao = [
   "Outro"
 ];
 
-// Ajustado para receber o estado 'pending' via prop
 function SubmitButton({ pending }: { pending: boolean }) {
   return (
     <Button type="submit" className="w-full" disabled={pending}>
@@ -63,7 +62,6 @@ function CadastroForm() {
   const planFromQuery = searchParams.get('plano') || '';
   const { toast } = useToast();
 
-  // useActionState agora retorna isPending como terceiro argumento
   const [state, formAction, isActionPending] = useActionState(submitRegistrationForm, initialState);
 
   const [showPassword, setShowPassword] = useState(false);
@@ -94,16 +92,29 @@ function CadastroForm() {
 
 
   useEffect(() => {
-    if (state.status === 'success') {
+    if (state.status === 'success' && state.userId && state.userEmail) {
       toast({
         title: 'Sucesso!',
         description: state.message,
         variant: 'success',
       });
-      form.reset({ fullName: '', email: '', phone: '', companyName: '', password: '', confirmPassword: '', area: '', plan: planFromQuery });
-      setTimeout(() => {
+
+      const planName = planFromQuery;
+      const selectedPlanDetails = allPlansData.find(p => p.name === planName);
+
+      if (selectedPlanDetails && selectedPlanDetails.mercadoPagoPreapprovalPlanId) {
+        let checkoutUrl = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${selectedPlanDetails.mercadoPagoPreapprovalPlanId}`;
+        checkoutUrl += `&external_reference=${encodeURIComponent(state.userId)}`;
+        checkoutUrl += `&payer_email=${encodeURIComponent(state.userEmail)}`;
+        
+        setTimeout(() => {
+          window.location.href = checkoutUrl;
+        }, 1500); // Delay to allow toast to be seen
+      } else {
+        // If it's a free plan or plan details are missing (should not happen for paid), redirect to login
         router.push('/login');
-      }, 2500);
+      }
+      // Do not reset form here as we are redirecting or should let user see info.
     } else if (state.status === 'error') {
       toast({
         title: 'Erro no Cadastro',
@@ -123,6 +134,14 @@ function CadastroForm() {
       if (state.issues?.some(issue => issue.toLowerCase().includes('senhas não coincidem'))) {
         form.setError('confirmPassword', {type: 'server', message: 'As senhas não coincidem.'})
       }
+    } else if (state.status === 'success' && (!state.userId || !state.userEmail)) {
+      // Fallback: If somehow userId or userEmail is not returned (should be fixed in action)
+      toast({
+          title: 'Conta Criada!',
+          description: 'Cadastro realizado. Você será direcionado para o login.',
+          variant: 'default'
+      });
+      router.push('/login');
     }
   }, [state, toast, form, router, planFromQuery]);
 
@@ -303,5 +322,3 @@ export default function CadastroPage() {
     </div>
   );
 }
-
-    
