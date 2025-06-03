@@ -58,7 +58,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
             setSelectedPlanForConfirmation(plan);
             setIsConfirmDialogOpen(true);
         } else {
-            onSelectPlan(plan.name, null);
+            onSelectPlan(plan.name, null); // Calls the prop function for local state update/Firestore
             onOpenChange(false);
         }
         return;
@@ -71,18 +71,11 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
 
     if (!currentUser || !currentUser.email) {
       toast({ title: "Ação Necessária", description: "Por favor, faça login ou crie uma conta para selecionar um plano pago.", variant: "destructive" });
-      // Optionally redirect to login/signup
-      // router.push(`/cadastro?plano=${encodeURIComponent(plan.name)}&redirect=/configuracoes?tab=plano`);
       onOpenChange(false);
       return;
     }
 
     setIsProcessingCheckout(true);
-    // For Mercado Pago preapproval plans, we redirect directly to the checkout URL.
-    // We can append `external_reference` for tracking if needed and supported by MP in this context.
-    // Example: `&external_reference=${currentUser.uid}` (ensure URL encoding)
-    // Also `payer_email` can sometimes be prefilled: `&payer_email=${encodeURIComponent(currentUser.email)}`
-    // The user's actual subscription will be linked via webhooks based on payer_email or external_reference.
     let checkoutUrl = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${plan.mercadoPagoPreapprovalPlanId}`;
     checkoutUrl += `&external_reference=${encodeURIComponent(currentUser.uid)}`;
     if (currentUser.email) {
@@ -90,10 +83,9 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
     }
 
     window.location.href = checkoutUrl;
-    // No need to set isProcessingCheckout back to false here as the page will redirect.
-    // If the redirect fails or is blocked, the user remains on the page, and isProcessingCheckout should be reset
-    // or a more robust error handling for redirect failure should be implemented.
-    // For now, assume redirect will happen. If it's an SPA-like behavior without full redirect, reset would be needed.
+    // The page will redirect. If it fails, isProcessingCheckout might remain true.
+    // Consider adding a timeout to reset isProcessingCheckout if redirect doesn't occur for some reason,
+    // though this is typically handled by browser navigation.
   };
 
    const handleConfirmPlanChange = async () => {
@@ -106,10 +98,11 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                 plano: 'Gratuito',
                 mercadoPagoSubscriptionId: null,
                 mercadoPagoPreapprovalPlanId: null,
-                mercadoPagoSubscriptionStatus: 'cancelled_locally', // Indicates user action
+                mercadoPagoSubscriptionStatus: 'cancelled_locally', 
                 mercadoPagoNextPaymentDate: null,
             });
-            onSelectPlan('Gratuito', null);
+            // Call the onSelectPlan passed from props to update parent state/trigger other actions
+            onSelectPlan('Gratuito', null); 
             toast({
                 title: "Plano Alterado para Gratuito",
                 description: `Seu plano foi alterado para Gratuito. Se você tinha uma assinatura ativa, gerencie-a na sua conta Mercado Pago.`,
@@ -122,7 +115,7 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
     }
     setIsConfirmDialogOpen(false);
     setSelectedPlanForConfirmation(null);
-    onOpenChange(false);
+    onOpenChange(false); // Close the main plans modal
   };
 
   const handleCancelConfirmation = () => {
@@ -183,8 +176,8 @@ export function PlansModal({ isOpen, onOpenChange, currentPlanName, onSelectPlan
                     disabled={plan.name === currentPlanName || isProcessingCheckout}
                     aria-label={plan.name === currentPlanName ? `Plano atual: ${plan.name}` : `Selecionar o plano ${plan.name}`}
                     >
-                    {isProcessingCheckout && selectedPlanForConfirmation?.name === plan.name ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    {isProcessingCheckout && selectedPlanForConfirmation?.name === plan.name ? "Processando..." : (plan.name === currentPlanName ? 'Plano Atual' : plan.cta)}
+                    {isProcessingCheckout && plan.mercadoPagoPreapprovalPlanId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {isProcessingCheckout && plan.mercadoPagoPreapprovalPlanId ? "Processando..." : (plan.name === currentPlanName ? 'Plano Atual' : plan.cta)}
                     </Button>
                 </CardFooter>
                 </Card>

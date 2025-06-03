@@ -65,16 +65,11 @@ export function PlansSection() {
 
     setIsProcessingCheckout(plan.mercadoPagoPreapprovalPlanId);
 
-    // Redirect to Mercado Pago preapproval URL
-    // Append external_reference (Firebase UID) and payer_email for tracking and prefill
     let checkoutUrl = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${plan.mercadoPagoPreapprovalPlanId}`;
     checkoutUrl += `&external_reference=${encodeURIComponent(currentUser.uid)}`;
     checkoutUrl += `&payer_email=${encodeURIComponent(currentUser.email)}`;
-    // Potentially add more prefill data if MP supports it, e.g., payer name (though MP checkout usually handles this)
 
     window.location.href = checkoutUrl;
-    // isProcessingCheckout will remain true as the page redirects.
-    // If navigation fails, user might be stuck with a loading button, consider a timeout or error handler for window.location.href
   };
 
   return (
@@ -130,9 +125,9 @@ export function PlansSection() {
                   ) : null}
                   {plan.name === 'Gratuito'
                     ? 'Começar Gratuitamente'
-                    : isProcessingCheckout && isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId
-                    ? 'Processando...'
-                    : `Escolher ${plan.name}`}
+                    : (isProcessingCheckout && isProcessingCheckout === plan.mercadoPagoPreapprovalPlanId
+                      ? 'Processando...'
+                      : `Escolher ${plan.name}`)}
                 </Button>
               </CardFooter>
             </Card>

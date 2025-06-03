@@ -12,7 +12,7 @@ export interface Plan {
   popular?: boolean;
   cta: string;
   level: number;
-  mercadoPagoPreapprovalPlanId: string | null; // Switched from stripePriceId
+  mercadoPagoPreapprovalPlanId: string | null;
 }
 
 export const plans: Plan[] = [
@@ -36,7 +36,7 @@ export const plans: Plan[] = [
     price: 'R$39,90',
     priceDetail: '/mês',
     level: 1,
-    mercadoPagoPreapprovalPlanId: '2c93808497312f410197317897b2001c', // Your Essencial Plan ID
+    mercadoPagoPreapprovalPlanId: '2c93808497312f410197317897b2001c',
     features: [
       { text: 'Até 50 pacientes', included: true },
       { text: 'Agenda completa com alertas', included: true },
@@ -52,7 +52,7 @@ export const plans: Plan[] = [
     price: 'R$69,90',
     priceDetail: '/mês',
     level: 2,
-    mercadoPagoPreapprovalPlanId: '2c93808497312f41019731790c2d001d', // Your Profissional Plan ID
+    mercadoPagoPreapprovalPlanId: '2c93808497312f41019731790c2d001d',
     features: [
       { text: 'Pacientes ilimitados', included: true },
       { text: 'Todas as funcionalidades do Essencial', included: true },
@@ -68,7 +68,7 @@ export const plans: Plan[] = [
     price: 'R$99,90',
     priceDetail: '/mês',
     level: 3,
-    mercadoPagoPreapprovalPlanId: '2c938084970fb5df01973179624c0cee', // Your Clínica Plan ID
+    mercadoPagoPreapprovalPlanId: '2c938084970fb5df01973179624c0cee',
     features: [
       { text: 'Múltiplos profissionais', included: true },
       { text: 'Todas as funcionalidades do Profissional', included: true },
