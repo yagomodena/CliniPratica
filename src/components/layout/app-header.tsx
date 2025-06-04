@@ -15,7 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/icons/logo';
 import { Menu, LayoutDashboard, Users, Calendar, BarChart, Settings, User, CreditCard, LogOut, Landmark, Shield } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"; // Added SheetHeader, SheetTitle
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { auth, db } from '@/firebase';
@@ -73,9 +73,11 @@ export function AppHeader() {
           }
         }, (error) => {
           console.error("Error listening to user document:", error);
-          setCurrentUserData({ plano: "Gratuito", uid: user.uid });
+          // Toasting here can be problematic if toast itself causes re-renders that affect this effect.
+          // Consider a more robust error handling or logging mechanism if this toast is needed.
+          // toast({ title: "Erro ao Carregar Perfil", description: "Não foi possível carregar os dados do seu perfil em tempo real.", variant: "destructive" });
+          setCurrentUserData({ plano: "Gratuito", uid: user.uid }); // Fallback
           setUserPermissions({});
-          toast({ title: "Erro ao Carregar Perfil", description: "Não foi possível carregar os dados do seu perfil em tempo real.", variant: "destructive" });
         });
       } else {
         setCurrentUserData(null);
@@ -89,11 +91,12 @@ export function AppHeader() {
         unsubscribeFirestore();
       }
     };
-  }, [toast]);
+  }, []); // Dependency array is empty, which is correct for onAuthStateChanged
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setIsMobileMenuOpen(false); // Close mobile menu if open
       router.push('/login');
     } catch (error) {
       console.error("Erro ao fazer logout:", error);
@@ -102,41 +105,51 @@ export function AppHeader() {
   };
 
   const isAccessible = (href: string, permissionKey?: MenuItemId) => {
+    // Admin area check
     if (permissionKey === 'admin_area') {
       return usuario?.email === ADMIN_EMAIL;
     }
 
-    if (currentUserData?.cargo === 'Administrador') {
-      if (currentUserData?.plano === 'Gratuito') {
+    // If no Firebase user or no Firestore user data, deny access to protected routes.
+    // This function is primarily for rendering UI elements (links).
+    // Actual route protection should happen at the layout/page level.
+    if (!usuario || !currentUserData) {
+        // For navLinks in AppHeader, all are considered protected or admin-specific.
+        // If called with a truly public route URL (which navLinks doesn't contain), logic would differ.
+        return false;
+    }
+
+    // Admin user, full access (unless on free plan for certain routes)
+    if (currentUserData.cargo === 'Administrador') {
+      if (currentUserData.plano === 'Gratuito') {
         return freePlanAllowed.includes(href);
       }
       return true;
     }
 
-    if (currentUserData?.plano === 'Clínica' && currentUserData?.cargo !== 'Administrador') {
+    // Non-admin user in a 'Clínica' plan - check specific permissions
+    if (currentUserData.plano === 'Clínica') { // currentUserData.cargo !== 'Administrador' is implied
       if (permissionKey && userPermissions) {
-        if (userPermissions[permissionKey as keyof UserPermissions] === false) {
-          return false;
-        }
-        if (userPermissions[permissionKey as keyof UserPermissions] === undefined && permissionKey !== 'dashboard') {
-            return false;
-        }
-        if (userPermissions[permissionKey as keyof UserPermissions] === undefined && permissionKey === 'dashboard') {
-            return true;
-        }
-        if (userPermissions[permissionKey as keyof UserPermissions] === true) {
-            return true;
-        }
-      } else if (permissionKey && !userPermissions) {
-          return false;
+        // Deny if explicitly false
+        if (userPermissions[permissionKey as keyof UserPermissions] === false) return false;
+        // Deny if undefined AND it's not the dashboard (dashboard is default accessible if no specific permission)
+        if (userPermissions[permissionKey as keyof UserPermissions] === undefined && permissionKey !== 'dashboard') return false;
+        // Allow if explicitly true, or if undefined and it IS the dashboard
+        return true;
       }
+      // Fallback for clinic user if permissions somehow not loaded: only dashboard accessible
+      return permissionKey === 'dashboard';
     }
 
-    if (currentUserData?.plano === 'Gratuito') {
+    // User on 'Gratuito' plan (and not Admin, not Clínica)
+    if (currentUserData.plano === 'Gratuito') {
       return freePlanAllowed.includes(href);
     }
+
+    // Default for other authenticated users on paid plans (Essencial, Profissional)
     return true;
   };
+
 
   const handleNavigation = (href: string, permissionKey?: MenuItemId) => {
     if (!isAccessible(href, permissionKey)) {
@@ -190,7 +203,15 @@ export function AppHeader() {
             </Button>
           </SheetTrigger>
           <div className="md:hidden flex-1 flex justify-center">
-            <Link href="/dashboard" className="flex items-center">
+            {/* Ensure dashboard link is also protected by isAccessible if needed, or always show logo link */}
+            <Link href="/dashboard" className="flex items-center" onClick={(e) => {
+              if(!isAccessible('/dashboard', 'dashboard')) {
+                e.preventDefault();
+                handleNavigation('/dashboard', 'dashboard');
+              } else {
+                setIsMobileMenuOpen(false);
+              }
+            }}>
               <Logo textClassName="text-primary text-xl" dotClassName="text-foreground text-xl" />
             </Link>
           </div>
