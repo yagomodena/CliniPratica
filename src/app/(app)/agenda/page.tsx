@@ -129,6 +129,8 @@ type ClinicUser = {
   nomeCompleto: string;
 };
 
+const UNASSIGNED_RESPONSIBLE_VALUE = "__UNASSIGNED_PROFESSIONAL__";
+
 
 const getAppointmentTypesPath = (userData: any) => {
   const isClinica = userData?.plano === 'Clínica';
@@ -580,9 +582,9 @@ export default function AgendaPage() {
         createdAt: serverTimestamp(),
       };
 
-      if (currentUserData.plano === 'Clínica' && responsibleUserId && responsibleUser) {
-        newApptData.responsibleUserId = responsibleUserId;
-        newApptData.responsibleUserName = responsibleUser.nomeCompleto;
+      if (currentUserData.plano === 'Clínica') {
+        newApptData.responsibleUserId = responsibleUserId || null; // Store null if empty or unassigned
+        newApptData.responsibleUserName = responsibleUserId && responsibleUser ? responsibleUser.nomeCompleto : null;
       }
 
 
@@ -704,8 +706,8 @@ export default function AgendaPage() {
       };
 
       if (currentUserData.plano === 'Clínica') {
-        apptUpdateData.responsibleUserId = responsibleUserId || null; // Store null if empty
-        apptUpdateData.responsibleUserName = responsibleUser ? responsibleUser.nomeCompleto : null;
+        apptUpdateData.responsibleUserId = responsibleUserId || null;
+        apptUpdateData.responsibleUserName = responsibleUserId && responsibleUser ? responsibleUser.nomeCompleto : null;
       }
 
 
@@ -1200,12 +1202,18 @@ export default function AgendaPage() {
               {currentUserData?.plano === 'Clínica' && (
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="responsibleUserId" className="text-right col-span-1">Profissional</Label>
-                  <Select value={newAppointmentForm.responsibleUserId || ''} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'responsibleUserId', value)}>
+                  <Select 
+                    value={newAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : newAppointmentForm.responsibleUserId} 
+                    onValueChange={(value) => {
+                        const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
+                        handleFormSelectChange(setNewAppointmentForm, 'responsibleUserId', valToStore);
+                    }}
+                  >
                     <SelectTrigger id="responsibleUserId" className="col-span-3">
                       <SelectValue placeholder="Clínica / Não especificado" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Clínica / Não especificado</SelectItem>
+                      <SelectItem value={UNASSIGNED_RESPONSIBLE_VALUE}>Clínica / Não especificado</SelectItem>
                       {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
                         <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
                       ))}
@@ -1376,12 +1384,18 @@ export default function AgendaPage() {
             {currentUserData?.plano === 'Clínica' && (
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="editResponsibleUserId" className="text-right col-span-1">Profissional</Label>
-                  <Select value={editAppointmentForm.responsibleUserId || ''} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'responsibleUserId', value)}>
+                  <Select 
+                    value={editAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : editAppointmentForm.responsibleUserId} 
+                    onValueChange={(value) => {
+                        const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
+                        handleFormSelectChange(setEditAppointmentForm, 'responsibleUserId', valToStore);
+                    }}
+                  >
                     <SelectTrigger id="editResponsibleUserId" className="col-span-3">
                       <SelectValue placeholder="Clínica / Não especificado" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Clínica / Não especificado</SelectItem>
+                      <SelectItem value={UNASSIGNED_RESPONSIBLE_VALUE}>Clínica / Não especificado</SelectItem>
                       {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
                         <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
                       ))}
