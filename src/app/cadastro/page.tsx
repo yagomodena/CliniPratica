@@ -82,7 +82,7 @@ function CadastroForm() {
     },
   });
 
-   useEffect(() => {
+  useEffect(() => {
     if (!planFromQuery) {
       setShowPlanAlert(true);
     } else if (form.getValues('plan') !== planFromQuery) {
@@ -102,45 +102,47 @@ function CadastroForm() {
       const planName = planFromQuery;
       const selectedPlanDetails = allPlansData.find(p => p.name === planName);
 
-      if (selectedPlanDetails && selectedPlanDetails.mercadoPagoPreapprovalPlanId) {
-        let checkoutUrl = `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${selectedPlanDetails.mercadoPagoPreapprovalPlanId}`;
-        checkoutUrl += `&external_reference=${encodeURIComponent(state.userId)}`;
-        checkoutUrl += `&payer_email=${encodeURIComponent(state.userEmail)}`;
-        
+      if (selectedPlanDetails?.mercadoPagoPreapprovalPlanId) {
+        const checkoutUrl =
+          `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${selectedPlanDetails.mercadoPagoPreapprovalPlanId}` +
+          `&external_reference=${encodeURIComponent(state.userId)}` +
+          `&payer_email=${encodeURIComponent(state.userEmail)}`;
+
         setTimeout(() => {
           window.location.href = checkoutUrl;
-        }, 1500); // Delay to allow toast to be seen
+        }, 1500);
       } else {
-        // If it's a free plan or plan details are missing (should not happen for paid), redirect to login
         router.push('/login');
       }
-      // Do not reset form here as we are redirecting or should let user see info.
-    } else if (state.status === 'error') {
+    }
+
+    if (state.status === 'error') {
       toast({
         title: 'Erro no Cadastro',
         description: state.message || 'Por favor, verifique os campos.',
         variant: 'destructive',
       });
-      
-      const fieldErrors = registrationFormSchema.safeParse(state.fields || {}).error?.flatten().fieldErrors;
-      if (fieldErrors) {
-        (Object.keys(fieldErrors) as Array<keyof RegistrationFormValues>).forEach((key) => {
-            const messages = fieldErrors[key];
-            if (messages && messages.length > 0) {
-              form.setError(key, { type: 'server', message: messages[0] });
-            }
-        });
+
+      if (state.fields) {
+        (Object.entries(state.fields) as [keyof RegistrationFormValues, string][]).forEach(
+          ([key, message]) => {
+            form.setError(key, { type: 'server', message });
+          }
+        );
       }
+
       if (state.issues?.some(issue => issue.toLowerCase().includes('senhas não coincidem'))) {
-        form.setError('confirmPassword', {type: 'server', message: 'As senhas não coincidem.'})
+        form.setError('confirmPassword', { type: 'server', message: 'As senhas não coincidem.' });
       }
-    } else if (state.status === 'success' && (!state.userId || !state.userEmail)) {
-      // Fallback: If somehow userId or userEmail is not returned (should be fixed in action)
+    }
+
+    if (state.status === 'success' && (!state.userId || !state.userEmail)) {
       toast({
-          title: 'Conta Criada!',
-          description: 'Cadastro realizado. Você será direcionado para o login.',
-          variant: 'default'
+        title: 'Conta Criada!',
+        description: 'Cadastro realizado. Você será direcionado para o login.',
+        variant: 'default',
       });
+
       router.push('/login');
     }
   }, [state, toast, form, router, planFromQuery]);
@@ -149,7 +151,7 @@ function CadastroForm() {
     return (
       <AlertDialog open={showPlanAlert} onOpenChange={(isOpen) => {
         if (!isOpen) {
-           router.push('/#planos');
+          router.push('/#planos');
         }
         setShowPlanAlert(isOpen);
       }}>
@@ -174,12 +176,12 @@ function CadastroForm() {
   const onSubmitRHF = (rhfData: RegistrationFormValues) => {
     const formData = new FormData();
     (Object.keys(rhfData) as Array<keyof RegistrationFormValues>).forEach((key) => {
-        const value = rhfData[key];
-        if (value !== undefined && value !== null) {
-            formData.append(key, String(value));
-        } else if (key === 'companyName' && value === undefined) {
-            formData.append(key, '');
-        }
+      const value = rhfData[key];
+      if (value !== undefined && value !== null) {
+        formData.append(key, String(value));
+      } else if (key === 'companyName' && value === undefined) {
+        formData.append(key, '');
+      }
     });
     startTransition(() => {
       formAction(formData);
@@ -191,7 +193,7 @@ function CadastroForm() {
     <Card className="w-full max-w-lg shadow-xl">
       <CardHeader className="text-center">
         <div className="mx-auto mb-6 w-fit">
-            <Logo textClassName="text-primary text-3xl" dotClassName="text-foreground text-3xl" />
+          <Logo textClassName="text-primary text-3xl" dotClassName="text-foreground text-3xl" />
         </div>
         <CardTitle className="text-3xl font-bold text-primary">Crie sua Conta no CliniPrática</CardTitle>
         <CardDescription>
@@ -276,24 +278,24 @@ function CadastroForm() {
           <div>
             <Label htmlFor="area">Área de Atuação*</Label>
             <Controller
-                name="area"
-                control={form.control}
-                render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value || ''}>
-                        <SelectTrigger id="area">
-                            <SelectValue placeholder="Selecione sua área de atuação" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {areasDeAtuacao.map((areaOption) => (
-                                <SelectItem key={areaOption} value={areaOption}>
-                                    {areaOption}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                )}
+              name="area"
+              control={form.control}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value || ''}>
+                  <SelectTrigger id="area">
+                    <SelectValue placeholder="Selecione sua área de atuação" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {areasDeAtuacao.map((areaOption) => (
+                      <SelectItem key={areaOption} value={areaOption}>
+                        {areaOption}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             />
-             {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
+            {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
           </div>
           <SubmitButton pending={isActionPending} />
         </form>

@@ -1,9 +1,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { db } from '@/firebaseAdmin'; // Firebase Admin SDK
-import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { plans } from '@/lib/plans-data'; // Your plans data to map IDs to names
+import { db } from '@/firebase';
+import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp, Timestamp, getDoc } from 'firebase/firestore';
+import { plans } from '@/lib/plans-data';
 
 const MERCADO_PAGO_WEBHOOK_SECRET = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
 const MERCADO_PAGO_ACCESS_TOKEN = process.env.MERCADO_PAGO_ACCESS_TOKEN;

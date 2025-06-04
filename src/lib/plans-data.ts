@@ -44,7 +44,6 @@ export const plans: Plan[] = [
       { text: 'Controle de Lançamentos Financeiros Gerais', included: true },
       { text: 'Suporte por e-mail', included: true },
     ],
-    popular: true,
     cta: 'Escolher Essencial',
   },
   {
@@ -61,6 +60,7 @@ export const plans: Plan[] = [
       { text: 'Relatórios avançados (todos)', included: true },
       { text: 'Suporte prioritário', included: true },
     ],
+    popular: true,
     cta: 'Escolher Profissional',
   },
   {
