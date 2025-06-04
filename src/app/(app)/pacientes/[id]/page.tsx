@@ -53,7 +53,7 @@ const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod
 
 type HistoryItem = {
   id: string;
-  date: string;
+  date: string; // Should be 'yyyy-MM-dd'
   type: string;
   notes: string;
   createdById?: string;
@@ -1071,12 +1071,13 @@ export default function PacienteDetalhePage() {
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth() - 20;
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 20; // 10mm margin on each side
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
       pdf.addImage(imgData, 'PNG', 10, 10, pdfWidth, pdfHeight);
-      pdf.save(`evolucao-${patient.name.replace(/\s+/g, '_')}-${selectedHistoryNote.date}.pdf`);
+      pdf.save(`evolucao-${patient.name.replace(/\s+/g, '_')}-${selectedHistoryNote.date.replace(/\//g, '-')}.pdf`);
       toast({ title: "PDF Exportado", description: "A nota do histórico foi exportada como PDF.", variant: "success" });
     } catch (error) {
+      console.error("Error generating PDF:", error);
       toast({ title: "Erro ao Exportar PDF", description: "Não foi possível gerar o arquivo PDF.", variant: "destructive" });
     }
   };
@@ -1162,12 +1163,20 @@ export default function PacienteDetalhePage() {
       return age;
     } catch { return '-'; }
   };
-  const formatDate = (dateString: string, formatStr = 'PPP') => {
-    if (!dateString) return '-';
+  const formatDate = (dateString: string | undefined, formatStr = 'PPP') => {
+    if (!dateString) return 'Data não disponível';
     try {
-      return format(parseISO(dateString), formatStr, { locale: ptBR });
-    } catch { return dateString; }
+      // Assuming dateString is 'yyyy-MM-dd'
+      const [year, month, day] = dateString.split('-').map(Number);
+      // JavaScript months are 0-indexed
+      return format(new Date(year, month - 1, day), formatStr, { locale: ptBR });
+    } catch { 
+      // Fallback for other formats, or if parseISO was intended for full ISO strings
+      try { return format(parseISO(dateString), formatStr, { locale: ptBR }); }
+      catch { return dateString; }
+    }
   };
+
 
   return (
     <div className="space-y-6">
@@ -1344,7 +1353,7 @@ export default function PacienteDetalhePage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                  <div><strong>Nome:</strong> {patient?.name}</div><div><strong>Nascimento:</strong> {formatDate(patient?.dob || '')}</div><div><strong>Email:</strong> {patient?.email}</div><div><strong>Telefone:</strong> {patient?.phone || '-'}</div>
+                  <div><strong>Nome:</strong> {patient?.name}</div><div><strong>Nascimento:</strong> {formatDate(patient?.dob)}</div><div><strong>Email:</strong> {patient?.email}</div><div><strong>Telefone:</strong> {patient?.phone || '-'}</div>
                   <div className="md:col-span-2"><strong>Endereço:</strong> {patient?.address || '-'}</div><div><strong>Objetivo:</strong> {patient?.objetivoPaciente || '-'}</div><div><strong>Status:</strong> <Badge variant={patient?.status === 'Ativo' ? 'default' : 'secondary'} className={`ml-2 px-2 py-0.5 text-xs ${patient?.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{patient?.status}</Badge></div>
                 </div>
               )}
@@ -1412,7 +1421,46 @@ export default function PacienteDetalhePage() {
       <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Gerenciar Objetivos</DialogTitle></DialogHeader><div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">{patientObjectives.map((obj) => (<div key={obj.id || obj.name} className="flex items-center justify-between p-2 border rounded-md">{editingObjectiveInfo?.objective.id === obj.id ? (<div className="flex-grow flex items-center gap-2 mr-2"><Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" /><Button size="icon" className="h-8 w-8" onClick={handleSaveEditedObjectiveName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></div>) : (<span className={`flex-grow ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>)}<div className="flex gap-1 items-center ml-auto">{editingObjectiveInfo?.objective.id !== obj.id && (<><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteObjectiveDialog(obj)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}<Switch checked={obj.status === 'active'} onCheckedChange={() => setObjectiveToToggleStatusConfirm(obj)} aria-label={`Status ${obj.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" /></div></div>))}{patientObjectives.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum objetivo.</p>}</div><DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={!!objectiveToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setObjectiveToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja {objectiveToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{objectiveToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => objectiveToToggleStatusConfirm && handleToggleObjectiveStatus(objectiveToToggleStatusConfirm)} className={objectiveToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{objectiveToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={isDeleteObjectiveConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setObjectiveToDelete(null); setIsDeleteObjectiveConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{objectiveToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteObjective} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}><DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]"><DialogHeader><DialogTitle>Detalhes - {selectedHistoryNote?.type}</DialogTitle><DialogDescription>Data: {selectedHistoryNote ? formatDate(selectedHistoryNote.date) : ''}</DialogDescription></DialogHeader><div id="historyNoteContentToExport" className="py-4 max-h-[60vh] overflow-y-auto">{selectedHistoryNote && <div className="history-note-content prose prose-sm sm:prose-base max-w-none" dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }} />}</div><DialogFooter><Button variant="outline" onClick={handleExportPdf}> <FileDown className="mr-2 h-4 w-4" /> Exportar para PDF </Button><DialogClose asChild><Button type="button" variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
+      
+      <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}>
+        <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Evolução</DialogTitle>
+            {selectedHistoryNote && (
+              <DialogDescription>
+                Informações sobre o registro do paciente.
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <div id="historyNoteContentToExport" className="py-4 max-h-[60vh] overflow-y-auto text-sm">
+            {selectedHistoryNote && (
+              <>
+                <div className="mb-4 space-y-1 border-b pb-3">
+                  <p><strong>Tipo de Atendimento:</strong> {selectedHistoryNote.type || 'Não especificado'}</p>
+                  <p><strong>Data do Registro:</strong> {formatDate(selectedHistoryNote.date)}</p>
+                  {selectedHistoryNote.createdByName && (
+                    <p><strong>Registrado por:</strong> {selectedHistoryNote.createdByName}</p>
+                  )}
+                </div>
+                <h3 className="font-semibold mb-2 text-base">Observações:</h3>
+                <div 
+                  className="history-note-content prose prose-sm sm:prose-base max-w-none" 
+                  dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes || '<p>Nenhuma observação registrada.</p>' }} 
+                />
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleExportPdf}>
+              <FileDown className="mr-2 h-4 w-4" /> Exportar para PDF
+            </Button>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">Fechar</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={isDeleteHistoryConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setHistoryItemToDelete(null); setIsDeleteHistoryConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Registro</AlertDialogTitle><AlertDialogDescription>Deseja excluir este registro de <strong>{historyItemToDelete?.type}</strong> em {historyItemToDelete ? formatDate(historyItemToDelete.date) : ''}?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setHistoryItemToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteHistory} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
       <AlertDialog open={isConfirmOverwriteAnamneseOpen} onOpenChange={setIsConfirmOverwriteAnamneseOpen}>
@@ -1433,3 +1481,4 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
+
