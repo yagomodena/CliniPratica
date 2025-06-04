@@ -10,6 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
+import { Badge } from '@/components/ui/badge'; // Added Badge import
 import { Bar, CartesianGrid, XAxis, YAxis, BarChart as RechartsBarChart, Line, LineChart as RechartsLineChart, ResponsiveContainer } from "recharts";
 import Link from "next/link";
 import {
@@ -88,7 +89,8 @@ type AppointmentForDashboard = {
   time: string;
   patientName: string;
   patientSlug: string;
-  responsibleUserName?: string; // Added for clinic plan
+  responsibleUserName?: string;
+  status?: 'agendado' | 'cancelado' | 'realizado' | string; // Added status
 };
 
 type WeeklyAppointmentChartData = {
@@ -282,17 +284,17 @@ export default function DashboardPage() {
           q = query(apptsRef,
             where('nomeEmpresa', '==', uData.nomeEmpresa),
             where('date', '==', dateString),
-            where('responsibleUserId', '==', currentAuthUser.uid), // Filter by responsible user
+            where('responsibleUserId', '==', currentAuthUser.uid),
             orderBy('time')
           );
-        } else { // 'all_clinic'
+        } else { 
           q = query(apptsRef,
             where('nomeEmpresa', '==', uData.nomeEmpresa),
             where('date', '==', dateString),
             orderBy('time')
           );
         }
-      } else { // Individual plans
+      } else { 
         q = query(apptsRef,
           where('uid', '==', currentAuthUser.uid),
           where('date', '==', dateString),
@@ -310,6 +312,7 @@ export default function DashboardPage() {
           patientName: data.patientName as string,
           patientSlug: data.patientSlug as string,
           responsibleUserName: data.responsibleUserName as string | undefined,
+          status: data.status as AppointmentForDashboard['status'] | undefined, // Include status
         });
       });
       setTodaysFirebaseAppointments(fetchedAppointments);
@@ -341,16 +344,16 @@ export default function DashboardPage() {
             where('nomeEmpresa', '==', uData.nomeEmpresa),
             where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
             where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd')),
-            where('responsibleUserId', '==', currentAuthUser.uid) // Filter by responsible user
+            where('responsibleUserId', '==', currentAuthUser.uid) 
           );
-        } else { // 'all_clinic'
+        } else { 
           q = query(apptsRef,
             where('nomeEmpresa', '==', uData.nomeEmpresa),
             where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
             where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
           );
         }
-      } else { // Individual plans
+      } else { 
         q = query(apptsRef,
           where('uid', '==', currentAuthUser.uid),
           where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
@@ -363,7 +366,7 @@ export default function DashboardPage() {
         const data = docSnap.data();
         try {
           const apptDate = parseISO(data.date as string);
-          const dayIndex = (getDay(apptDate) + 6) % 7;
+          const dayIndex = (getDay(apptDate) + 6) % 7; 
           if (daysOfWeekData[dayIndex]) {
             daysOfWeekData[dayIndex].appointments += 1;
           }
@@ -419,7 +422,7 @@ export default function DashboardPage() {
         const percentage = ((currentMonthTotal - previousMonthTotal) / previousMonthTotal) * 100;
         setRevenueComparisonPercentage(percentage);
       } else if (currentMonthTotal > 0) {
-        setRevenueComparisonPercentage(100);
+        setRevenueComparisonPercentage(100); 
       } else {
         setRevenueComparisonPercentage(0);
       }
@@ -676,6 +679,16 @@ export default function DashboardPage() {
     setIsBirthdayMessageDialogOpen(false);
   };
 
+  const getStatusBadgeVariant = (status: AppointmentForDashboard['status']) => {
+    if (!status) return 'secondary';
+    switch (status.toLowerCase()) {
+      case 'agendado': return 'default';
+      case 'realizado': return 'success';
+      case 'cancelado': return 'destructive';
+      default: return 'secondary';
+    }
+  };
+
 
   return (
     <div className="space-y-8">
@@ -801,7 +814,7 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">Pacientes Agendados Hoje</CardTitle>
             <CalendarCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-3 pt-4 max-h-[230px] overflow-y-auto"> {/* Adjusted max-h */}
+          <CardContent className="space-y-3 pt-4 max-h-[230px] overflow-y-auto"> 
             {currentUserData?.plano === 'Clínica' && (
               <div className="mb-3">
                 <Label htmlFor="today-filter" className="text-xs text-muted-foreground">Filtrar por:</Label>
@@ -824,6 +837,11 @@ export default function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <span className="font-medium shrink-0">{appt.time}</span> -
                     <span className="text-muted-foreground truncate ml-1" title={appt.patientName}>{appt.patientName}</span>
+                    {appt.status && (
+                      <Badge variant={getStatusBadgeVariant(appt.status)} className="ml-2 text-xs capitalize">
+                        {appt.status}
+                      </Badge>
+                    )}
                     {currentUserData?.plano === 'Clínica' && appt.responsibleUserName && (
                       <div className="text-xs text-muted-foreground flex items-center gap-1">
                         <UserCog className="h-3 w-3"/> {appt.responsibleUserName}
@@ -1170,7 +1188,7 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
-       {/* Birthday Message Dialog */}
+       
       <Dialog open={isBirthdayMessageDialogOpen} onOpenChange={setIsBirthdayMessageDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1231,3 +1249,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
