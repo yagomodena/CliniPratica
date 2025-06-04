@@ -4,7 +4,7 @@
 import { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send, Info, AlertTriangle as AlertTriangleIcon } from "lucide-react"; // Renamed AlertTriangle to AlertTriangleIcon
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send, Info, AlertTriangle as AlertTriangleIcon, Filter, UserCog } from "lucide-react";
 import {
   ChartContainer,
   ChartTooltip,
@@ -45,43 +45,39 @@ import {
   serverTimestamp,
   Timestamp,
   orderBy,
-  onSnapshot, // Added onSnapshot
-  Unsubscribe // Added Unsubscribe
+  onSnapshot,
+  Unsubscribe
 } from "firebase/firestore";
 import { MessageCircle } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 
-// Type for patients fetched from Firebase, used in select dropdowns for alerts
 type PatientForSelect = {
-  id: string; // Firestore document ID
+  id: string;
   name: string;
-  slug: string; // Slug for linking
+  slug: string;
 };
 
-// Patient data structure for birthday checks (can be simplified or expanded as needed)
 type PatientForBirthday = {
   id: string;
   name: string;
-  dob?: string; // Date of birth as YYYY-MM-DD
+  dob?: string;
   phone?: string;
-  slug: string; // Slug for linking
+  slug: string;
 };
 
 
-// Alert data structure, now includes Firestore document ID
 type Alert = {
-  id: string; // Firestore document ID
-  uid: string; // UID of the user who created it, or a relevant UID for clinic context
-  nomeEmpresa?: string; // For clinic-wide alerts
-  patientId: string; // Firestore document ID of the patient
+  id: string;
+  uid: string;
+  nomeEmpresa?: string;
+  patientId: string;
   patientName: string;
   patientSlug: string;
   reason: string;
-  createdAt: Date; // Converted from Firestore Timestamp
+  createdAt: Date;
 };
 
-// New Alert Form structure
 type AlertForm = {
   patientId: string;
   reason: string;
@@ -92,6 +88,7 @@ type AppointmentForDashboard = {
   time: string;
   patientName: string;
   patientSlug: string;
+  responsibleUserName?: string; // Added for clinic plan
 };
 
 type WeeklyAppointmentChartData = {
@@ -108,7 +105,10 @@ const chartConfig = {
 };
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
-type StatusCobranca = 'ativo' | 'pendente' | 'cancelado' | string; // Allow string for potential future statuses
+type StatusCobranca = 'ativo' | 'pendente' | 'cancelado' | string;
+
+type DashboardFilterType = 'mine' | 'all_clinic';
+
 
 export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -118,9 +118,9 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isPlansModalOpen, setIsPlansModalOpen] = useState(false);
   const [isPlanWarningVisible, setIsPlanWarningVisible] = useState(true);
-  
+
   const [usuario, setUsuario] = useState<FirebaseUser | null>(null);
-  const [currentUserData, setCurrentUserData] = useState<any>(null); // Stores data from 'usuarios' collection
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [billingStatus, setBillingStatus] = useState<StatusCobranca | null>(null);
 
 
@@ -139,12 +139,14 @@ export default function DashboardPage() {
   const [revenueComparisonPercentage, setRevenueComparisonPercentage] = useState<number | null>(null);
   const [isLoadingRevenue, setIsLoadingRevenue] = useState(true);
 
-  // State for Birthday Message Dialog
   const [birthdayPatients, setBirthdayPatients] = useState<PatientForBirthday[]>([]);
   const [isBirthdayMessageDialogOpen, setIsBirthdayMessageDialogOpen] = useState(false);
   const [selectedBirthdayPatient, setSelectedBirthdayPatient] = useState<PatientForBirthday | null>(null);
   const [birthdayMessageType, setBirthdayMessageType] = useState<'predefined' | 'custom'>('predefined');
   const [customBirthdayMessage, setCustomBirthdayMessage] = useState('');
+
+  const [todayAppointmentsFilter, setTodayAppointmentsFilter] = useState<DashboardFilterType>('mine');
+  const [weeklyAppointmentsFilter, setWeeklyAppointmentsFilter] = useState<DashboardFilterType>('mine');
 
 
   const isFreePlan = currentUserData?.plano === 'Gratuito';
@@ -169,21 +171,20 @@ export default function DashboardPage() {
 
       if (user) {
         const docRef = doc(db, "usuarios", user.uid);
-        unsubscribeFirestore = onSnapshot(docRef, (docSnap) => { // Listen for real-time updates
+        unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             setCurrentUserData({ ...data, uid: user.uid, plano: data.plano || "Gratuito" });
-            setBillingStatus(data.statusCobranca || 'ativo'); // Update billing status from snapshot
+            setBillingStatus(data.statusCobranca || 'ativo');
              setIsPlanWarningVisible(data.plano === 'Gratuito');
           } else {
             console.warn("User document not found for UID:", user.uid);
             setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
-            setBillingStatus('ativo'); // Default if no doc
+            setBillingStatus('ativo');
             setIsPlanWarningVisible(true);
           }
         }, (error) => {
           console.error("Error listening to user document for dashboard:", error);
-          // Fallback in case of listener error
           setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
           setBillingStatus('ativo');
           setIsPlanWarningVisible(true);
@@ -194,7 +195,6 @@ export default function DashboardPage() {
           });
         });
       } else {
-        // Clear all user-dependent data
         setFirebasePatients([]);
         setAlerts([]);
         setIsLoadingFirebasePatients(false);
@@ -230,7 +230,7 @@ export default function DashboardPage() {
       } else {
         q = query(alertsRef, where('uid', '==', currentAuthUser.uid), orderBy('createdAt', 'desc'));
       }
-      
+
       const querySnapshot = await getDocs(q);
       const fetchedAlerts: Alert[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -270,18 +270,36 @@ export default function DashboardPage() {
     }
   }, [toast]);
 
-  const fetchTodaysAppointments = useCallback(async (currentAuthUser: FirebaseUser, uData: any, dateString: string) => {
-    if (!currentAuthUser || !dateString) return;
+  const fetchTodaysAppointments = useCallback(async (currentAuthUser: FirebaseUser, uData: any, dateString: string, filterType: DashboardFilterType) => {
+    if (!currentAuthUser || !dateString || !uData) return;
     setIsLoadingTodaysAppointments(true);
     try {
       const apptsRef = collection(db, 'agendamentos');
       let q;
-      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
-        q = query(apptsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), where('date', '==', dateString), orderBy('time'));
-      } else {
-        q = query(apptsRef, where('uid', '==', currentAuthUser.uid), where('date', '==', dateString), orderBy('time'));
+
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+        if (filterType === 'mine') {
+          q = query(apptsRef,
+            where('nomeEmpresa', '==', uData.nomeEmpresa),
+            where('date', '==', dateString),
+            where('responsibleUserId', '==', currentAuthUser.uid), // Filter by responsible user
+            orderBy('time')
+          );
+        } else { // 'all_clinic'
+          q = query(apptsRef,
+            where('nomeEmpresa', '==', uData.nomeEmpresa),
+            where('date', '==', dateString),
+            orderBy('time')
+          );
+        }
+      } else { // Individual plans
+        q = query(apptsRef,
+          where('uid', '==', currentAuthUser.uid),
+          where('date', '==', dateString),
+          orderBy('time')
+        );
       }
-      
+
       const querySnapshot = await getDocs(q);
       const fetchedAppointments: AppointmentForDashboard[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -291,6 +309,7 @@ export default function DashboardPage() {
           time: data.time as string,
           patientName: data.patientName as string,
           patientSlug: data.patientSlug as string,
+          responsibleUserName: data.responsibleUserName as string | undefined,
         });
       });
       setTodaysFirebaseAppointments(fetchedAppointments);
@@ -303,8 +322,8 @@ export default function DashboardPage() {
     }
   }, [toast]);
 
-  const fetchWeeklyAppointments = useCallback(async (currentAuthUser: FirebaseUser, uData: any, now: Date) => {
-    if (!currentAuthUser || !now) return;
+  const fetchWeeklyAppointments = useCallback(async (currentAuthUser: FirebaseUser, uData: any, now: Date, filterType: DashboardFilterType) => {
+    if (!currentAuthUser || !now || !uData) return;
     setIsLoadingWeeklyAppointments(true);
     const weekDaysPt = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const daysOfWeekData: WeeklyAppointmentChartData[] = weekDaysPt.slice(1).concat(weekDaysPt[0]).map(day => ({ day, appointments: 0 }));
@@ -315,22 +334,30 @@ export default function DashboardPage() {
 
       const apptsRef = collection(db, 'agendamentos');
       let q;
-      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
-         q = query(
-          apptsRef,
-          where('nomeEmpresa', '==', uData.nomeEmpresa),
-          where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
-          where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
-        );
-      } else {
-         q = query(
-          apptsRef,
+
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+        if (filterType === 'mine') {
+          q = query(apptsRef,
+            where('nomeEmpresa', '==', uData.nomeEmpresa),
+            where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
+            where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd')),
+            where('responsibleUserId', '==', currentAuthUser.uid) // Filter by responsible user
+          );
+        } else { // 'all_clinic'
+          q = query(apptsRef,
+            where('nomeEmpresa', '==', uData.nomeEmpresa),
+            where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
+            where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
+          );
+        }
+      } else { // Individual plans
+        q = query(apptsRef,
           where('uid', '==', currentAuthUser.uid),
           where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
           where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
         );
       }
-     
+
       const querySnapshot = await getDocs(q);
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
@@ -353,6 +380,7 @@ export default function DashboardPage() {
       setIsLoadingWeeklyAppointments(false);
     }
   }, [toast]);
+
 
   const fetchMonthlyRevenueData = useCallback(async (currentAuthUser: FirebaseUser, uData: any, now: Date) => {
     if (!currentAuthUser || !now) return;
@@ -379,7 +407,7 @@ export default function DashboardPage() {
         currentMonthQuery = query(transactionsRef, where('ownerId', '==', currentAuthUser.uid), ...baseQueryConditions(now));
         previousMonthQuery = query(transactionsRef, where('ownerId', '==', currentAuthUser.uid), ...baseQueryConditions(subMonths(now, 1)));
       }
-      
+
       const currentMonthSnapshot = await getDocs(currentMonthQuery);
       currentMonthSnapshot.forEach(doc => currentMonthTotal += (doc.data().amount as number || 0));
       setMonthlyRevenue(currentMonthTotal);
@@ -456,8 +484,8 @@ export default function DashboardPage() {
 
           await Promise.all([
             fetchAlerts(usuario, currentUserData),
-            fetchTodaysAppointments(usuario, currentUserData, clientTodayString),
-            fetchWeeklyAppointments(usuario, currentUserData, clientNow),
+            fetchTodaysAppointments(usuario, currentUserData, clientTodayString, todayAppointmentsFilter),
+            fetchWeeklyAppointments(usuario, currentUserData, clientNow, weeklyAppointmentsFilter),
             fetchMonthlyRevenueData(usuario, currentUserData, clientNow)
           ]);
 
@@ -474,7 +502,7 @@ export default function DashboardPage() {
       };
       fetchAllDashboardData();
     }
-  }, [usuario, currentUserData, clientNow, clientTodayString, toast, fetchAlerts, fetchTodaysAppointments, fetchWeeklyAppointments, fetchMonthlyRevenueData]);
+  }, [usuario, currentUserData, clientNow, clientTodayString, toast, fetchAlerts, fetchTodaysAppointments, fetchWeeklyAppointments, fetchMonthlyRevenueData, todayAppointmentsFilter, weeklyAppointmentsFilter]);
 
 
   const [alertForm, setAlertForm] = useState<AlertForm>({
@@ -513,12 +541,12 @@ export default function DashboardPage() {
 
     try {
       const newAlertData: Partial<Alert> = {
-        uid: usuario.uid, // Creator's UID
+        uid: usuario.uid,
         patientId: selectedPatient.id,
         patientName: selectedPatient.name,
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
-        createdAt: serverTimestamp() as any, // Firestore will convert this
+        createdAt: serverTimestamp() as any,
       };
       if(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa){
         newAlertData.nomeEmpresa = currentUserData.nomeEmpresa;
@@ -574,8 +602,6 @@ export default function DashboardPage() {
         patientSlug: selectedPatient.slug,
         reason: alertForm.reason.trim(),
       };
-      // Ensure 'uid' and 'nomeEmpresa' (if applicable) are not accidentally overwritten
-      // They should be set at creation and typically not changed.
 
       await updateDoc(alertRef, updatedAlertData);
 
@@ -614,8 +640,6 @@ export default function DashboardPage() {
 
   const handleSelectPlan = (planName: PlanName) => {
     console.log("Updating plan to:", planName);
-    // This would typically involve updating Firestore and potentially redirecting or refreshing user data
-    // For now, just updating local state for modal behavior
     if (currentUserData) {
         setCurrentUserData((prev: any) => ({...prev, plano: planName}));
     }
@@ -646,7 +670,7 @@ export default function DashboardPage() {
 
     const cleanPhone = selectedBirthdayPatient.phone.replace(/\D/g, '');
     const whatsappLink = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
-    
+
     window.open(whatsappLink, '_blank');
     toast({ title: "Mensagem Pronta", description: `Abrindo WhatsApp para enviar mensagem para ${selectedBirthdayPatient.name}.`, variant: "success"});
     setIsBirthdayMessageDialogOpen(false);
@@ -663,7 +687,7 @@ export default function DashboardPage() {
         <Card className="bg-accent/20 border-accent shadow-md relative">
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
             <div className="flex items-center">
-              <Info className="h-4 w-4 text-accent mr-2" /> {/* Changed from AlertCircle */}
+              <Info className="h-4 w-4 text-accent mr-2" />
               <CardTitle className="text-sm font-bold text-black">
                 Aviso de Plano
               </CardTitle>
@@ -737,6 +761,20 @@ export default function DashboardPage() {
             <BarChart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
+            {currentUserData?.plano === 'Clínica' && (
+              <div className="mb-4">
+                <Label htmlFor="weekly-filter" className="text-xs text-muted-foreground">Filtrar por:</Label>
+                <Select value={weeklyAppointmentsFilter} onValueChange={(value) => setWeeklyAppointmentsFilter(value as DashboardFilterType)}>
+                  <SelectTrigger id="weekly-filter" className="h-8 text-xs">
+                    <SelectValue placeholder="Filtrar..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mine">Meus Agendamentos</SelectItem>
+                    <SelectItem value="all_clinic">Todos da Clínica</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="h-[200px] w-full">
               {isLoadingWeeklyAppointments ? (
                 <p className="text-sm text-muted-foreground text-center py-8">Carregando dados...</p>
@@ -763,14 +801,35 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">Pacientes Agendados Hoje</CardTitle>
             <CalendarCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
+          <CardContent className="space-y-3 pt-4 max-h-[230px] overflow-y-auto"> {/* Adjusted max-h */}
+            {currentUserData?.plano === 'Clínica' && (
+              <div className="mb-3">
+                <Label htmlFor="today-filter" className="text-xs text-muted-foreground">Filtrar por:</Label>
+                <Select value={todayAppointmentsFilter} onValueChange={(value) => setTodayAppointmentsFilter(value as DashboardFilterType)}>
+                  <SelectTrigger id="today-filter" className="h-8 text-xs">
+                    <SelectValue placeholder="Filtrar..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mine">Meus Agendamentos</SelectItem>
+                    <SelectItem value="all_clinic">Todos da Clínica</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {isLoadingTodaysAppointments ? (
               <p className="text-sm text-muted-foreground text-center py-8">Carregando agendamentos...</p>
             ) : todaysFirebaseAppointments.length > 0 ? (
               todaysFirebaseAppointments.map((appt) => (
                 <div key={appt.id} className="flex items-center justify-between text-sm gap-2">
-                  <span className="font-medium shrink-0">{appt.time}</span>
-                  <span className="text-muted-foreground truncate flex-1 min-w-0 text-left sm:text-right" title={appt.patientName}>{appt.patientName}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium shrink-0">{appt.time}</span> -
+                    <span className="text-muted-foreground truncate ml-1" title={appt.patientName}>{appt.patientName}</span>
+                    {currentUserData?.plano === 'Clínica' && appt.responsibleUserName && (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <UserCog className="h-3 w-3"/> {appt.responsibleUserName}
+                      </div>
+                    )}
+                  </div>
                   <Link href={`/pacientes/${appt.patientSlug}`} passHref className="shrink-0">
                     <Button variant="ghost" size="sm" className="h-auto p-1 text-primary hover:text-primary/80">
                       <ArrowRight className="h-4 w-4" />
@@ -823,7 +882,7 @@ export default function DashboardPage() {
                       <Select
                         value={alertForm.patientId}
                         onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
-                        
+
                       >
                         <SelectTrigger className="col-span-3">
                           <SelectValue placeholder="Selecione o paciente" />
@@ -854,7 +913,7 @@ export default function DashboardPage() {
                         className="col-span-3"
                         rows={3}
                         placeholder="Descreva o alerta (ex: Verificar exame, Agendar retorno urgente)"
-                        
+
                       />
                     </div>
                   </div>
@@ -868,7 +927,7 @@ export default function DashboardPage() {
               </DialogContent>
             </Dialog>
           </CardHeader>
-          <CardContent className="space-y-3 pt-4 max-h-[200px] overflow-y-auto">
+          <CardContent className="space-y-3 pt-4 max-h-[230px] overflow-y-auto">
             {isFreePlan ? (
               <div className="text-sm text-muted-foreground text-center py-8">
                 <p>Este recurso está disponível apenas para os planos:</p>
@@ -901,7 +960,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* CARD DE ANIVERSARIANTES */}
         <Card className="shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-1">
@@ -1067,7 +1125,7 @@ export default function DashboardPage() {
                 <Select
                   value={alertForm.patientId}
                   onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
-                  
+
                 >
                   <SelectTrigger className="col-span-3">
                     <SelectValue placeholder="Selecione o paciente" />
@@ -1098,7 +1156,7 @@ export default function DashboardPage() {
                   className="col-span-3"
                   rows={3}
                   placeholder="Descreva o alerta"
-                  
+
                 />
               </div>
             </div>
@@ -1166,8 +1224,8 @@ export default function DashboardPage() {
         onOpenChange={setIsPlansModalOpen}
         currentPlanName={currentUserData?.plano || ""}
         onSelectPlan={handleSelectPlan}
-        currentUser={usuario} // Pass the Firebase auth user
-        currentUserName={currentUserData?.nomeCompleto || usuario?.displayName} // Pass current user's name
+        currentUser={usuario}
+        currentUserName={currentUserData?.nomeCompleto || usuario?.displayName}
       />
 
     </div>

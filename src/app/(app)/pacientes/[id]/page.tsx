@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign, BookText, CheckCircle } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign, BookText, CheckCircle, UserCog } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -51,7 +51,14 @@ const TiptapEditor = dynamic(() => import('@/components/tiptap-editor').then(mod
   loading: () => <div className="w-full h-[150px] border border-input rounded-md bg-muted/50 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /><p className="ml-2 text-muted-foreground">Carregando editor...</p></div>,
 });
 
-type HistoryItem = { id: string; date: string; type: string; notes: string };
+type HistoryItem = {
+  id: string;
+  date: string;
+  type: string;
+  notes: string;
+  createdById?: string;
+  createdByName?: string;
+};
 type DocumentItem = { id: string; name: string; uploadDate: string; url: string; storagePath: string; };
 
 type Patient = {
@@ -556,7 +563,6 @@ export default function PacienteDetalhePage() {
       const userArea = uData.areaAtuacao || "Outro";
       const templates = ANAMNESE_TEMPLATES[userArea] || ANAMNESE_TEMPLATES["Outro"] || [];
       setAnamneseTemplatesForUser(templates);
-      // Initialize selectedAnamneseModelKey to 'none' or the first available template key
       setSelectedAnamneseModelKey(templates.length > 0 ? 'none' : 'none');
 
 
@@ -707,7 +713,7 @@ export default function PacienteDetalhePage() {
   const handleCancelEdit = () => {
     if (patient) setEditedPatient({ ...patient });
     setIsEditing(false);
-    setSelectedAnamneseModelKey('none'); 
+    setSelectedAnamneseModelKey('none');
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -742,7 +748,7 @@ export default function PacienteDetalhePage() {
 
   const handleAddHistory = async () => {
     const isNoteEmpty = !newHistoryNote || newHistoryNote.trim() === '<p></p>' || newHistoryNote.trim() === '';
-    if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim() || !firebaseUserAuth) {
+    if (isNoteEmpty || !patient || !patient.internalId || !newHistoryType.trim() || !firebaseUserAuth || !currentUserData) {
       toast({ title: "Campos Obrigatórios", description: "Tipo de atendimento e observações são obrigatórios para adicionar ao histórico.", variant: "destructive" });
       return;
     }
@@ -756,6 +762,8 @@ export default function PacienteDetalhePage() {
       date: new Date().toISOString().split('T')[0],
       type: newHistoryType,
       notes: newHistoryNote,
+      createdById: firebaseUserAuth.uid,
+      createdByName: currentUserData.nomeCompleto || firebaseUserAuth.displayName || 'Usuário Desconhecido',
     };
     try {
       const patientRef = doc(db, 'pacientes', patient.internalId);
@@ -1114,8 +1122,6 @@ export default function PacienteDetalhePage() {
   const applyAnamneseTemplate = (templateKey: string) => {
     if (templateKey === 'none') {
         setSelectedAnamneseModelKey('none');
-        // Optionally clear the editor if "Nenhum" is selected explicitly
-        // handleAnamneseChange(''); 
         return;
     }
     const selectedTemplate = anamneseTemplatesForUser.find(t => t.key === templateKey);
@@ -1233,7 +1239,13 @@ export default function PacienteDetalhePage() {
                 [...displayPatient.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((item, index) => (
                   <Card key={`${item.id || 'fallbackID'}-${index}`} className="bg-muted/50">
                     <CardHeader className="pb-3 flex flex-row justify-between items-start">
-                      <div><CardTitle className="text-base">{item.type}</CardTitle><span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span></div>
+                      <div>
+                        <CardTitle className="text-base">{item.type}</CardTitle>
+                        <span className="text-sm font-normal text-muted-foreground">{formatDate(item.date)}</span>
+                        {item.createdByName && currentUserData?.plano === 'Clínica' && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><UserCog className="h-3 w-3" /> Registrado por: {item.createdByName}</p>
+                        )}
+                      </div>
                       <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /><span className="sr-only">Opções</span></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleOpenHistoryModal(item)}><Eye className="mr-2 h-4 w-4" /> Ver Detalhes</DropdownMenuItem><DropdownMenuItem onClick={() => handleOpenDeleteHistoryDialog(item)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Excluir Registro</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
                     </CardHeader>
                     <CardContent>
@@ -1402,7 +1414,7 @@ export default function PacienteDetalhePage() {
       <AlertDialog open={isDeleteObjectiveConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setObjectiveToDelete(null); setIsDeleteObjectiveConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{objectiveToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteObjective} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}><DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]"><DialogHeader><DialogTitle>Detalhes - {selectedHistoryNote?.type}</DialogTitle><DialogDescription>Data: {selectedHistoryNote ? formatDate(selectedHistoryNote.date) : ''}</DialogDescription></DialogHeader><div id="historyNoteContentToExport" className="py-4 max-h-[60vh] overflow-y-auto">{selectedHistoryNote && <div className="history-note-content prose prose-sm sm:prose-base max-w-none" dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes }} />}</div><DialogFooter><Button variant="outline" onClick={handleExportPdf}> <FileDown className="mr-2 h-4 w-4" /> Exportar para PDF </Button><DialogClose asChild><Button type="button" variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={isDeleteHistoryConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setHistoryItemToDelete(null); setIsDeleteHistoryConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Registro</AlertDialogTitle><AlertDialogDescription>Deseja excluir este registro de <strong>{historyItemToDelete?.type}</strong> em {historyItemToDelete ? formatDate(historyItemToDelete.date) : ''}?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setHistoryItemToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteHistory} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      
+
       <AlertDialog open={isConfirmOverwriteAnamneseOpen} onOpenChange={setIsConfirmOverwriteAnamneseOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1421,6 +1433,3 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
-
-    
-

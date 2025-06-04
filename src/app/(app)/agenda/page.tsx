@@ -4,7 +4,7 @@
 import React, { useState, FormEvent, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send, FileText, Loader2, DollarSign } from "lucide-react";
+import { Calendar as CalendarIconLucide, PlusCircle, ChevronLeft, ChevronRight, Clock, User, ClipboardList, CalendarPlus, Edit, Trash2, Save, X, Plus, Search, Pencil, Eye, MoreVertical, CheckCircle, RotateCcw, XCircle, MessageSquare, Send, FileText, Loader2, DollarSign, UserCog } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, subDays, parse, isBefore, startOfDay, isToday, isEqual, isSameDay, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -86,12 +86,14 @@ type Appointment = {
   patientName: string;
   patientSlug: string;
   type: string;
-  appointmentTypeId?: string; 
+  appointmentTypeId?: string;
   notes?: string;
   date: string; // 'yyyy-MM-dd'
   status: 'agendado' | 'cancelado' | 'realizado';
-  naoLancarFinanceiro?: boolean; 
-  nomeEmpresa?: string; // Added for clinic identification
+  naoLancarFinanceiro?: boolean;
+  nomeEmpresa?: string;
+  responsibleUserId?: string;
+  responsibleUserName?: string;
 };
 
 type AppointmentsData = {
@@ -104,11 +106,13 @@ const initialAppointmentFormValues = {
   date: '',
   time: '',
   notes: '',
-  naoLancarFinanceiro: false, 
-  appointmentTypeId: '', 
+  naoLancarFinanceiro: false,
+  appointmentTypeId: '',
+  responsibleUserId: '',
 };
 
-type AppointmentFormValues = typeof initialAppointmentFormValues;
+type AppointmentFormValues = typeof initialAppointmentFormValues & { responsibleUserId?: string };
+
 
 type AppointmentTypeObject = {
   id?: string;
@@ -119,6 +123,11 @@ type AppointmentTypeObject = {
 };
 
 const fallbackAppointmentTypesData: AppointmentTypeObject[] = [];
+
+type ClinicUser = {
+  id: string;
+  nomeCompleto: string;
+};
 
 
 const getAppointmentTypesPath = (userData: any) => {
@@ -146,6 +155,9 @@ export default function AgendaPage() {
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [firebasePatients, setFirebasePatients] = useState<PatientFromFirebase[]>([]);
   const [isLoadingPatients, setIsLoadingPatients] = useState(true);
+
+  const [clinicUsers, setClinicUsers] = useState<ClinicUser[]>([]);
+  const [isLoadingClinicUsers, setIsLoadingClinicUsers] = useState(false);
 
   const [appointmentTypes, setAppointmentTypes] = useState<AppointmentTypeObject[]>([]);
   const [isLoadingTypes, setIsLoadingTypes] = useState(true);
@@ -185,7 +197,6 @@ export default function AgendaPage() {
   const [attendanceType, setAttendanceType] = useState('');
   const [isSavingAttendance, setIsSavingAttendance] = useState(false);
 
-  // For conditional "Gerar Lançamento Financeiro?" Switch
   const [showNaoLancarFinanceiroSwitch, setShowNaoLancarFinanceiroSwitch] = useState(false);
 
 
@@ -203,6 +214,29 @@ export default function AgendaPage() {
     console.warn("User data not found in Firestore for UID:", user.uid);
     return null;
   }, []);
+
+  const fetchClinicUsers = useCallback(async (uData: any) => {
+    if (!uData || uData.plano !== 'Clínica' || !uData.nomeEmpresa) {
+      setClinicUsers([]);
+      return;
+    }
+    setIsLoadingClinicUsers(true);
+    try {
+      const usersRef = collection(db, 'usuarios');
+      const q = query(usersRef, where('nomeEmpresa', '==', uData.nomeEmpresa), orderBy('nomeCompleto'));
+      const querySnapshot = await getDocs(q);
+      const usersList: ClinicUser[] = [];
+      querySnapshot.forEach((docSnap) => {
+        usersList.push({ id: docSnap.id, nomeCompleto: docSnap.data().nomeCompleto as string });
+      });
+      setClinicUsers(usersList);
+    } catch (error) {
+      console.error("Erro ao buscar usuários da clínica:", error);
+      toast({ title: "Erro ao buscar usuários", description: "Não foi possível carregar os profissionais.", variant: "warning" });
+    } finally {
+      setIsLoadingClinicUsers(false);
+    }
+  }, [toast]);
 
 
   const fetchAppointmentTypes = useCallback(async () => {
@@ -249,7 +283,7 @@ export default function AgendaPage() {
       } else {
         q = query(apptsRef, where('uid', '==', user.uid));
       }
-      
+
       const querySnapshot = await getDocs(q);
       const fetchedAppointmentsData: AppointmentsData = {};
 
@@ -270,7 +304,9 @@ export default function AgendaPage() {
           date: apptDateKey,
           status: apptStatus,
           naoLancarFinanceiro: data.naoLancarFinanceiro,
-          nomeEmpresa: data.nomeEmpresa
+          nomeEmpresa: data.nomeEmpresa,
+          responsibleUserId: data.responsibleUserId,
+          responsibleUserName: data.responsibleUserName,
         };
 
         if (!fetchedAppointmentsData[apptDateKey]) {
@@ -299,7 +335,10 @@ export default function AgendaPage() {
         setCurrentUserData(uData);
         if (uData) {
           fetchAppointments(user, uData);
-          fetchPatientsForUser(user, uData); // Pass uData here
+          fetchPatientsForUser(user, uData);
+          if (uData.plano === 'Clínica') {
+            fetchClinicUsers(uData);
+          }
         }
       } else {
         setFirebasePatients([]);
@@ -309,13 +348,14 @@ export default function AgendaPage() {
         setCurrentUserData(null);
         setAppointmentTypes(fallbackAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })));
         setIsLoadingTypes(false);
+        setClinicUsers([]);
       }
     });
     return () => unsubscribe();
-  }, [fetchCurrentUserData, fetchAppointments]); // Removed fetchPatientsForUser from here, will be called conditionally
+  }, [fetchCurrentUserData, fetchAppointments, fetchClinicUsers]); // Added fetchClinicUsers
 
-  const fetchPatientsForUser = useCallback(async (user: FirebaseUser, uData: any) => { // Added uData parameter
-    if (!user || !uData) { // Check uData
+  const fetchPatientsForUser = useCallback(async (user: FirebaseUser, uData: any) => {
+    if (!user || !uData) {
         setFirebasePatients([]);
         setIsLoadingPatients(false);
         return;
@@ -329,7 +369,7 @@ export default function AgendaPage() {
       } else {
         q = query(patientsRef, where('uid', '==', user.uid), where('status', '==', 'Ativo'));
       }
-      
+
       const querySnapshot = await getDocs(q);
       const fetchedPatientsData: PatientFromFirebase[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -357,11 +397,14 @@ export default function AgendaPage() {
   useEffect(() => {
     if (currentUserData) {
       fetchAppointmentTypes();
-       if (currentUser) { // Ensure currentUser is also available
+       if (currentUser) {
          fetchPatientsForUser(currentUser, currentUserData);
+         if (currentUserData.plano === 'Clínica') {
+           fetchClinicUsers(currentUserData);
+         }
        }
     }
-  }, [currentUser, currentUserData, fetchAppointmentTypes, fetchPatientsForUser]);
+  }, [currentUser, currentUserData, fetchAppointmentTypes, fetchPatientsForUser, fetchClinicUsers]);
 
 
   const getFirstActiveTypeNameAndId = useCallback(() => {
@@ -383,11 +426,13 @@ export default function AgendaPage() {
       date: initialDateStr,
       type: prev.type || firstActiveTypeName || '',
       appointmentTypeId: prev.appointmentTypeId || firstActiveTypeId || '',
+      responsibleUserId: '',
     }));
     setEditAppointmentForm(prev => ({
       ...initialAppointmentFormValues,
       type: prev.type || firstActiveTypeName || '',
       appointmentTypeId: prev.appointmentTypeId || firstActiveTypeId || '',
+      responsibleUserId: '',
     }));
     setAttendanceType(firstActiveTypeName || '');
   }, [getFirstActiveTypeNameAndId]);
@@ -415,20 +460,20 @@ export default function AgendaPage() {
   const handleFormInputChange = (formSetter: React.Dispatch<React.SetStateAction<AppointmentFormValues>>, field: keyof AppointmentFormValues, value: string | boolean) => {
     formSetter(prev => ({ ...prev, [field]: value }));
   };
-  
+
   const handleFormSelectChange = (formSetter: React.Dispatch<React.SetStateAction<AppointmentFormValues>>, field: keyof AppointmentFormValues, value: string) => {
     formSetter(prev => ({ ...prev, [field]: value }));
-  
+
     if (field === 'type' && currentUserData?.plano !== 'Gratuito') {
       const selectedType = appointmentTypes.find(t => t.name === value);
       if (selectedType) {
         formSetter(prev => ({ ...prev, appointmentTypeId: selectedType.id || '' }));
         if (selectedType.lancarFinanceiroAutomatico && (selectedType.valor || 0) > 0) {
           setShowNaoLancarFinanceiroSwitch(true);
-          formSetter(prev => ({ ...prev, naoLancarFinanceiro: false })); 
+          formSetter(prev => ({ ...prev, naoLancarFinanceiro: false }));
         } else {
           setShowNaoLancarFinanceiroSwitch(false);
-          formSetter(prev => ({ ...prev, naoLancarFinanceiro: true })); 
+          formSetter(prev => ({ ...prev, naoLancarFinanceiro: true }));
         }
       } else {
         setShowNaoLancarFinanceiroSwitch(false);
@@ -455,7 +500,7 @@ export default function AgendaPage() {
   const isDateTimeInPast = (dateTime: Date): boolean => {
     return clientNow ? isBefore(dateTime, clientNow) : true;
   };
-  
+
   const isAppointmentDateInFuture = (appointmentDate: string): boolean => {
     if (!clientToday) return true;
     try {
@@ -478,7 +523,7 @@ export default function AgendaPage() {
       toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
       return;
     }
-    let { patientId, type, date, time, notes, naoLancarFinanceiro, appointmentTypeId } = newAppointmentForm;
+    let { patientId, type, date, time, notes, naoLancarFinanceiro, appointmentTypeId, responsibleUserId } = newAppointmentForm;
 
     if (currentUserData.plano === 'Gratuito') {
         naoLancarFinanceiro = true; // Force no financial launch for free plan
@@ -516,10 +561,12 @@ export default function AgendaPage() {
       return;
     }
 
+    const responsibleUser = clinicUsers.find(u => u.id === responsibleUserId);
+
     try {
-      const newApptRef = await addDoc(collection(db, 'agendamentos'), {
-        uid: currentUser.uid, // Creator's UID
-        nomeEmpresa: currentUserData.plano === 'Clínica' ? (currentUserData.nomeEmpresa || '') : '', // Clinic's name if applicable
+      const newApptData: any = {
+        uid: currentUser.uid,
+        nomeEmpresa: currentUserData.plano === 'Clínica' ? (currentUserData.nomeEmpresa || '') : '',
         date: date,
         time,
         patientId,
@@ -529,21 +576,28 @@ export default function AgendaPage() {
         appointmentTypeId,
         notes,
         status: 'agendado',
-        naoLancarFinanceiro, 
+        naoLancarFinanceiro,
         createdAt: serverTimestamp(),
-      });
+      };
 
-      // Create financial transaction if applicable AND user is not on free plan
+      if (currentUserData.plano === 'Clínica' && responsibleUserId && responsibleUser) {
+        newApptData.responsibleUserId = responsibleUserId;
+        newApptData.responsibleUserName = responsibleUser.nomeCompleto;
+      }
+
+
+      const newApptRef = await addDoc(collection(db, 'agendamentos'), newApptData);
+
       if (currentUserData.plano !== 'Gratuito' && selectedAppointmentType.lancarFinanceiroAutomatico && (selectedAppointmentType.valor || 0) > 0 && !naoLancarFinanceiro) {
         await addDoc(collection(db, 'financialTransactions'), {
-          ownerId: currentUser.uid, // Keep as creator's UID for now, or adjust if financial data needs to be clinic-scoped
+          ownerId: currentUser.uid,
           appointmentId: newApptRef.id,
           date: Timestamp.fromDate(parseISO(date)),
           description: `Consulta - ${type} - ${selectedPatient.name}`,
           patientId: selectedPatient.id,
           patientName: selectedPatient.name,
           amount: selectedAppointmentType.valor,
-          paymentMethod: 'Pix', 
+          paymentMethod: 'Pix',
           status: 'Pendente',
           type: 'atendimento',
           createdAt: serverTimestamp(),
@@ -556,11 +610,12 @@ export default function AgendaPage() {
         date: newAppointmentForm.date,
         type: firstActiveTypeName,
         appointmentTypeId: firstActiveTypeId,
+        responsibleUserId: '',
       });
       setIsNewAppointmentDialogOpen(false);
       setShowNaoLancarFinanceiroSwitch(false);
       toast({ title: "Sucesso!", description: "Agendamento adicionado.", variant: "success" });
-      if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData); // Pass currentUserData
+      if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData);
     } catch (error) {
       console.error("Erro ao adicionar agendamento:", error);
       toast({ title: "Erro", description: "Não foi possível salvar o agendamento.", variant: "destructive" });
@@ -578,6 +633,7 @@ export default function AgendaPage() {
       time: appointment.time,
       notes: appointment.notes || '',
       naoLancarFinanceiro: appointment.naoLancarFinanceiro || false,
+      responsibleUserId: appointment.responsibleUserId || '',
     });
     if (currentUserData?.plano !== 'Gratuito') {
       setShowNaoLancarFinanceiroSwitch(!!(selectedType?.lancarFinanceiroAutomatico && (selectedType?.valor || 0) > 0));
@@ -592,10 +648,10 @@ export default function AgendaPage() {
     if (!editingAppointmentInfo || !currentUser || !currentUserData) return;
 
     const { appointment: originalAppointment } = editingAppointmentInfo;
-    let { patientId, type, date: newDateKey, time, notes, naoLancarFinanceiro, appointmentTypeId } = editAppointmentForm;
-    
+    let { patientId, type, date: newDateKey, time, notes, naoLancarFinanceiro, appointmentTypeId, responsibleUserId } = editAppointmentForm;
+
     if (currentUserData.plano === 'Gratuito') {
-      naoLancarFinanceiro = true; 
+      naoLancarFinanceiro = true;
     }
 
     if (!patientId || !newDateKey || !time || !type || !appointmentTypeId) {
@@ -632,10 +688,10 @@ export default function AgendaPage() {
       return;
     }
 
+    const responsibleUser = clinicUsers.find(u => u.id === responsibleUserId);
+
     try {
-      const apptRef = doc(db, 'agendamentos', originalAppointment.id);
-      await updateDoc(apptRef, {
-        // uid and nomeEmpresa should generally not change on edit, unless ownership model changes
+      const apptUpdateData: any = {
         date: newDateKey,
         time,
         patientId,
@@ -644,10 +700,18 @@ export default function AgendaPage() {
         type,
         appointmentTypeId,
         notes,
-        naoLancarFinanceiro, 
-      });
+        naoLancarFinanceiro,
+      };
 
-      // Logic to manage financial transaction based on changes
+      if (currentUserData.plano === 'Clínica') {
+        apptUpdateData.responsibleUserId = responsibleUserId || null; // Store null if empty
+        apptUpdateData.responsibleUserName = responsibleUser ? responsibleUser.nomeCompleto : null;
+      }
+
+
+      const apptRef = doc(db, 'agendamentos', originalAppointment.id);
+      await updateDoc(apptRef, apptUpdateData);
+
       const financialTransactionsRef = collection(db, 'financialTransactions');
       const qFinance = query(financialTransactionsRef, where('appointmentId', '==', originalAppointment.id));
       const financeSnapshot = await getDocs(qFinance);
@@ -661,8 +725,7 @@ export default function AgendaPage() {
             amount: selectedAppointmentType.valor,
             date: Timestamp.fromDate(parseISO(newDateKey)),
             description: `Consulta - ${type} - ${selectedPatient.name}`,
-            status: 'Pendente', // Or keep existing if already paid? For now, reset to Pendente on edit.
-            // nomeEmpresa might also need update if clinic structure changes, but less likely for transaction edits
+            status: 'Pendente',
           });
         } else {
           await addDoc(financialTransactionsRef, {
@@ -681,10 +744,8 @@ export default function AgendaPage() {
           });
         }
       } else if (existingTransaction) {
-        // If shouldn't generate finance (e.g., switch toggled off, or type changed to non-finance)
-        // AND an existing transaction exists, mark it as cancelled
         await updateDoc(doc(db, 'financialTransactions', existingTransaction.id), {
-          status: 'Cancelado', // Or perhaps delete it, depending on business logic
+          status: 'Cancelado',
         });
       }
 
@@ -708,17 +769,17 @@ export default function AgendaPage() {
         status: newStatus,
         updatedAt: serverTimestamp()
       });
-  
+
       if (currentUserData.plano !== 'Gratuito') {
         const financialTransactionsRef = collection(db, 'financialTransactions');
         const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentId));
         const financeSnapshot = await getDocs(qFinance);
-    
+
         if (!financeSnapshot.empty) {
           const financeDocId = financeSnapshot.docs[0].id;
           const financeDocRef = doc(db, 'financialTransactions', financeDocId);
           const financeDocData = financeSnapshot.docs[0].data();
-    
+
           if (newStatus === 'realizado' && financeDocData.status === 'Pendente') {
             await updateDoc(financeDocRef, {
               status: 'Recebido',
@@ -731,7 +792,7 @@ export default function AgendaPage() {
                   updatedAt: serverTimestamp(),
               });
              }
-          } else if (newStatus === 'cancelado') { // Changed from delete to cancel
+          } else if (newStatus === 'cancelado') {
             await updateDoc(financeDocRef, {
               status: 'Cancelado',
               updatedAt: serverTimestamp(),
@@ -739,7 +800,7 @@ export default function AgendaPage() {
           }
         }
       }
-  
+
       toast({ title: "Status Atualizado", description: `Agendamento marcado como ${newStatus}.`, variant: "success" });
       if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData);
     } catch (error) {
@@ -757,28 +818,27 @@ export default function AgendaPage() {
   const handleConfirmDeleteAppt = async () => {
     if (!appointmentToDeleteInfo || !currentUser || !currentUserData) return;
     try {
-      // Instead of deleting, mark as cancelled
       const apptRef = doc(db, 'agendamentos', appointmentToDeleteInfo.appointmentId);
       await updateDoc(apptRef, {
         status: 'cancelado',
         updatedAt: serverTimestamp()
       });
-  
+
       if (currentUserData.plano !== 'Gratuito') {
         const financialTransactionsRef = collection(db, 'financialTransactions');
         const qFinance = query(financialTransactionsRef, where('appointmentId', '==', appointmentToDeleteInfo.appointmentId));
         const financeSnapshot = await getDocs(qFinance);
-    
+
         if (!financeSnapshot.empty) {
           const financeDocId = financeSnapshot.docs[0].id;
           const financeDocRef = doc(db, 'financialTransactions', financeDocId);
           await updateDoc(financeDocRef, {
-            status: 'Cancelado', 
+            status: 'Cancelado',
             updatedAt: serverTimestamp(),
           });
         }
       }
-  
+
       toast({ title: "Agendamento Cancelado", description: `Agendamento para ${appointmentToDeleteInfo.patientName} foi cancelado.`, variant: "success" });
       if (currentUser && currentUserData) fetchAppointments(currentUser, currentUserData);
     } catch (error) {
@@ -824,7 +884,7 @@ export default function AgendaPage() {
 
     try {
       const tiposRef = getAppointmentTypesPath(currentUserData);
-      await addDoc(tiposRef, typeDataToSave); // Removed serverTimestamp from here as it's not in the schema
+      await addDoc(tiposRef, typeDataToSave);
       toast({ title: 'Sucesso', description: 'Tipo de atendimento adicionado.' });
       setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' });
       setIsAddTypeDialogOpen(false);
@@ -852,7 +912,7 @@ export default function AgendaPage() {
       toast({ title: "Tipo Duplicado", description: `O tipo "${newNameTrimmed}" já existe.`, variant: "destructive" });
       return;
     }
-    
+
     const typeDataToUpdate: Partial<AppointmentTypeObject> = { name: newNameTrimmed };
     if (currentUserData.plano !== 'Gratuito') {
         typeDataToUpdate.valor = currentData.valor || 0;
@@ -871,7 +931,7 @@ export default function AgendaPage() {
       setEditingTypeInfo(null);
       toast({ title: "Sucesso", description: `Tipo "${originalType.name}" atualizado.`, variant: "success" });
       await fetchAppointmentTypes();
-      
+
       const {name: firstActiveTypeName, id: firstActiveTypeId} = getFirstActiveTypeNameAndId();
       if (newAppointmentForm.type === originalType.name) {
         setNewAppointmentForm(prev => ({ ...prev, type: newNameTrimmed, appointmentTypeId: firstActiveTypeId }));
@@ -915,7 +975,7 @@ export default function AgendaPage() {
       toast({ title: "Status Alterado", description: `O tipo "${typeToToggle.name}" foi ${newStatus === 'active' ? 'ativado' : 'desativado'}.`, variant: "success" });
       setTypeToToggleStatusConfirm(null);
       await fetchAppointmentTypes();
-      
+
       const {name: firstActiveName, id: firstActiveId} = getFirstActiveTypeNameAndId();
       if (newStatus === 'inactive') {
         if (newAppointmentForm.type === typeToToggle.name) {
@@ -952,7 +1012,7 @@ export default function AgendaPage() {
       await deleteDoc(docToDeleteRef);
       toast({ title: "Tipo Excluído", description: `O tipo "${typeToDelete.name}" foi removido.`, variant: "success" });
       await fetchAppointmentTypes();
-      
+
       const {name: firstActiveName, id: firstActiveId} = getFirstActiveTypeNameAndId();
       if (newAppointmentForm.type === typeToDelete.name) {
         setNewAppointmentForm(prev => ({ ...prev, type: firstActiveName || '', appointmentTypeId: firstActiveId || ''}));
@@ -1025,7 +1085,7 @@ export default function AgendaPage() {
 
   const handleSaveAttendanceAndMarkRealizado = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!currentUser || !appointmentToRecordAttendance) return;
+    if (!currentUser || !appointmentToRecordAttendance || !currentUserData) return;
     const isNoteEmpty = !attendanceNote || attendanceNote.trim() === '<p></p>' || attendanceNote.trim() === '';
     if (!attendanceType || isNoteEmpty) {
       toast({ title: "Campos Obrigatórios", description: "Tipo e observações são necessários.", variant: "destructive" });
@@ -1043,6 +1103,8 @@ export default function AgendaPage() {
           date: format(new Date(), 'yyyy-MM-dd'),
           type: attendanceType,
           notes: attendanceNote,
+          createdById: currentUser.uid, // Add creator ID
+          createdByName: currentUserData.nomeCompleto || currentUser.displayName || 'Usuário', // Add creator name
         };
         const updatedHistory = [newHistoryEntry, ...currentHistory];
         await updateDoc(patientDocRef, { history: updatedHistory });
@@ -1065,7 +1127,7 @@ export default function AgendaPage() {
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
 
-  if (!clientToday || !selectedDate || !clientNow || isLoadingAppointments || isLoadingTypes) {
+  if (!clientToday || !selectedDate || !clientNow || isLoadingAppointments || isLoadingTypes || isLoadingClinicUsers) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1103,6 +1165,7 @@ export default function AgendaPage() {
               date: currentFormDate,
               type: firstActiveName,
               appointmentTypeId: firstActiveId,
+              responsibleUserId: '',
             });
             if (currentUserData?.plano !== 'Gratuito') {
                 const selectedType = appointmentTypes.find(t => t.id === firstActiveId);
@@ -1119,7 +1182,7 @@ export default function AgendaPage() {
               <PlusCircle className="mr-2 h-4 w-4" /> Novo Agendamento
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[480px]">
+          <DialogContent className="sm:max-w-[520px]"> {/* Increased width for clinic users select */}
             <DialogHeader>
               <DialogTitle>Novo Agendamento</DialogTitle>
               <DialogDescription>Preencha os detalhes.</DialogDescription>
@@ -1134,6 +1197,22 @@ export default function AgendaPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {currentUserData?.plano === 'Clínica' && (
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="responsibleUserId" className="text-right col-span-1">Profissional</Label>
+                  <Select value={newAppointmentForm.responsibleUserId || ''} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'responsibleUserId', value)}>
+                    <SelectTrigger id="responsibleUserId" className="col-span-3">
+                      <SelectValue placeholder="Clínica / Não especificado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Clínica / Não especificado</SelectItem>
+                      {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="newType" className="text-right col-span-1">Tipo*</Label>
                 <div className="col-span-3 flex items-center gap-1">
@@ -1210,6 +1289,7 @@ export default function AgendaPage() {
                     <div className="border-l pl-3">
                       <p className="font-medium flex items-center gap-1"><User className="h-4 w-4" /> {appt.patientName}</p>
                       <p className="text-sm text-muted-foreground flex items-center gap-1"><ClipboardList className="h-4 w-4" /> {appt.type}</p>
+                      {appt.responsibleUserName && currentUserData?.plano === 'Clínica' && <p className="text-xs text-muted-foreground flex items-center gap-1"><UserCog className="h-3 w-3" /> Prof: {appt.responsibleUserName}</p>}
                       {appt.notes && <p className="text-xs text-muted-foreground mt-1 italic">"{appt.notes}"</p>}
                        <Badge variant={getStatusBadgeVariant(appt.status)} className="mt-1.5 text-xs capitalize">{appt.status}</Badge>
                     </div>
@@ -1224,7 +1304,7 @@ export default function AgendaPage() {
                         <DropdownMenuContent align="end">
                             {appt.status === 'agendado' && !(clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow)) && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}><CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Realizado</DropdownMenuItem>}
                             {appt.status === 'realizado' && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}><RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Agendado</DropdownMenuItem>}
-                            {(appt.status === 'agendado' || appt.status === 'realizado') && 
+                            {(appt.status === 'agendado' || appt.status === 'realizado') &&
                               <DropdownMenuItem onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
                                 <Trash2 className="mr-2 h-4 w-4"/> Excluir Agendamento
                               </DropdownMenuItem>
@@ -1280,7 +1360,7 @@ export default function AgendaPage() {
             setShowNaoLancarFinanceiroSwitch(false);
         }
        }}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[520px]"> {/* Increased width */}
           <DialogHeader>
             <DialogTitle>Editar Agendamento</DialogTitle>
             <DialogDescription>Modifique os detalhes.</DialogDescription>
@@ -1293,6 +1373,22 @@ export default function AgendaPage() {
                 <SelectContent>{isLoadingPatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum</SelectItem> : firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
+            {currentUserData?.plano === 'Clínica' && (
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="editResponsibleUserId" className="text-right col-span-1">Profissional</Label>
+                  <Select value={editAppointmentForm.responsibleUserId || ''} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'responsibleUserId', value)}>
+                    <SelectTrigger id="editResponsibleUserId" className="col-span-3">
+                      <SelectValue placeholder="Clínica / Não especificado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Clínica / Não especificado</SelectItem>
+                      {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="editType" className="text-right col-span-1">Tipo*</Label>
               <div className="col-span-3 flex items-center gap-1">
@@ -1455,5 +1551,3 @@ export default function AgendaPage() {
     </div>
   );
 }
-
-    
