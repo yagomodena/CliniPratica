@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
-import { parseISO, getMonth, getDate, format, startOfDay, startOfMonth, endOfMonth, subMonths, getDay, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
+import { parseISO, getMonth, getDate, format, startOfDay, startOfMonth, endOfMonth, subMonths, getDay, startOfWeek, endOfWeek, eachDayOfInterval, isBefore, parse as parseDateFns } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
@@ -90,7 +90,7 @@ type AppointmentForDashboard = {
   patientName: string;
   patientSlug: string;
   responsibleUserName?: string;
-  status?: 'agendado' | 'cancelado' | 'realizado' | string; // Added status
+  status?: 'agendado' | 'cancelado' | 'realizado' | string; 
 };
 
 type WeeklyAppointmentChartData = {
@@ -312,7 +312,7 @@ export default function DashboardPage() {
           patientName: data.patientName as string,
           patientSlug: data.patientSlug as string,
           responsibleUserName: data.responsibleUserName as string | undefined,
-          status: data.status as AppointmentForDashboard['status'] | undefined, // Include status
+          status: data.status as AppointmentForDashboard['status'] | undefined,
         });
       });
       setTodaysFirebaseAppointments(fetchedAppointments);
@@ -679,12 +679,13 @@ export default function DashboardPage() {
     setIsBirthdayMessageDialogOpen(false);
   };
 
-  const getStatusBadgeVariant = (status: AppointmentForDashboard['status']) => {
+  const getStatusBadgeVariant = (status: AppointmentForDashboard['status'] | 'Atrasado' | undefined) => {
     if (!status) return 'secondary';
-    switch (status.toLowerCase()) {
+    switch (status) {
       case 'agendado': return 'default';
       case 'realizado': return 'success';
       case 'cancelado': return 'destructive';
+      case 'Atrasado': return 'warning'; 
       default: return 'secondary';
     }
   };
@@ -832,14 +833,21 @@ export default function DashboardPage() {
             {isLoadingTodaysAppointments ? (
               <p className="text-sm text-muted-foreground text-center py-8">Carregando agendamentos...</p>
             ) : todaysFirebaseAppointments.length > 0 ? (
-              todaysFirebaseAppointments.map((appt) => (
+              todaysFirebaseAppointments.map((appt) => {
+                const appointmentFullDateTime = clientNow && clientTodayString ? parseDateFns(`${clientTodayString} ${appt.time}`, 'yyyy-MM-dd HH:mm', new Date()) : null;
+                let displayStatus: AppointmentForDashboard['status'] | 'Atrasado' = appt.status;
+                if (appt.status === 'agendado' && appointmentFullDateTime && clientNow && isBefore(appointmentFullDateTime, clientNow)) {
+                  displayStatus = 'Atrasado';
+                }
+
+                return (
                 <div key={appt.id} className="flex items-center justify-between text-sm gap-2">
                   <div className="flex-1 min-w-0">
                     <span className="font-medium shrink-0">{appt.time}</span> -
                     <span className="text-muted-foreground truncate ml-1" title={appt.patientName}>{appt.patientName}</span>
-                    {appt.status && (
-                      <Badge variant={getStatusBadgeVariant(appt.status)} className="ml-2 text-xs capitalize">
-                        {appt.status}
+                    {displayStatus && (
+                      <Badge variant={getStatusBadgeVariant(displayStatus)} className="ml-2 text-xs capitalize">
+                        {displayStatus}
                       </Badge>
                     )}
                     {currentUserData?.plano === 'Clínica' && appt.responsibleUserName && (
@@ -854,7 +862,8 @@ export default function DashboardPage() {
                     </Button>
                   </Link>
                 </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8">Nenhum agendamento para hoje.</p>
             )}

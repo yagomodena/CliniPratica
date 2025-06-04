@@ -1144,11 +1144,12 @@ export default function AgendaPage() {
 
   const apptDateTimeForActionButtons = (apptDate: string, apptTime: string) => parse(`${apptDate} ${apptTime}`, 'yyyy-MM-dd HH:mm', new Date());
 
-  const getStatusBadgeVariant = (status: Appointment['status']) => {
+  const getStatusBadgeVariant = (status: Appointment['status'] | 'Atrasado') => {
     switch (status) {
       case 'agendado': return 'default';
       case 'realizado': return 'success';
       case 'cancelado': return 'destructive';
+      case 'Atrasado': return 'warning';
       default: return 'secondary';
     }
   };
@@ -1290,7 +1291,14 @@ export default function AgendaPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {todaysAppointments.length > 0 ? (
-              todaysAppointments.map((appt) => (
+              todaysAppointments.map((appt) => {
+                const appointmentDateTime = apptDateTimeForActionButtons(appt.date, appt.time);
+                let displayStatus: Appointment['status'] | 'Atrasado' = appt.status;
+                if (appt.status === 'agendado' && clientNow && isBefore(appointmentDateTime, clientNow)) {
+                  displayStatus = 'Atrasado';
+                }
+
+                return (
                 <div key={appt.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
                   <div className="flex items-center gap-3">
                     <div className="flex flex-col items-center w-12"><Clock className="h-4 w-4 text-muted-foreground" /><span className="font-semibold text-sm text-primary">{appt.time}</span></div>
@@ -1299,20 +1307,20 @@ export default function AgendaPage() {
                       <p className="text-sm text-muted-foreground flex items-center gap-1"><ClipboardList className="h-4 w-4" /> {appt.type}</p>
                       {appt.responsibleUserName && currentUserData?.plano === 'Clínica' && <p className="text-xs text-muted-foreground flex items-center gap-1"><UserCog className="h-3 w-3" /> Prof: {appt.responsibleUserName}</p>}
                       {appt.notes && <p className="text-xs text-muted-foreground mt-1 italic">"{appt.notes}"</p>}
-                       <Badge variant={getStatusBadgeVariant(appt.status)} className="mt-1.5 text-xs capitalize">{appt.status}</Badge>
+                       <Badge variant={getStatusBadgeVariant(displayStatus)} className="mt-1.5 text-xs capitalize">{displayStatus}</Badge>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap justify-end">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditDialog(appt, formattedDateKey)} title="Editar" disabled={appt.status === 'cancelado' || appt.status === 'realizado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}><Edit className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditDialog(appt, formattedDateKey)} title="Editar" disabled={appt.status === 'cancelado' || appt.status === 'realizado' || (clientNow && isBefore(appointmentDateTime, clientNow) && displayStatus !== 'Atrasado')}><Edit className="h-4 w-4" /></Button>
                     {currentUserData?.plano !== 'Gratuito' && (
-                       <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:bg-green-100" onClick={() => openConfirmWhatsAppDialog(appt)} title="Mensagem" disabled={appt.status !== 'agendado' || (clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow))}><MessageSquare className="h-4 w-4" /></Button>
+                       <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:bg-green-100" onClick={() => openConfirmWhatsAppDialog(appt)} title="Mensagem" disabled={appt.status !== 'agendado' || (clientNow && isBefore(appointmentDateTime, clientNow) && displayStatus !== 'Atrasado')}><MessageSquare className="h-4 w-4" /></Button>
                     )}
                      <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4"/></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            {appt.status === 'agendado' && !(clientNow && isBefore(apptDateTimeForActionButtons(appt.date, appt.time), clientNow)) && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}><CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Realizado</DropdownMenuItem>}
-                            {appt.status === 'realizado' && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}><RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Agendado</DropdownMenuItem>}
-                            {(appt.status === 'agendado' || appt.status === 'realizado') &&
+                            {(appt.status === 'agendado' || displayStatus === 'Atrasado') && !(clientNow && isBefore(appointmentDateTime, clientNow) && displayStatus !== 'Atrasado') && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'realizado')}><CheckCircle className="mr-2 h-4 w-4 text-green-500"/> Realizado</DropdownMenuItem>}
+                            {appt.status === 'realizado' && <DropdownMenuItem onClick={() => updateAppointmentStatus(appt.id, 'agendado')}><RotateCcw className="mr-2 h-4 w-4 text-blue-500"/> Reagendar para Agendado</DropdownMenuItem>}
+                            {(appt.status === 'agendado' || appt.status === 'realizado' || displayStatus === 'Atrasado') &&
                               <DropdownMenuItem onClick={() => handleOpenDeleteApptDialog(appt.id, formattedDateKey, appt.patientName, appt.time)} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
                                 <Trash2 className="mr-2 h-4 w-4"/> Excluir Agendamento
                               </DropdownMenuItem>
@@ -1323,7 +1331,8 @@ export default function AgendaPage() {
                     <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-xs sm:text-sm sm:px-3"><Link href={`/pacientes/${appt.patientSlug}`}><Eye className="mr-0 sm:mr-1 h-3 w-3 sm:h-4 sm:w-4" /><span className="sm:hidden">Ver</span><span className="hidden sm:inline">Paciente</span></Link></Button>
                   </div>
                 </div>
-              ))
+                );
+              })
             ) : (
               <div className="text-center py-10 text-muted-foreground"><CalendarPlus className="mx-auto h-12 w-12" /><p>Nenhum agendamento para {selectedDate ? format(selectedDate, 'PPP', { locale: ptBR }) : 'esta data'}.</p><Button variant="link" onClick={() => setIsNewAppointmentDialogOpen(true)} disabled={isSelectedDatePast}>{isSelectedDatePast ? "Não é possível agendar" : "Adicionar"}</Button></div>
             )}
