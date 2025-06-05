@@ -28,7 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger
+  AlertDialogTrigger, 
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -72,10 +72,12 @@ type Patient = {
   lastVisit: string;
   nextVisit: string;
   objetivoPaciente?: string; 
-  nomeEmpresa?: string; // Added for clinic identification
+  nomeEmpresa?: string;
+  hasMonthlyFee?: boolean;
+  monthlyFeeAmount?: number;
+  monthlyFeeDueDate?: number;
 };
 
-// For Patient Objectives
 type PatientObjectiveObject = {
   id?: string;
   name: string;
@@ -105,7 +107,6 @@ export default function PacientesPage() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [currentUserData, setCurrentUserData] = useState<any>(null);
 
-  // State for Patient Objectives
   const [patientObjectives, setPatientObjectives] = useState<PatientObjectiveObject[]>([]);
   const [isAddObjectiveDialogOpen, setIsAddObjectiveDialogOpen] = useState(false);
   const [newCustomObjectiveName, setNewCustomObjectiveName] = useState('');
@@ -124,14 +125,28 @@ export default function PacientesPage() {
     address: '',
     status: 'Ativo',
     objetivoPaciente: '', 
+    hasMonthlyFee: false,
+    monthlyFeeAmount: 0,
+    monthlyFeeDueDate: 1,
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    if (type === 'checkbox' && name === 'hasMonthlyFee') {
+      setNewPatient(prev => ({ ...prev, [name]: checked }));
+    } else {
+      setNewPatient(prev => ({ ...prev, [name]: value }));
+    }
+  };
+  
+  const handleNumericInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setNewPatient(prev => ({ ...prev, [name]: value }));
+    const amount = parseFloat(value);
+    setNewPatient(prev => ({ ...prev, [name]: isNaN(amount) ? undefined : amount }));
   };
 
-  const handleSelectChange = (name: keyof Partial<Omit<Patient, 'internalId'>>, value: string) => {
+
+  const handleSelectChange = (name: keyof Partial<Omit<Patient, 'internalId'>>, value: string | number) => {
     setNewPatient(prev => ({ ...prev, [name]: value }));
   };
 
@@ -240,6 +255,9 @@ export default function PacientesPage() {
           nextVisit: data.nextVisit || '-',
           objetivoPaciente: data.objetivoPaciente || '',
           nomeEmpresa: data.nomeEmpresa || '',
+          hasMonthlyFee: data.hasMonthlyFee || false,
+          monthlyFeeAmount: data.monthlyFeeAmount || 0,
+          monthlyFeeDueDate: data.monthlyFeeDueDate || 1,
         });
       });
       setPatients(loadedPatients.sort((a, b) => a.name.localeCompare(b.name)));
@@ -266,7 +284,6 @@ export default function PacientesPage() {
         const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
         activePatientsCount = activePatientsSnapshot.data().count;
     }
-
 
     if (currentUserData.plano === 'Gratuito' && activePatientsCount >= 10) {
       toast({
@@ -304,6 +321,17 @@ export default function PacientesPage() {
       toast({ title: "Data de Nascimento Inválida", description: "A data de nascimento não pode ser futura.", variant: "destructive" });
       return;
     }
+    
+    if (newPatient.hasMonthlyFee) {
+        if (newPatient.monthlyFeeAmount === undefined || newPatient.monthlyFeeAmount <= 0) {
+            toast({ title: "Valor da Mensalidade Inválido", description: "O valor da mensalidade deve ser maior que zero.", variant: "destructive" });
+            return;
+        }
+        if (newPatient.monthlyFeeDueDate === undefined || newPatient.monthlyFeeDueDate < 1 || newPatient.monthlyFeeDueDate > 31) {
+             toast({ title: "Dia de Vencimento Inválido", description: "O dia de vencimento deve ser entre 1 e 31.", variant: "destructive" });
+            return;
+        }
+    }
 
 
     const slug = generateSlug(newPatient.name);
@@ -311,9 +339,9 @@ export default function PacientesPage() {
     try {
       await addDoc(collection(db, 'pacientes'), {
         ...newPatient,
-        email: newPatient.email || '', // Garante que o email seja uma string vazia se não fornecido
-        uid: currentUser.uid, // Creator's UID
-        nomeEmpresa: nomeEmpresaParaSalvar, // Clinic's name if applicable
+        email: newPatient.email || '', 
+        uid: currentUser.uid, 
+        nomeEmpresa: nomeEmpresaParaSalvar, 
         status: newPatient.status || 'Ativo',
         objetivoPaciente: newPatient.objetivoPaciente || '',
         createdAt: serverTimestamp(),
@@ -323,10 +351,13 @@ export default function PacientesPage() {
         avatar: 'https://placehold.co/100x100.png',
         history: [],
         documents: [],
+        hasMonthlyFee: newPatient.hasMonthlyFee || false,
+        monthlyFeeAmount: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeAmount || 0) : 0,
+        monthlyFeeDueDate: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeDueDate || 1) : 1,
       });
 
       toast({ title: "Sucesso!", description: `Paciente ${newPatient.name} adicionado.`, variant: "success" });
-      setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName() });
+      setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: 0, monthlyFeeDueDate: 1 });
       setIsNewPatientDialogOpen(false);
       await fetchPatients();
     } catch (error) {
@@ -335,7 +366,6 @@ export default function PacientesPage() {
     }
   };
 
-  // Objective Management Functions (similar to Appointment Types)
   const handleAddCustomObjective = async () => {
     if (!currentUserData) return;
     const trimmedName = newCustomObjectiveName.trim();
@@ -447,8 +477,6 @@ export default function PacientesPage() {
   };
 
   const activePatientObjectives = patientObjectives.filter(o => o.status === 'active');
-  // End Objective Management Functions
-
 
   const handleUpdatePatientStatus = async (patientInternalId: string, newStatus: 'Ativo' | 'Inativo') => {
     const patientToUpdate = patients.find(p => p.internalId === patientInternalId);
@@ -463,7 +491,6 @@ export default function PacientesPage() {
       );
       const activePatientsSnapshot = await getCountFromServer(activePatientsQuery);
       activePatientsCount = activePatientsSnapshot.data().count;
-
 
       if (currentUserData.plano === 'Gratuito' && activePatientsCount >= 10) {
          toast({
@@ -482,7 +509,6 @@ export default function PacientesPage() {
         return;
       }
     }
-
 
     try {
       const patientRef = doc(db, 'pacientes', patientInternalId);
@@ -507,10 +533,9 @@ export default function PacientesPage() {
         description: 'Não foi possível atualizar o status do paciente.',
         variant: 'destructive',
       });
-      // Revert local state if Firebase update fails
       setPatients(prev =>
         prev.map(p =>
-          p.internalId === patientInternalId ? { ...p, status: patientToUpdate.status } : p // Revert to original status
+          p.internalId === patientInternalId ? { ...p, status: patientToUpdate.status } : p 
         )
       );
     }
@@ -543,6 +568,7 @@ export default function PacientesPage() {
 
   const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
+  const showMonthlyFeeFields = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
 
   return (
     <div className="space-y-6">
@@ -553,6 +579,9 @@ export default function PacientesPage() {
             if (isOpen && patientObjectives.length > 0 && !newPatient.objetivoPaciente) {
                 setNewPatient(prev => ({ ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' }));
             }
+            if (!isOpen) { // Reset form on close
+                setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: 0, monthlyFeeDueDate: 1 });
+            }
         }}>
           <DialogTrigger asChild>
             <Button>
@@ -560,7 +589,7 @@ export default function PacientesPage() {
               Novo Paciente
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-lg"> {/* Increased width */}
+          <DialogContent className="sm:max-w-lg"> 
             <DialogHeader>
               <DialogTitle>Adicionar Novo Paciente</DialogTitle>
               <DialogDescription>
@@ -568,7 +597,7 @@ export default function PacientesPage() {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleAddPatient}>
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2"> {/* Added max-height and overflow */}
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="name" className="text-right">
                     Nome*
@@ -634,7 +663,6 @@ export default function PacientesPage() {
                     className="col-span-3"
                   />
                 </div>
-                {/* Patient Objective Field */}
                 <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="objetivoPaciente" className="text-right">Objetivo</Label>
                     <div className="col-span-3 flex items-center gap-1">
@@ -657,8 +685,65 @@ export default function PacientesPage() {
                         </Button>
                     </div>
                 </div>
+
+                {/* Monthly Fee Fields - Conditional Display */}
+                {showMonthlyFeeFields && (
+                  <>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="hasMonthlyFee" className="text-right col-span-3">
+                        Paciente possui mensalidade?
+                      </Label>
+                      <Switch
+                        id="hasMonthlyFee"
+                        name="hasMonthlyFee"
+                        checked={newPatient.hasMonthlyFee || false}
+                        onCheckedChange={(checked) => setNewPatient(prev => ({ ...prev, hasMonthlyFee: checked }))}
+                        className="col-span-1 justify-self-start"
+                      />
+                    </div>
+
+                    {newPatient.hasMonthlyFee && (
+                      <>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="monthlyFeeAmount" className="text-right">
+                            Valor Mensalidade (R$)*
+                          </Label>
+                          <Input
+                            id="monthlyFeeAmount"
+                            name="monthlyFeeAmount"
+                            type="number"
+                            step="0.01"
+                            value={newPatient.monthlyFeeAmount ?? ''}
+                            onChange={handleNumericInputChange}
+                            className="col-span-3"
+                            placeholder="0.00"
+                            required={newPatient.hasMonthlyFee}
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                          <Label htmlFor="monthlyFeeDueDate" className="text-right">
+                            Dia Vencimento*
+                          </Label>
+                          <Select
+                            value={newPatient.monthlyFeeDueDate?.toString() || '1'}
+                            onValueChange={(value) => handleSelectChange('monthlyFeeDueDate', parseInt(value))}
+                          >
+                            <SelectTrigger id="monthlyFeeDueDate" className="col-span-3">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                <SelectItem key={day} value={day.toString()}>{day.toString().padStart(2, '0')}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
-              <DialogFooter>
+              <DialogFooter className="pt-4 border-t"> {/* Add border top to footer */}
                 <DialogClose asChild>
                   <Button type="button" variant="outline">Cancelar</Button>
                 </DialogClose>
@@ -780,7 +865,6 @@ export default function PacientesPage() {
         </CardContent>
       </Card>
 
-      {/* Dialogs for Patient Objectives Management */}
       <Dialog open={isAddObjectiveDialogOpen} onOpenChange={setIsAddObjectiveDialogOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -876,5 +960,4 @@ export default function PacientesPage() {
     </div>
   );
 }
-
     

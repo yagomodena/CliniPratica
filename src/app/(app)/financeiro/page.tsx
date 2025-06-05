@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback, FormEvent } from 'react';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation'; 
 import {
   Card,
   CardHeader,
@@ -82,7 +82,7 @@ import {
   ReceiptText,
   MoreHorizontal,
   Loader2, 
-  Info, // Added Info icon
+  Info, 
 } from 'lucide-react';
 import {
   ChartContainer,
@@ -102,6 +102,8 @@ import {
   parseISO,
   differenceInDays,
   isBefore,
+  setDate,
+  isSameMonth,
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { DateRange } from 'react-day-picker';
@@ -120,7 +122,9 @@ import {
   deleteDoc,
   serverTimestamp,
   Timestamp,
-  getDoc
+  getDoc,
+  onSnapshot, // Added onSnapshot
+  Unsubscribe, // Added Unsubscribe
 } from 'firebase/firestore';
 
 import {
@@ -155,8 +159,10 @@ type PatientForSelect = {
   id: string; 
   name: string;
   slug: string; 
+  hasMonthlyFee?: boolean;
+  monthlyFeeAmount?: number;
+  monthlyFeeDueDate?: number;
 };
-
 
 type PeriodOption =
   | 'today'
@@ -177,19 +183,18 @@ const periodOptions: { value: PeriodOption; label: string }[] = [
 
 type NewTransactionForm = Omit<FinancialTransaction, 'id' | 'date' | 'ownerId' | 'createdAt' | 'updatedAt' | 'nomeEmpresa'> & { date: string; amount?: number };
 
-
 type ReceivableEntry = {
-  id: string;
+  id: string; // patientId
   patientName?: string;
-  description: string;
-  dueDate: Date;
-  paymentDate?: Date;
+  description: string; // "Mensalidade Paciente X - Mês/Ano"
+  dueDate: Date; // Vencimento no mês atual
+  paymentDate?: Date; // Data do pagamento se houver
   paymentStatusDisplay: 'Pago' | 'Pendente' | 'Atrasado';
   daysOverdue?: number;
   amount: number;
   paymentMethod?: PaymentMethod;
+  transactionId?: string; // ID da transação financeira se paga
 };
-
 
 export default function FinanceiroPage() {
   const { toast } = useToast();
@@ -204,7 +209,7 @@ export default function FinanceiroPage() {
   const [editingTransaction, setEditingTransaction] = useState<FinancialTransaction | null>(null);
   const [transactionForm, setTransactionForm] = useState<Partial<NewTransactionForm>>({
     description: '',
-    amount: undefined, // Changed from 0 to undefined
+    amount: undefined, 
     paymentMethod: 'Pix',
     status: 'Recebido',
     type: 'manual',
@@ -221,45 +226,71 @@ export default function FinanceiroPage() {
   const [isDeleteTransactionConfirmOpen, setIsDeleteTransactionConfirmOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<FinancialTransaction | null>(null);
 
+  const [isRegisterMonthlyPaymentDialogOpen, setIsRegisterMonthlyPaymentDialogOpen] = useState(false);
+  const [selectedPatientForMonthlyPayment, setSelectedPatientForMonthlyPayment] = useState<PatientForSelect | null>(null);
+
 
   useEffect(() => {
+    let unsubscribeFirestore: Unsubscribe | null = null;
     const authInstance = getAuth();
-    const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+    const unsubscribeAuth = onAuthStateChanged(authInstance, async (user) => {
       setCurrentUser(user);
-      setIsLoadingPage(true); // Start loading when auth state changes
+      setIsLoadingPage(true); 
+      
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+
       if (user) {
         const userDocRef = doc(db, 'usuarios', user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          const uData = { ...userDocSnap.data(), uid: user.uid };
-          setCurrentUserData(uData);
-          // Permission check for sub-users
-          if (uData.plano === 'Clínica' && uData.cargo !== 'Administrador' && (!uData.permissoes || uData.permissoes.financeiro === false)) {
-            toast({ title: "Acesso Negado", description: "Você não tem permissão para acessar a área Financeira.", variant: "destructive" });
-            router.push('/dashboard');
-            setIsLoadingPage(false);
-            return;
-          }
-        } else {
-          setCurrentUserData({ uid: user.uid, plano: "Gratuito" }); // Default if Firestore doc missing
-           // If no specific permissions, assume free plan users (who shouldn't be here anyway) can't access
-           if (!userDocSnap.exists() || userDocSnap.data()?.plano === "Gratuito") {
+        unsubscribeFirestore = onSnapshot(userDocRef, (userDocSnap) => { // Use onSnapshot
+          if (userDocSnap.exists()) {
+            const uData = { ...userDocSnap.data(), uid: user.uid };
+            setCurrentUserData(uData);
+            if (uData.plano === 'Clínica' && uData.cargo !== 'Administrador' && (!uData.permissoes || uData.permissoes.financeiro === false)) {
+              toast({ title: "Acesso Negado", description: "Você não tem permissão para acessar a área Financeira.", variant: "destructive" });
+              router.push('/dashboard');
+              setIsLoadingPage(false);
+              return;
+            }
+            if (uData.plano === "Gratuito") {
+               toast({ title: "Acesso Restrito", description: "Esta funcionalidade não está disponível para o seu plano.", variant: "destructive" });
+               router.push('/dashboard');
+               setIsLoadingPage(false);
+               return;
+            }
+             // Fetch data only after currentUserData is set and permissions are checked
+            fetchFinancialTransactions(user, uData);
+            fetchPatientsForSelect(user, uData);
+
+          } else {
+             setCurrentUserData({ uid: user.uid, plano: "Gratuito" }); 
              toast({ title: "Acesso Restrito", description: "Esta funcionalidade não está disponível para o seu plano.", variant: "destructive" });
              router.push('/dashboard');
-             setIsLoadingPage(false);
-             return;
-           }
-        }
+          }
+          setIsLoadingPage(false); 
+        }, (error) => {
+          console.error("Error listening to user document:", error);
+          setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
+          setIsLoadingPage(false);
+          toast({ title: "Erro ao Carregar Dados", description: "Não foi possível carregar seus dados de perfil.", variant: "destructive" });
+          router.push('/login');
+        });
       } else {
         setCurrentUserData(null);
         setTransactions([]);
         setFirebasePatients([]);
+        setIsLoadingPage(false);
         toast({ title: "Sessão Expirada", description: "Faça login para continuar.", variant: "destructive" });
         router.push('/login');
       }
-      setIsLoadingPage(false); // Finish loading after auth and data setup
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
   }, [toast, router]);
 
 
@@ -308,7 +339,7 @@ export default function FinanceiroPage() {
     } catch (error: any) {
       console.error("Erro ao buscar transações financeiras:", error);
       toast({ title: "Erro ao Buscar Transações", description: "Não foi possível carregar as transações financeiras.", variant: "destructive" });
-      setTransactions([]); // Clear transactions on error
+      setTransactions([]); 
     } finally {
       setIsLoadingTransactions(false);
     }
@@ -324,9 +355,9 @@ export default function FinanceiroPage() {
       const patientsRef = collection(db, 'pacientes');
       let q;
       if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
-        q = query(patientsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), where('status', '==', 'Ativo'), orderBy('name'));
+        q = query(patientsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), orderBy('name'));
       } else {
-        q = query(patientsRef, where('uid', '==', userAuth.uid), where('status', '==', 'Ativo'), orderBy('name'));
+        q = query(patientsRef, where('uid', '==', userAuth.uid), orderBy('name'));
       }
       
       const querySnapshot = await getDocs(q);
@@ -337,6 +368,9 @@ export default function FinanceiroPage() {
           id: docSnap.id,
           name: data.name as string,
           slug: data.slug as string,
+          hasMonthlyFee: data.hasMonthlyFee || false,
+          monthlyFeeAmount: data.monthlyFeeAmount || 0,
+          monthlyFeeDueDate: data.monthlyFeeDueDate || 1,
         });
       });
       setFirebasePatients(fetchedPatients);
@@ -348,17 +382,6 @@ export default function FinanceiroPage() {
       setIsLoadingFirebasePatients(false);
     }
   }, [toast]);
-
-
-  useEffect(() => {
-    if (currentUser && currentUserData) {
-      fetchFinancialTransactions(currentUser, currentUserData);
-      fetchPatientsForSelect(currentUser, currentUserData);
-    } else {
-      setIsLoadingTransactions(false);
-      setIsLoadingFirebasePatients(false);
-    }
-  }, [currentUser, currentUserData, fetchFinancialTransactions, fetchPatientsForSelect]);
 
   const getDateRange = (period: PeriodOption, customRange?: DateRange): { start: Date; end: Date } | null => {
     if (!clientNow) return null;
@@ -416,29 +439,61 @@ export default function FinanceiroPage() {
         const monthYear = format(transaction.date, 'MMM/yy', { locale: ptBR });
         monthlySummary[monthYear] = (monthlySummary[monthYear] || 0) + transaction.amount;
       }
-
-      if (transaction.status === 'Pendente' && clientNow) {
-         const dueDate = transaction.date; // Assuming transaction.date is the due date for 'Pendente'
-         const overdueDays = differenceInDays(clientNow, dueDate);
-         currentReceivables.push({
-            id: transaction.id,
-            patientName: transaction.patientName,
-            description: transaction.description,
-            dueDate: dueDate,
-            paymentStatusDisplay: overdueDays > 0 ? 'Atrasado' : 'Pendente',
-            daysOverdue: overdueDays > 0 ? overdueDays : undefined,
-            amount: transaction.amount,
-            paymentMethod: transaction.paymentMethod,
-         });
-      }
     });
+    
+    if (clientNow && firebasePatients.length > 0) {
+        firebasePatients.forEach(patient => {
+            if (patient.hasMonthlyFee && patient.monthlyFeeAmount && patient.monthlyFeeDueDate && clientNow) {
+                const dueDateThisMonth = setDate(clientNow, patient.monthlyFeeDueDate);
+                const isCurrentMonthDue = isSameMonth(dueDateThisMonth, clientNow);
+
+                if (isCurrentMonthDue) {
+                    const paidTransaction = transactions.find(t =>
+                        t.patientId === patient.id &&
+                        t.type === 'mensalidade_paciente' &&
+                        t.status === 'Recebido' &&
+                        isSameMonth(t.date, clientNow) // Check if payment was in the current month
+                    );
+
+                    let paymentStatusDisplay: ReceivableEntry['paymentStatusDisplay'] = 'Pendente';
+                    let daysOverdue: number | undefined;
+
+                    if (paidTransaction) {
+                        paymentStatusDisplay = 'Pago';
+                    } else {
+                        if (isBefore(startOfDay(dueDateThisMonth), startOfDay(clientNow))) {
+                            paymentStatusDisplay = 'Atrasado';
+                            daysOverdue = differenceInDays(startOfDay(clientNow), startOfDay(dueDateThisMonth));
+                        }
+                    }
+                    
+                    currentReceivables.push({
+                        id: patient.id, // patientId
+                        patientName: patient.name,
+                        description: `Mensalidade ${patient.name} - ${format(dueDateThisMonth, 'MMM/yyyy', {locale: ptBR})}`,
+                        dueDate: dueDateThisMonth,
+                        paymentStatusDisplay,
+                        daysOverdue,
+                        amount: patient.monthlyFeeAmount,
+                        transactionId: paidTransaction?.id,
+                    });
+                }
+            }
+        });
+    }
+
 
     const chart = Object.entries(monthlySummary)
       .map(([month, total]) => ({ month, total }))
       .sort((a, b) => parseISO(a.month.split('/').reverse().join('-')).getTime() - parseISO(b.month.split('/').reverse().join('-')).getTime());
 
-    const sortedReceivables = currentReceivables.sort((a,b) => a.dueDate.getTime() - b.dueDate.getTime());
-
+    const sortedReceivables = currentReceivables.sort((a,b) => {
+        if (a.paymentStatusDisplay === 'Atrasado' && b.paymentStatusDisplay !== 'Atrasado') return -1;
+        if (a.paymentStatusDisplay !== 'Atrasado' && b.paymentStatusDisplay === 'Atrasado') return 1;
+        if (a.paymentStatusDisplay === 'Pendente' && b.paymentStatusDisplay === 'Pago') return -1;
+        if (a.paymentStatusDisplay === 'Pago' && b.paymentStatusDisplay === 'Pendente') return 1;
+        return a.dueDate.getTime() - b.dueDate.getTime();
+    });
 
     return {
       totalRecebido: recebido,
@@ -448,7 +503,7 @@ export default function FinanceiroPage() {
       chartData: chart,
       receivablesData: sortedReceivables,
     };
-  }, [filteredTransactions, clientNow]);
+  }, [filteredTransactions, clientNow, firebasePatients, transactions]);
 
   const handleFormInputChange = (field: keyof NewTransactionForm, value: string | number | boolean | undefined) => {
     setTransactionForm(prev => ({ ...prev, [field]: value }));
@@ -492,7 +547,6 @@ export default function FinanceiroPage() {
       return;
     }
 
-
     const selectedPatient = firebasePatients.find(p => p.id === patientId);
     const transactionData: Omit<FinancialTransaction, 'id' | 'createdAt' | 'updatedAt'> = {
       ownerId: currentUser.uid,
@@ -520,9 +574,11 @@ export default function FinanceiroPage() {
       
       setTransactionForm({ description: '', amount: undefined, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none' });
       setIsAddTransactionDialogOpen(false);
+      setIsRegisterMonthlyPaymentDialogOpen(false); // Close monthly payment dialog if open
       setEditingTransaction(null);
+      setSelectedPatientForMonthlyPayment(null);
       if (currentUser && currentUserData) {
-          fetchFinancialTransactions(currentUser, currentUserData);
+          fetchFinancialTransactions(currentUser, currentUserData); // Refetch to update lists
       }
     } catch (error) {
       console.error("Erro ao salvar transação:", error);
@@ -568,7 +624,7 @@ export default function FinanceiroPage() {
   };
 
   const handleUpdateTransactionStatus = async (transactionId: string, newStatus: TransactionStatus) => {
-    if (!currentUser) return;
+    if (!currentUser || !currentUserData) return;
     try {
         const transactionRef = doc(db, 'financialTransactions', transactionId);
         await updateDoc(transactionRef, {
@@ -576,14 +632,29 @@ export default function FinanceiroPage() {
             updatedAt: serverTimestamp()
         });
         toast({ title: "Status Atualizado", description: `Status da transação alterado para ${newStatus}.`, variant: "success" });
-        if (currentUser && currentUserData) {
-          fetchFinancialTransactions(currentUser, currentUserData);
-        }
+        fetchFinancialTransactions(currentUser, currentUserData);
     } catch (error) {
         console.error("Erro ao atualizar status da transação:", error);
         toast({ title: "Erro", description: "Não foi possível atualizar o status da transação.", variant: "destructive" });
     }
-};
+  };
+  
+  const handleOpenRegisterMonthlyPayment = (patient: PatientForSelect) => {
+    if (!clientNow) return;
+    setSelectedPatientForMonthlyPayment(patient);
+    const dueDateThisMonth = setDate(clientNow, patient.monthlyFeeDueDate || 1);
+    setTransactionForm({
+        description: `Mensalidade ${patient.name} - ${format(dueDateThisMonth, 'MMMM/yyyy', {locale: ptBR})}`,
+        amount: patient.monthlyFeeAmount,
+        paymentMethod: 'Pix',
+        status: 'Recebido',
+        type: 'mensalidade_paciente',
+        date: format(clientNow, 'yyyy-MM-dd'),
+        patientId: patient.id,
+        notes: '',
+    });
+    setIsRegisterMonthlyPaymentDialogOpen(true);
+  };
 
 
   const getPaymentMethodIcon = (method: PaymentMethod) => {
@@ -598,11 +669,16 @@ export default function FinanceiroPage() {
     }
   };
 
-  const getStatusBadgeVariant = (status: TransactionStatus) => {
+  const getStatusBadgeVariant = (status: TransactionStatus | ReceivableEntry['paymentStatusDisplay']) => {
     switch (status) {
-      case 'Recebido': return 'success';
-      case 'Pendente': return 'warning';
-      case 'Cancelado': return 'destructive';
+      case 'Recebido': 
+      case 'Pago':
+        return 'success';
+      case 'Pendente': 
+        return 'warning';
+      case 'Cancelado': 
+      case 'Atrasado':
+        return 'destructive';
       default: return 'secondary';
     }
   };
@@ -610,7 +686,6 @@ export default function FinanceiroPage() {
   const isFreePlan = currentUserData?.plano === 'Gratuito';
   const isEssencialPlan = currentUserData?.plano === 'Essencial';
   const isProfessionalOrClinicPlan = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
-
 
   if (isLoadingPage) {
     return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando financeiro...</p></div>;
@@ -678,14 +753,14 @@ export default function FinanceiroPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="type" className="text-right col-span-1">Tipo*</Label>
-                 <Select value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value)} disabled={editingTransaction?.type === 'atendimento'}>
+                 <Select value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value)} disabled={editingTransaction?.type === 'atendimento' || editingTransaction?.type === 'mensalidade_paciente'}>
                   <SelectTrigger id="type" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{transactionTypes.map(type => <SelectItem key={type} value={type} disabled={editingTransaction?.type === 'atendimento' && type === 'atendimento'}>{type === 'atendimento' ? 'Lançado pela Agenda' : 'Manual'}</SelectItem>)}</SelectContent>
+                  <SelectContent>{transactionTypes.map(type => <SelectItem key={type} value={type} disabled={(editingTransaction?.type === 'atendimento' && type === 'atendimento') || (editingTransaction?.type === 'mensalidade_paciente' && type === 'mensalidade_paciente') }>{type === 'atendimento' ? 'Lançado pela Agenda' : (type === 'mensalidade_paciente' ? 'Mensalidade Paciente' : 'Manual')}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                  <Label htmlFor="patientId" className="text-right col-span-1">Associar Paciente</Label>
-                <Select value={transactionForm.patientId || 'none'} onValueChange={(value) => handleFormSelectChange('patientId', value === 'none' ? undefined : value)} >
+                <Select value={transactionForm.patientId || 'none'} onValueChange={(value) => handleFormSelectChange('patientId', value === 'none' ? undefined : value)} disabled={editingTransaction?.type === 'atendimento' || editingTransaction?.type === 'mensalidade_paciente'}>
                   <SelectTrigger id="patientId" className="col-span-3">
                     <SelectValue placeholder="Selecione o paciente (opcional)" />
                   </SelectTrigger>
@@ -790,6 +865,7 @@ export default function FinanceiroPage() {
                       <TableCell className="font-medium max-w-[200px] truncate" title={transaction.description}>
                         {transaction.description}
                         {transaction.type === 'atendimento' && <Badge variant="outline" className="ml-2 text-xs bg-blue-100 border-blue-300 text-blue-700">Agenda</Badge>}
+                        {transaction.type === 'mensalidade_paciente' && <Badge variant="outline" className="ml-2 text-xs bg-purple-100 border-purple-300 text-purple-700">Mensalidade</Badge>}
                       </TableCell>
                        <TableCell className="hidden md:table-cell">
                         {transaction.patientName || <span className="text-muted-foreground italic">N/A</span>}
@@ -811,7 +887,7 @@ export default function FinanceiroPage() {
                                 <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleOpenEditDialog(transaction)} disabled={transaction.type === 'atendimento' && editingTransaction?.id !== transaction.id}>
+                                <DropdownMenuItem onClick={() => handleOpenEditDialog(transaction)} disabled={(transaction.type === 'atendimento' || transaction.type === 'mensalidade_paciente') && editingTransaction?.id !== transaction.id}>
                                   <Edit2 className="mr-2 h-4 w-4" /> Editar
                                 </DropdownMenuItem>
                                 {transaction.status === 'Pendente' && (
@@ -850,20 +926,19 @@ export default function FinanceiroPage() {
       {isProfessionalOrClinicPlan && (
          <Card className="shadow-md">
           <CardHeader>
-            <CardTitle>Contas a Receber por Paciente</CardTitle>
-            <CardDescription>Acompanhe os pagamentos pendentes e atrasados dos seus pacientes.</CardDescription>
+            <CardTitle>Mensalidades de Pacientes</CardTitle>
+            <CardDescription>Acompanhe as mensalidades pendentes e pagas dos seus pacientes para o mês atual.</CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoadingTransactions ? (
-                 <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando contas a receber...</p></div>
+            {isLoadingTransactions || isLoadingFirebasePatients ? (
+                 <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Carregando mensalidades...</p></div>
             ) : receivablesData.length > 0 ? (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Paciente</TableHead>
-                      <TableHead>Descrição</TableHead>
-                      <TableHead className="w-[130px]">Vencimento</TableHead>
+                      <TableHead className="w-[160px]">Vencimento (Mês Atual)</TableHead>
                       <TableHead className="w-[130px]">Status</TableHead>
                       <TableHead className="w-[110px]">Valor (R$)</TableHead>
                       <TableHead className="text-right w-[100px]">Ações</TableHead>
@@ -873,33 +948,41 @@ export default function FinanceiroPage() {
                     {receivablesData.map((receivable) => (
                       <TableRow key={receivable.id} className={receivable.paymentStatusDisplay === 'Atrasado' ? 'bg-destructive/5 hover:bg-destructive/10' : ''}>
                         <TableCell className="font-medium">{receivable.patientName || <span className="text-muted-foreground italic">N/A</span>}</TableCell>
-                        <TableCell className="max-w-[250px] truncate" title={receivable.description}>{receivable.description}</TableCell>
                         <TableCell>{format(receivable.dueDate, 'dd/MM/yyyy')}</TableCell>
                         <TableCell>
-                          <Badge variant={receivable.paymentStatusDisplay === 'Atrasado' ? 'destructive' : 'warning'} className="capitalize">
+                          <Badge variant={getStatusBadgeVariant(receivable.paymentStatusDisplay)} className="capitalize">
                             {receivable.paymentStatusDisplay}
                             {receivable.daysOverdue && receivable.daysOverdue > 0 && ` (${receivable.daysOverdue}d)`}
                           </Badge>
                         </TableCell>
                         <TableCell className="font-semibold">{receivable.amount.toFixed(2)}</TableCell>
                         <TableCell className="text-right">
-                           <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleUpdateTransactionStatus(receivable.id, 'Recebido')}>
-                                  <CheckCircle className="mr-2 h-4 w-4 text-green-500" /> Marcar como Recebido
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleOpenEditDialog(transactions.find(t => t.id === receivable.id)!)}>
-                                  <Edit2 className="mr-2 h-4 w-4" /> Editar Lançamento
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => handleUpdateTransactionStatus(receivable.id, 'Cancelado')} className="text-destructive hover:!bg-destructive/10 hover:!text-destructive focus:!bg-destructive/10 focus:!text-destructive">
-                                        <XCircle className="mr-2 h-4 w-4" /> Cancelar Lançamento
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                           {(receivable.paymentStatusDisplay === 'Pendente' || receivable.paymentStatusDisplay === 'Atrasado') && (
+                             <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  const patientData = firebasePatients.find(p => p.id === receivable.id);
+                                  if (patientData) handleOpenRegisterMonthlyPayment(patientData);
+                                }}
+                              >
+                               Registrar Pagamento
+                             </Button>
+                           )}
+                           {receivable.paymentStatusDisplay === 'Pago' && receivable.transactionId && (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-primary hover:text-primary/80"
+                                onClick={() => {
+                                  const paidTransaction = transactions.find(t => t.id === receivable.transactionId);
+                                  if(paidTransaction) handleOpenEditDialog(paidTransaction);
+                                }}
+                                title="Ver/Editar Lançamento"
+                               >
+                                 Ver Lançamento
+                               </Button>
+                           )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -907,7 +990,7 @@ export default function FinanceiroPage() {
                 </Table>
               </div>
             ) : (
-              <p className="text-center text-muted-foreground py-10">Nenhuma conta pendente para o período selecionado.</p>
+              <p className="text-center text-muted-foreground py-10">Nenhum paciente com mensalidade configurada ou nenhuma mensalidade pendente para o mês atual.</p>
             )}
           </CardContent>
         </Card>
@@ -918,15 +1001,15 @@ export default function FinanceiroPage() {
           <CardHeader>
             <CardTitle className="flex items-center text-blue-800 dark:text-blue-300">
               <Info className="mr-2 h-5 w-5 text-blue-600 dark:text-blue-400" />
-              Gestão de Contas a Receber
+              Gestão de Mensalidades
             </CardTitle>
           </CardHeader>
           <CardContent className="text-blue-700 dark:text-blue-300/90">
             <p>
-              No plano <strong>Essencial</strong>, você pode visualizar todos os lançamentos financeiros, incluindo aqueles associados a pacientes na tabela de "Transações Financeiras" acima.
+              No plano <strong>Essencial</strong>, você pode visualizar todos os lançamentos financeiros gerais, incluindo os de agendamentos.
             </p>
             <p className="mt-2">
-              Para uma gestão mais detalhada e dedicada de <strong>Contas a Receber por Paciente</strong> (com acompanhamento de vencimentos, status de pagamento específico, etc.), considere fazer upgrade para os planos <strong>Profissional</strong> ou <strong>Clínica</strong>.
+              Para uma gestão detalhada de <strong>Mensalidades de Pacientes</strong> (com acompanhamento de vencimentos, status de pagamento específico e registro facilitado), considere fazer upgrade para os planos <strong>Profissional</strong> ou <strong>Clínica</strong>.
             </p>
             <Button variant="link" className="p-0 h-auto mt-3 text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200" onClick={() => router.push('/configuracoes?tab=plano')}>
               Conheça os planos Profissional ou Clínica.
@@ -935,7 +1018,6 @@ export default function FinanceiroPage() {
         </Card>
       )}
       
-
       <AlertDialog open={isDeleteTransactionConfirmOpen} onOpenChange={setIsDeleteTransactionConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -952,8 +1034,54 @@ export default function FinanceiroPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={isRegisterMonthlyPaymentDialogOpen} onOpenChange={(isOpen) => {
+          setIsRegisterMonthlyPaymentDialogOpen(isOpen);
+          if (!isOpen) {
+              setSelectedPatientForMonthlyPayment(null);
+              setTransactionForm({ description: '', amount: undefined, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none'});
+          }
+      }}>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Registrar Pagamento de Mensalidade</DialogTitle>
+              <DialogDescription>Confirme os dados para registrar o pagamento da mensalidade de <strong>{selectedPatientForMonthlyPayment?.name}</strong>.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSaveTransaction} className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="monthlyPaymentDescription" className="text-right col-span-1">Descrição*</Label>
+                <Input id="monthlyPaymentDescription" value={transactionForm.description} onChange={(e) => handleFormInputChange('description', e.target.value)} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="monthlyPaymentAmount" className="text-right col-span-1">Valor (R$)*</Label>
+                <Input id="monthlyPaymentAmount" type="number" step="0.01" value={transactionForm.amount ?? ''} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="monthlyPaymentDate" className="text-right col-span-1">Data Pagamento*</Label>
+                <Input id="monthlyPaymentDate" type="date" value={transactionForm.date} onChange={(e) => handleDateChange(e.target.value)} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="monthlyPaymentMethod" className="text-right col-span-1">Método*</Label>
+                <Select value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)}>
+                  <SelectTrigger id="monthlyPaymentMethod" className="col-span-3"><SelectValue /></SelectTrigger>
+                  <SelectContent>{paymentMethods.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+               <Input type="hidden" value={transactionForm.status} />
+               <Input type="hidden" value={transactionForm.type} />
+               <Input type="hidden" value={transactionForm.patientId} />
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="monthlyPaymentNotes" className="text-right col-span-1 pt-2">Observações</Label>
+                <Textarea id="monthlyPaymentNotes" value={transactionForm.notes} onChange={(e) => handleFormInputChange('notes', e.target.value)} className="col-span-3" rows={2} placeholder="Detalhes adicionais"/>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+                <Button type="submit">Registrar Pagamento</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
     </div>
   );
 }
-
-
