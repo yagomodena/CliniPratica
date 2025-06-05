@@ -132,7 +132,7 @@ const initialDashboardMonthlyFeeFormState: DashboardMonthlyFeeFormState = {
   status: 'Recebido',
   type: 'mensalidade_paciente',
   date: format(new Date(), 'yyyy-MM-dd'),
-  patientId: '', // Will be set when dialog opens
+  patientId: '',
   notes: '',
 };
 
@@ -857,7 +857,7 @@ export default function DashboardPage() {
         message = `Olá ${patientName}, tudo bem? Faltam ${daysUntil} dia${daysUntil > 1 ? 's' : ''} para o vencimento da sua mensalidade de R$${amount.toFixed(2)}.`;
       }
     } else if (whatsAppMonthlyFeeMsgType === 'overdue') {
-      message = `Olá ${patientName}, tudo bem? Identificamos que sua mensalidade de R$${amount.toFixed(2)}, vencida em ${format(dueDate, 'dd/MM/yyyy')}, está em atraso. Por favor, regularize sua situação.`;
+      message = `Olá ${patientName}, tudo bem? Identificamos que sua mensalidade de R$${amount.toFixed(2)}, vencida em ${format(dueDate, 'dd/MM/yyyy', { locale: ptBR })}, está em atraso. Por favor, regularize sua situação.`;
     } else { // custom
       if (!customWhatsAppMonthlyFeeMsg.trim()) {
         toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning"});
@@ -1644,7 +1644,7 @@ export default function DashboardPage() {
             )}
              {(whatsAppMonthlyFeeMsgType === 'overdue' && selectedPatientForWhatsAppMonthlyFee) && (
               <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground">
-                <p>Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem? Identificamos que sua mensalidade de R$${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}, vencida em ${format(selectedPatientForWhatsAppMonthlyFee.dueDate, 'dd/MM/yyyy')}, está em atraso. Por favor, regularize sua situação.</p>
+                <p>Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem? Identificamos que sua mensalidade de R${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}, vencida em ${format(selectedPatientForWhatsAppMonthlyFee.dueDate, 'dd/MM/yyyy', { locale: ptBR })}, está em atraso. Por favor, regularize sua situação.</p>
               </CardContent></Card>
             )}
             {whatsAppMonthlyFeeMsgType === 'custom' && (
