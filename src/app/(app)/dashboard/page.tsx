@@ -113,15 +113,27 @@ type MonthlyFeeEntry = {
   transactionId?: string;
 };
 
-type NewTransactionFormDashboard = {
-  description?: string;
-  amount?: number;
-  paymentMethod?: PaymentMethod;
-  status?: TransactionStatus;
-  type?: TransactionType;
-  date?: string;
-  patientId?: string;
-  notes?: string;
+// Local state type for the dashboard's monthly payment registration form
+type DashboardMonthlyFeeFormState = {
+  description: string;
+  amountString: string; // Use string for input binding
+  paymentMethod: PaymentMethod;
+  status: TransactionStatus;
+  type: TransactionType;
+  date: string;
+  patientId: string;
+  notes: string;
+};
+
+const initialDashboardMonthlyFeeFormState: DashboardMonthlyFeeFormState = {
+  description: '',
+  amountString: '',
+  paymentMethod: 'Pix',
+  status: 'Recebido',
+  type: 'mensalidade_paciente',
+  date: format(new Date(), 'yyyy-MM-dd'),
+  patientId: '', // Will be set when dialog opens
+  notes: '',
 };
 
 
@@ -134,6 +146,7 @@ const chartConfig = {
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
 type StatusCobranca = 'ativo' | 'pendente' | 'cancelado' | string;
+
 
 type DashboardFilterType = 'mine' | 'all_clinic';
 
@@ -179,9 +192,11 @@ export default function DashboardPage() {
   const [selectedPatientForWhatsAppMonthlyFee, setSelectedPatientForWhatsAppMonthlyFee] = useState<MonthlyFeeEntry | null>(null);
   const [whatsAppMonthlyFeeMsgType, setWhatsAppMonthlyFeeMsgType] = useState<'due_soon' | 'overdue' | 'custom'>('due_soon');
   const [customWhatsAppMonthlyFeeMsg, setCustomWhatsAppMonthlyFeeMsg] = useState('');
+  
   const [isRegisterMonthlyPaymentDashboardDialogOpen, setIsRegisterMonthlyPaymentDashboardDialogOpen] = useState(false);
   const [selectedPatientForMonthlyPaymentDashboard, setSelectedPatientForMonthlyPaymentDashboard] = useState<MonthlyFeeEntry | null>(null);
-  const [transactionFormForDashboardMonthlyFee, setTransactionFormForDashboardMonthlyFee] = useState<Partial<NewTransactionFormDashboard>>({});
+  const [transactionFormForDashboardMonthlyFee, setTransactionFormForDashboardMonthlyFee] = 
+    useState<DashboardMonthlyFeeFormState>(initialDashboardMonthlyFeeFormState);
 
 
   const [todayAppointmentsFilter, setTodayAppointmentsFilter] = useState<DashboardFilterType>('mine');
@@ -865,8 +880,8 @@ export default function DashboardPage() {
     setSelectedPatientForMonthlyPaymentDashboard(feeEntry);
     setTransactionFormForDashboardMonthlyFee({
         description: `Mensalidade ${feeEntry.patientName} - ${format(feeEntry.dueDate, 'MMMM/yyyy', {locale: ptBR})}`,
-        amount: feeEntry.amount,
-        paymentMethod: 'Pix', // Default
+        amountString: feeEntry.amount.toString(),
+        paymentMethod: 'Pix', 
         status: 'Recebido',
         type: 'mensalidade_paciente',
         date: format(clientNow, 'yyyy-MM-dd'),
@@ -883,12 +898,15 @@ export default function DashboardPage() {
       return;
     }
 
-    const { description, amount, paymentMethod, status, type, date, patientId, notes } = transactionFormForDashboardMonthlyFee;
-    if (!description || amount === undefined || amount === null || !paymentMethod || !status || !type || !date || !patientId ) {
+    const { description, amountString, paymentMethod, status, type, date, patientId, notes } = transactionFormForDashboardMonthlyFee;
+    
+    const numericAmount = parseFloat(amountString);
+
+    if (!description || amountString.trim() === '' || isNaN(numericAmount) || !paymentMethod || !status || !type || !date || !patientId ) {
       toast({ title: "Erro de Validação", description: "Todos os campos marcados com * são obrigatórios.", variant: "destructive" });
       return;
     }
-     if (Number(amount) <= 0) {
+     if (numericAmount <= 0) {
        toast({ title: "Valor Inválido", description: "O valor da transação deve ser maior que zero.", variant: "destructive" });
        return;
     }
@@ -906,7 +924,7 @@ export default function DashboardPage() {
       nomeEmpresa: currentUserData.plano === 'Clínica' ? currentUserData.nomeEmpresa || '' : '',
       date: Timestamp.fromDate(parsedDate),
       description,
-      amount: Number(amount),
+      amount: numericAmount,
       paymentMethod: paymentMethod as PaymentMethod,
       status: status as TransactionStatus,
       type: type as TransactionType,
@@ -919,11 +937,12 @@ export default function DashboardPage() {
     try {
       await addDoc(collection(db, 'financialTransactions'), transactionData);
       toast({ title: "Sucesso!", description: "Pagamento da mensalidade registrado.", variant: "success" });
-      setTransactionFormForDashboardMonthlyFee({});
+      setTransactionFormForDashboardMonthlyFee(initialDashboardMonthlyFeeFormState);
       setIsRegisterMonthlyPaymentDashboardDialogOpen(false);
       setSelectedPatientForMonthlyPaymentDashboard(null);
       if (usuario && currentUserData && clientNow) {
-          fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow); // Refetch to update lists
+          fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow); 
+          fetchMonthlyRevenueData(usuario, currentUserData, clientNow);
       }
     } catch (error) {
       console.error("Erro ao salvar pagamento da mensalidade:", error);
@@ -945,6 +964,7 @@ export default function DashboardPage() {
         });
         toast({ title: "Status Atualizado", description: `Mensalidade marcada como Pendente.`, variant: "success" });
         fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow);
+        fetchMonthlyRevenueData(usuario, currentUserData, clientNow);
     } catch (error) {
         console.error("Erro ao marcar mensalidade como pendente:", error);
         toast({ title: "Erro", description: "Não foi possível atualizar o status da mensalidade.", variant: "destructive" });
@@ -1624,7 +1644,7 @@ export default function DashboardPage() {
             )}
              {(whatsAppMonthlyFeeMsgType === 'overdue' && selectedPatientForWhatsAppMonthlyFee) && (
               <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground">
-                <p>Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem? Identificamos que sua mensalidade de R$${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}, vencida em {format(selectedPatientForWhatsAppMonthlyFee.dueDate, 'dd/MM/yyyy')}, está em atraso. Por favor, regularize sua situação.</p>
+                <p>Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem? Identificamos que sua mensalidade de R$${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}, vencida em ${format(selectedPatientForWhatsAppMonthlyFee.dueDate, 'dd/MM/yyyy')}, está em atraso. Por favor, regularize sua situação.</p>
               </CardContent></Card>
             )}
             {whatsAppMonthlyFeeMsgType === 'custom' && (
@@ -1649,7 +1669,7 @@ export default function DashboardPage() {
           setIsRegisterMonthlyPaymentDashboardDialogOpen(isOpen);
           if (!isOpen) {
               setSelectedPatientForMonthlyPaymentDashboard(null);
-              setTransactionFormForDashboardMonthlyFee({});
+              setTransactionFormForDashboardMonthlyFee(initialDashboardMonthlyFeeFormState);
           }
       }}>
           <DialogContent className="sm:max-w-[520px]">
@@ -1660,15 +1680,23 @@ export default function DashboardPage() {
             <form onSubmit={handleSaveDashboardMonthlyPayment} className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="dashMonthlyPaymentDescription" className="text-right col-span-1">Descrição*</Label>
-                <Input id="dashMonthlyPaymentDescription" value={transactionFormForDashboardMonthlyFee.description || ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, description: e.target.value }))} className="col-span-3" />
+                <Input id="dashMonthlyPaymentDescription" value={transactionFormForDashboardMonthlyFee.description} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, description: e.target.value }))} className="col-span-3" />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="dashMonthlyPaymentAmount" className="text-right col-span-1">Valor (R$)*</Label>
-                <Input id="dashMonthlyPaymentAmount" type="number" step="0.01" value={transactionFormForDashboardMonthlyFee.amount ?? ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))} className="col-span-3" />
+                <Input 
+                  id="dashMonthlyPaymentAmount" 
+                  type="number" 
+                  step="0.01" 
+                  value={transactionFormForDashboardMonthlyFee.amountString} 
+                  onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, amountString: e.target.value }))} 
+                  className="col-span-3"
+                  placeholder="0.00"
+                />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="dashMonthlyPaymentDate" className="text-right col-span-1">Data Pagamento*</Label>
-                <Input id="dashMonthlyPaymentDate" type="date" value={transactionFormForDashboardMonthlyFee.date || ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, date: e.target.value}))} className="col-span-3" />
+                <Input id="dashMonthlyPaymentDate" type="date" value={transactionFormForDashboardMonthlyFee.date} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, date: e.target.value}))} className="col-span-3" />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="dashMonthlyPaymentMethod" className="text-right col-span-1">Método*</Label>
@@ -1682,7 +1710,7 @@ export default function DashboardPage() {
                <Input type="hidden" value={transactionFormForDashboardMonthlyFee.patientId} />
               <div className="grid grid-cols-4 items-start gap-4">
                 <Label htmlFor="dashMonthlyPaymentNotes" className="text-right col-span-1 pt-2">Observações</Label>
-                <Textarea id="dashMonthlyPaymentNotes" value={transactionFormForDashboardMonthlyFee.notes || ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, notes: e.target.value}))} className="col-span-3" rows={2} placeholder="Detalhes adicionais"/>
+                <Textarea id="dashMonthlyPaymentNotes" value={transactionFormForDashboardMonthlyFee.notes} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, notes: e.target.value}))} className="col-span-3" rows={2} placeholder="Detalhes adicionais"/>
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
