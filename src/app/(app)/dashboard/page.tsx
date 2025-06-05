@@ -4,13 +4,13 @@
 import { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send, Info, AlertTriangle as AlertTriangleIcon, Filter, UserCog } from "lucide-react";
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send, Info, AlertTriangle as AlertTriangleIcon, Filter, UserCog, Wallet, MessageSquare as MessageSquareIcon, MoreHorizontal, DollarSign as DollarSignIcon } from "lucide-react"; // Added Wallet, MessageSquareIcon, MoreHorizontal, DollarSignIcon
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { Badge } from '@/components/ui/badge'; // Added Badge import
+import { Badge } from '@/components/ui/badge';
 import { Bar, CartesianGrid, XAxis, YAxis, BarChart as RechartsBarChart, Line, LineChart as RechartsLineChart, ResponsiveContainer } from "recharts";
 import Link from "next/link";
 import {
@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
 import { PlansModal } from '@/components/sections/plans-modal';
-import { parseISO, getMonth, getDate, format, startOfDay, startOfMonth, endOfMonth, subMonths, getDay, startOfWeek, endOfWeek, eachDayOfInterval, isBefore, parse as parseDateFns } from 'date-fns';
+import { parseISO, getMonth, getDate, format, startOfDay, startOfMonth, endOfMonth, subMonths, getDay, startOfWeek, endOfWeek, eachDayOfInterval, isBefore, parse as parseDateFns, setDate, isSameMonth, differenceInDays, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
@@ -49,14 +49,18 @@ import {
   onSnapshot,
   Unsubscribe
 } from "firebase/firestore";
-import { MessageCircle } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { paymentMethods, transactionTypes, type PaymentMethod, type TransactionStatus, type TransactionType } from '@/lib/financeiro-data'; // Import paymentMethods for the dialog
 
 
 type PatientForSelect = {
   id: string;
   name: string;
   slug: string;
+  phone?: string; // Added phone for WhatsApp
+  hasMonthlyFee?: boolean;
+  monthlyFeeAmount?: number;
+  monthlyFeeDueDate?: number;
 };
 
 type PatientForBirthday = {
@@ -90,12 +94,34 @@ type AppointmentForDashboard = {
   patientName: string;
   patientSlug: string;
   responsibleUserName?: string;
-  status?: 'agendado' | 'cancelado' | 'realizado' | string; 
+  status?: 'agendado' | 'cancelado' | 'realizado' | string;
 };
 
 type WeeklyAppointmentChartData = {
   day: string;
   appointments: number;
+};
+
+type MonthlyFeeEntry = {
+  patientId: string;
+  patientName: string;
+  patientSlug: string;
+  patientPhone?: string;
+  dueDate: Date;
+  amount: number;
+  calculatedStatus: 'Pago' | 'Pendente' | 'Atrasado';
+  transactionId?: string;
+};
+
+type NewTransactionFormDashboard = {
+  description?: string;
+  amount?: number;
+  paymentMethod?: PaymentMethod;
+  status?: TransactionStatus;
+  type?: TransactionType;
+  date?: string;
+  patientId?: string;
+  notes?: string;
 };
 
 
@@ -147,11 +173,24 @@ export default function DashboardPage() {
   const [birthdayMessageType, setBirthdayMessageType] = useState<'predefined' | 'custom'>('predefined');
   const [customBirthdayMessage, setCustomBirthdayMessage] = useState('');
 
+  const [monthlyFeeEntries, setMonthlyFeeEntries] = useState<MonthlyFeeEntry[]>([]);
+  const [isLoadingMonthlyFees, setIsLoadingMonthlyFees] = useState(true);
+  const [isWhatsAppMonthlyFeeDialogOpen, setIsWhatsAppMonthlyFeeDialogOpen] = useState(false);
+  const [selectedPatientForWhatsAppMonthlyFee, setSelectedPatientForWhatsAppMonthlyFee] = useState<MonthlyFeeEntry | null>(null);
+  const [whatsAppMonthlyFeeMsgType, setWhatsAppMonthlyFeeMsgType] = useState<'due_soon' | 'overdue' | 'custom'>('due_soon');
+  const [customWhatsAppMonthlyFeeMsg, setCustomWhatsAppMonthlyFeeMsg] = useState('');
+  const [isRegisterMonthlyPaymentDashboardDialogOpen, setIsRegisterMonthlyPaymentDashboardDialogOpen] = useState(false);
+  const [selectedPatientForMonthlyPaymentDashboard, setSelectedPatientForMonthlyPaymentDashboard] = useState<MonthlyFeeEntry | null>(null);
+  const [transactionFormForDashboardMonthlyFee, setTransactionFormForDashboardMonthlyFee] = useState<Partial<NewTransactionFormDashboard>>({});
+
+
   const [todayAppointmentsFilter, setTodayAppointmentsFilter] = useState<DashboardFilterType>('mine');
   const [weeklyAppointmentsFilter, setWeeklyAppointmentsFilter] = useState<DashboardFilterType>('mine');
 
 
   const isFreePlan = currentUserData?.plano === 'Gratuito';
+  const isProfessionalOrClinicPlan = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
+
 
   useEffect(() => {
     const now = new Date();
@@ -208,6 +247,8 @@ export default function DashboardPage() {
         setRevenueComparisonPercentage(null);
         setIsLoadingRevenue(false);
         setBirthdayPatients([]);
+        setMonthlyFeeEntries([]);
+        setIsLoadingMonthlyFees(false);
         setCurrentUserData(null);
         setBillingStatus(null);
         setIsPlanWarningVisible(false);
@@ -287,14 +328,14 @@ export default function DashboardPage() {
             where('responsibleUserId', '==', currentAuthUser.uid),
             orderBy('time')
           );
-        } else { 
+        } else {
           q = query(apptsRef,
             where('nomeEmpresa', '==', uData.nomeEmpresa),
             where('date', '==', dateString),
             orderBy('time')
           );
         }
-      } else { 
+      } else {
         q = query(apptsRef,
           where('uid', '==', currentAuthUser.uid),
           where('date', '==', dateString),
@@ -344,16 +385,16 @@ export default function DashboardPage() {
             where('nomeEmpresa', '==', uData.nomeEmpresa),
             where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
             where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd')),
-            where('responsibleUserId', '==', currentAuthUser.uid) 
+            where('responsibleUserId', '==', currentAuthUser.uid)
           );
-        } else { 
+        } else {
           q = query(apptsRef,
             where('nomeEmpresa', '==', uData.nomeEmpresa),
             where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
             where('date', '<=', format(endOfCurrentWeek, 'yyyy-MM-dd'))
           );
         }
-      } else { 
+      } else {
         q = query(apptsRef,
           where('uid', '==', currentAuthUser.uid),
           where('date', '>=', format(startOfCurrentWeek, 'yyyy-MM-dd')),
@@ -366,7 +407,7 @@ export default function DashboardPage() {
         const data = docSnap.data();
         try {
           const apptDate = parseISO(data.date as string);
-          const dayIndex = (getDay(apptDate) + 6) % 7; 
+          const dayIndex = (getDay(apptDate) + 6) % 7;
           if (daysOfWeekData[dayIndex]) {
             daysOfWeekData[dayIndex].appointments += 1;
           }
@@ -386,7 +427,7 @@ export default function DashboardPage() {
 
 
   const fetchMonthlyRevenueData = useCallback(async (currentAuthUser: FirebaseUser, uData: any, now: Date) => {
-    if (!currentAuthUser || !now) return;
+    if (!currentAuthUser || !now || !uData) return;
     setIsLoadingRevenue(true);
 
     let currentMonthTotal = 0;
@@ -403,7 +444,7 @@ export default function DashboardPage() {
       let currentMonthQuery;
       let previousMonthQuery;
 
-      if (uData?.plano === 'Clínica' && uData.nomeEmpresa) {
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
         currentMonthQuery = query(transactionsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), ...baseQueryConditions(now));
         previousMonthQuery = query(transactionsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), ...baseQueryConditions(subMonths(now, 1)));
       } else {
@@ -422,7 +463,7 @@ export default function DashboardPage() {
         const percentage = ((currentMonthTotal - previousMonthTotal) / previousMonthTotal) * 100;
         setRevenueComparisonPercentage(percentage);
       } else if (currentMonthTotal > 0) {
-        setRevenueComparisonPercentage(100); 
+        setRevenueComparisonPercentage(100);
       } else {
         setRevenueComparisonPercentage(0);
       }
@@ -434,6 +475,87 @@ export default function DashboardPage() {
       setRevenueComparisonPercentage(null);
     } finally {
       setIsLoadingRevenue(false);
+    }
+  }, [toast]);
+
+  const fetchMonthlyFeeEntriesData = useCallback(async (currentAuthUser: FirebaseUser, uData: any, now: Date) => {
+    if (!currentAuthUser || !now || !uData || (uData.plano !== 'Profissional' && uData.plano !== 'Clínica')) {
+      setIsLoadingMonthlyFees(false);
+      setMonthlyFeeEntries([]);
+      return;
+    }
+    setIsLoadingMonthlyFees(true);
+    const entries: MonthlyFeeEntry[] = [];
+
+    try {
+      const patientsRef = collection(db, 'pacientes');
+      let pq;
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+        pq = query(patientsRef, where('nomeEmpresa', '==', uData.nomeEmpresa), where('hasMonthlyFee', '==', true));
+      } else {
+        pq = query(patientsRef, where('uid', '==', currentAuthUser.uid), where('hasMonthlyFee', '==', true));
+      }
+      const patientsSnapshot = await getDocs(pq);
+
+      const financialTransactionsRef = collection(db, 'financialTransactions');
+
+      for (const patientDoc of patientsSnapshot.docs) {
+        const patientData = patientDoc.data();
+        if (patientData.monthlyFeeAmount && patientData.monthlyFeeDueDate) {
+          const dueDateThisMonth = setDate(now, patientData.monthlyFeeDueDate);
+
+          let paymentQuery;
+          if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+             paymentQuery = query(
+                financialTransactionsRef,
+                where('nomeEmpresa', '==', uData.nomeEmpresa),
+                where('patientId', '==', patientDoc.id),
+                where('type', '==', 'mensalidade_paciente'),
+                where('status', '==', 'Recebido'),
+                where('date', '>=', Timestamp.fromDate(startOfMonth(now))),
+                where('date', '<=', Timestamp.fromDate(endOfMonth(now)))
+            );
+          } else {
+             paymentQuery = query(
+                financialTransactionsRef,
+                where('ownerId', '==', currentAuthUser.uid),
+                where('patientId', '==', patientDoc.id),
+                where('type', '==', 'mensalidade_paciente'),
+                where('status', '==', 'Recebido'),
+                where('date', '>=', Timestamp.fromDate(startOfMonth(now))),
+                where('date', '<=', Timestamp.fromDate(endOfMonth(now)))
+            );
+          }
+
+          const paymentSnapshot = await getDocs(paymentQuery);
+          const paidTransaction = paymentSnapshot.docs.length > 0 ? paymentSnapshot.docs[0] : null;
+
+          let calculatedStatus: MonthlyFeeEntry['calculatedStatus'] = 'Pendente';
+          if (paidTransaction) {
+            calculatedStatus = 'Pago';
+          } else if (isBefore(startOfDay(dueDateThisMonth), startOfDay(now))) {
+            calculatedStatus = 'Atrasado';
+          }
+
+          entries.push({
+            patientId: patientDoc.id,
+            patientName: patientData.name,
+            patientSlug: patientData.slug,
+            patientPhone: patientData.phone,
+            dueDate: dueDateThisMonth,
+            amount: patientData.monthlyFeeAmount,
+            calculatedStatus,
+            transactionId: paidTransaction?.id,
+          });
+        }
+      }
+      setMonthlyFeeEntries(entries.sort((a,b) => a.dueDate.getTime() - b.dueDate.getTime()));
+    } catch (error: any) {
+      console.error("Erro ao buscar mensalidades:", error);
+      toast({ title: "Erro nas Mensalidades", description: "Não foi possível carregar os dados de mensalidades.", variant: "destructive" });
+      setMonthlyFeeEntries([]);
+    } finally {
+      setIsLoadingMonthlyFees(false);
     }
   }, [toast]);
 
@@ -463,6 +585,10 @@ export default function DashboardPage() {
               id: docSnap.id,
               name: data.name as string,
               slug: data.slug as string,
+              phone: data.phone as string | undefined,
+              hasMonthlyFee: data.hasMonthlyFee as boolean | undefined,
+              monthlyFeeAmount: data.monthlyFeeAmount as number | undefined,
+              monthlyFeeDueDate: data.monthlyFeeDueDate as number | undefined,
             });
             if (data.dob) {
               try {
@@ -489,7 +615,8 @@ export default function DashboardPage() {
             fetchAlerts(usuario, currentUserData),
             fetchTodaysAppointments(usuario, currentUserData, clientTodayString, todayAppointmentsFilter),
             fetchWeeklyAppointments(usuario, currentUserData, clientNow, weeklyAppointmentsFilter),
-            fetchMonthlyRevenueData(usuario, currentUserData, clientNow)
+            fetchMonthlyRevenueData(usuario, currentUserData, clientNow),
+            fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow)
           ]);
 
         } catch (error) {
@@ -500,12 +627,13 @@ export default function DashboardPage() {
           setAlerts([]);
           setTodaysFirebaseAppointments([]);
           setActualWeeklyAppointmentsData(["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map(day => ({ day, appointments: 0 })));
+          setMonthlyFeeEntries([]);
           setIsLoadingFirebasePatients(false);
         }
       };
       fetchAllDashboardData();
     }
-  }, [usuario, currentUserData, clientNow, clientTodayString, toast, fetchAlerts, fetchTodaysAppointments, fetchWeeklyAppointments, fetchMonthlyRevenueData, todayAppointmentsFilter, weeklyAppointmentsFilter]);
+  }, [usuario, currentUserData, clientNow, clientTodayString, toast, fetchAlerts, fetchTodaysAppointments, fetchWeeklyAppointments, fetchMonthlyRevenueData, fetchMonthlyFeeEntriesData, todayAppointmentsFilter, weeklyAppointmentsFilter]);
 
 
   const [alertForm, setAlertForm] = useState<AlertForm>({
@@ -564,7 +692,7 @@ export default function DashboardPage() {
         description: `Alerta adicionado para ${selectedPatient.name}.`,
         variant: "success",
       });
-      await fetchAlerts(usuario, currentUserData);
+      if (usuario && currentUserData) await fetchAlerts(usuario, currentUserData);
     } catch (error: any) {
       console.error("Erro ao adicionar alerta:", error);
       toast({ title: "Erro ao adicionar alerta", description: "Não foi possível salvar o alerta.", variant: "destructive" });
@@ -616,7 +744,7 @@ export default function DashboardPage() {
         description: "Alerta atualizado com sucesso.",
         variant: "success",
       });
-      await fetchAlerts(usuario, currentUserData);
+      if (usuario && currentUserData) await fetchAlerts(usuario, currentUserData);
     } catch (error: any) {
       console.error("Erro ao editar alerta:", error);
       toast({ title: "Erro", description: "Não foi possível atualizar o alerta.", variant: "destructive" });
@@ -633,7 +761,7 @@ export default function DashboardPage() {
         description: "O alerta foi removido.",
         variant: "success"
       });
-      await fetchAlerts(usuario, currentUserData);
+      if (usuario && currentUserData) await fetchAlerts(usuario, currentUserData);
     } catch (error: any) {
       console.error("Erro ao resolver alerta:", error);
       toast({ title: "Erro", description: "Não foi possível remover o alerta.", variant: "destructive" });
@@ -679,13 +807,160 @@ export default function DashboardPage() {
     setIsBirthdayMessageDialogOpen(false);
   };
 
-  const getStatusBadgeVariant = (status: AppointmentForDashboard['status'] | 'Atrasado' | undefined) => {
+  const getDaysUntilDue = (dueDate: Date): number | null => {
+    if (!clientNow) return null;
+    if (isBefore(startOfDay(dueDate), startOfDay(clientNow))) return 0; // Already past or today but considered overdue
+    return differenceInDays(startOfDay(dueDate), startOfDay(clientNow));
+  };
+
+  const openWhatsAppMonthlyFeeDialog = (patientFeeEntry: MonthlyFeeEntry) => {
+    setSelectedPatientForWhatsAppMonthlyFee(patientFeeEntry);
+    if (patientFeeEntry.calculatedStatus === 'Atrasado') {
+      setWhatsAppMonthlyFeeMsgType('overdue');
+    } else {
+      setWhatsAppMonthlyFeeMsgType('due_soon');
+    }
+    setCustomWhatsAppMonthlyFeeMsg('');
+    setIsWhatsAppMonthlyFeeDialogOpen(true);
+  };
+
+  const handleSendWhatsAppMonthlyFeeMessage = () => {
+    if (!selectedPatientForWhatsAppMonthlyFee || !selectedPatientForWhatsAppMonthlyFee.patientPhone) {
+      toast({ title: "Erro", description: "Paciente ou telefone não selecionado.", variant: "destructive"});
+      return;
+    }
+    let message = '';
+    const { patientName, amount, dueDate } = selectedPatientForWhatsAppMonthlyFee;
+
+    if (whatsAppMonthlyFeeMsgType === 'due_soon') {
+      const daysUntil = getDaysUntilDue(dueDate);
+      if (daysUntil === null) {
+        message = `Olá ${patientName}, tudo bem? Gostaríamos de lembrar sobre sua mensalidade de R$${amount.toFixed(2)}.`;
+      } else if (daysUntil === 0) {
+        message = `Olá ${patientName}, tudo bem? Sua mensalidade de R$${amount.toFixed(2)} vence hoje. Lembre-se de efetuar o pagamento!`;
+      } else {
+        message = `Olá ${patientName}, tudo bem? Faltam ${daysUntil} dia${daysUntil > 1 ? 's' : ''} para o vencimento da sua mensalidade de R$${amount.toFixed(2)}.`;
+      }
+    } else if (whatsAppMonthlyFeeMsgType === 'overdue') {
+      message = `Olá ${patientName}, tudo bem? Identificamos que sua mensalidade de R$${amount.toFixed(2)}, vencida em ${format(dueDate, 'dd/MM/yyyy')}, está em atraso. Por favor, regularize sua situação.`;
+    } else { // custom
+      if (!customWhatsAppMonthlyFeeMsg.trim()) {
+        toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning"});
+        return;
+      }
+      message = customWhatsAppMonthlyFeeMsg;
+    }
+
+    const cleanPhone = selectedPatientForWhatsAppMonthlyFee.patientPhone.replace(/\D/g, '');
+    const whatsappLink = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`;
+
+    window.open(whatsappLink, '_blank');
+    toast({ title: "Mensagem Pronta", description: `Abrindo WhatsApp para ${patientName}.`, variant: "success"});
+    setIsWhatsAppMonthlyFeeDialogOpen(false);
+  };
+
+
+  const handleOpenRegisterMonthlyPaymentDashboardDialog = (feeEntry: MonthlyFeeEntry) => {
+    if (!clientNow || !feeEntry) return;
+    setSelectedPatientForMonthlyPaymentDashboard(feeEntry);
+    setTransactionFormForDashboardMonthlyFee({
+        description: `Mensalidade ${feeEntry.patientName} - ${format(feeEntry.dueDate, 'MMMM/yyyy', {locale: ptBR})}`,
+        amount: feeEntry.amount,
+        paymentMethod: 'Pix', // Default
+        status: 'Recebido',
+        type: 'mensalidade_paciente',
+        date: format(clientNow, 'yyyy-MM-dd'),
+        patientId: feeEntry.patientId,
+        notes: '',
+    });
+    setIsRegisterMonthlyPaymentDashboardDialogOpen(true);
+  };
+
+  const handleSaveDashboardMonthlyPayment = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!usuario || !currentUserData || !selectedPatientForMonthlyPaymentDashboard) {
+      toast({ title: "Erro", description: "Dados insuficientes para registrar pagamento.", variant: "destructive" });
+      return;
+    }
+
+    const { description, amount, paymentMethod, status, type, date, patientId, notes } = transactionFormForDashboardMonthlyFee;
+    if (!description || amount === undefined || amount === null || !paymentMethod || !status || !type || !date || !patientId ) {
+      toast({ title: "Erro de Validação", description: "Todos os campos marcados com * são obrigatórios.", variant: "destructive" });
+      return;
+    }
+     if (Number(amount) <= 0) {
+       toast({ title: "Valor Inválido", description: "O valor da transação deve ser maior que zero.", variant: "destructive" });
+       return;
+    }
+    let parsedDate;
+    try {
+      parsedDate = parseISO(date);
+      if (isNaN(parsedDate.getTime())) throw new Error("Data inválida");
+    } catch {
+      toast({ title: "Data Inválida", description: "Por favor, insira uma data válida.", variant: "destructive" });
+      return;
+    }
+
+    const transactionData: any = {
+      ownerId: usuario.uid,
+      nomeEmpresa: currentUserData.plano === 'Clínica' ? currentUserData.nomeEmpresa || '' : '',
+      date: Timestamp.fromDate(parsedDate),
+      description,
+      amount: Number(amount),
+      paymentMethod: paymentMethod as PaymentMethod,
+      status: status as TransactionStatus,
+      type: type as TransactionType,
+      notes: notes || '',
+      patientId: patientId,
+      patientName: selectedPatientForMonthlyPaymentDashboard.patientName,
+      createdAt: serverTimestamp(),
+    };
+
+    try {
+      await addDoc(collection(db, 'financialTransactions'), transactionData);
+      toast({ title: "Sucesso!", description: "Pagamento da mensalidade registrado.", variant: "success" });
+      setTransactionFormForDashboardMonthlyFee({});
+      setIsRegisterMonthlyPaymentDashboardDialogOpen(false);
+      setSelectedPatientForMonthlyPaymentDashboard(null);
+      if (usuario && currentUserData && clientNow) {
+          fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow); // Refetch to update lists
+      }
+    } catch (error) {
+      console.error("Erro ao salvar pagamento da mensalidade:", error);
+      toast({ title: "Erro", description: "Não foi possível registrar o pagamento.", variant: "destructive" });
+    }
+  };
+
+  const handleMarkMonthlyFeeAsPending = async (transactionId: string | undefined, patientId: string) => {
+    if (!usuario || !currentUserData || !clientNow) return;
+    if (!transactionId) {
+        toast({ title: "Ação não permitida", description: "Não há transação de pagamento registrada para esta mensalidade.", variant: "warning" });
+        return;
+    }
+    try {
+        const transactionRef = doc(db, 'financialTransactions', transactionId);
+        await updateDoc(transactionRef, {
+            status: 'Pendente',
+            updatedAt: serverTimestamp()
+        });
+        toast({ title: "Status Atualizado", description: `Mensalidade marcada como Pendente.`, variant: "success" });
+        fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow);
+    } catch (error) {
+        console.error("Erro ao marcar mensalidade como pendente:", error);
+        toast({ title: "Erro", description: "Não foi possível atualizar o status da mensalidade.", variant: "destructive" });
+    }
+  };
+
+
+  const getStatusBadgeVariant = (status: AppointmentForDashboard['status'] | MonthlyFeeEntry['calculatedStatus'] | 'Atrasado' | undefined) => {
     if (!status) return 'secondary';
     switch (status) {
       case 'agendado': return 'default';
       case 'realizado': return 'success';
       case 'cancelado': return 'destructive';
-      case 'Atrasado': return 'warning'; 
+      case 'Atrasado': return 'warning';
+      case 'Pago': return 'success';
+      case 'Pendente': return 'default';
       default: return 'secondary';
     }
   };
@@ -815,7 +1090,7 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">Pacientes Agendados Hoje</CardTitle>
             <CalendarCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="space-y-3 pt-4 max-h-[230px] overflow-y-auto"> 
+          <CardContent className="space-y-3 pt-4 max-h-[230px] overflow-y-auto">
             {currentUserData?.plano === 'Clínica' && (
               <div className="mb-3">
                 <Label htmlFor="today-filter" className="text-xs text-muted-foreground">Filtrar por:</Label>
@@ -835,7 +1110,7 @@ export default function DashboardPage() {
             ) : todaysFirebaseAppointments.length > 0 ? (
               todaysFirebaseAppointments.map((appt) => {
                 const appointmentFullDateTime = clientNow && clientTodayString ? parseDateFns(`${clientTodayString} ${appt.time}`, 'yyyy-MM-dd HH:mm', new Date()) : null;
-                let displayStatus: AppointmentForDashboard['status'] | 'Atrasado' = appt.status;
+                let displayStatus: AppointmentForDashboard['status'] | 'Atrasado' | undefined = appt.status;
                 if (appt.status === 'agendado' && appointmentFullDateTime && clientNow && isBefore(appointmentFullDateTime, clientNow)) {
                   displayStatus = 'Atrasado';
                 }
@@ -1031,7 +1306,7 @@ export default function DashboardPage() {
                             }
                           }}
                         >
-                          <MessageCircle className="h-4 w-4" />
+                          <MessageSquareIcon className="h-4 w-4" />
                         </Button>
                       <Link
                         href={`/pacientes/${patient.slug}`}
@@ -1092,6 +1367,71 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+
+        {isProfessionalOrClinicPlan && (
+          <Card className="shadow-md">
+            <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-1">
+                    <Wallet className="h-4 w-4 text-muted-foreground" />
+                    Mensalidades do Mês
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 pt-4 max-h-[230px] overflow-y-auto">
+                {isLoadingMonthlyFees ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">Carregando mensalidades...</p>
+                ) : monthlyFeeEntries.length > 0 ? (
+                    monthlyFeeEntries.map((entry) => (
+                        <div key={entry.patientId} className="flex items-center justify-between text-sm gap-2 p-1.5 rounded hover:bg-muted/50">
+                            <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate" title={entry.patientName}>{entry.patientName}</p>
+                                <p className="text-xs text-muted-foreground">
+                                    Vence: {format(entry.dueDate, 'dd/MM')} - R${entry.amount.toFixed(2)}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <Badge variant={getStatusBadgeVariant(entry.calculatedStatus)} className="text-xs capitalize h-6">
+                                    {entry.calculatedStatus}
+                                </Badge>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-green-600 hover:text-green-700"
+                                  title="Enviar mensagem WhatsApp"
+                                  disabled={!entry.patientPhone}
+                                  onClick={() => openWhatsAppMonthlyFeeDialog(entry)}
+                                >
+                                    <MessageSquareIcon className="h-4 w-4" />
+                                </Button>
+                                {entry.calculatedStatus === 'Pendente' || entry.calculatedStatus === 'Atrasado' ? (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-primary hover:text-primary/80"
+                                        title="Registrar Pagamento"
+                                        onClick={() => handleOpenRegisterMonthlyPaymentDashboardDialog(entry)}
+                                    >
+                                        <DollarSignIcon className="h-4 w-4" />
+                                    </Button>
+                                ) : entry.calculatedStatus === 'Pago' ? (
+                                     <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-orange-500 hover:text-orange-600"
+                                        title="Marcar como Pendente"
+                                        onClick={() => handleMarkMonthlyFeeAsPending(entry.transactionId, entry.patientId)}
+                                    >
+                                        <AlertCircle className="h-4 w-4" />
+                                    </Button>
+                                ) : null}
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <p className="text-sm text-muted-foreground text-center py-8">Nenhuma mensalidade pendente/registrada para este mês.</p>
+                )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
@@ -1197,7 +1537,7 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
-       
+
       <Dialog open={isBirthdayMessageDialogOpen} onOpenChange={setIsBirthdayMessageDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1245,6 +1585,113 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isWhatsAppMonthlyFeeDialogOpen} onOpenChange={setIsWhatsAppMonthlyFeeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mensagem de Mensalidade</DialogTitle>
+            <DialogDescription>
+              Enviar para {selectedPatientForWhatsAppMonthlyFee?.patientName}.
+              Tel: {selectedPatientForWhatsAppMonthlyFee?.patientPhone || "Não cadastrado"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <RadioGroup value={whatsAppMonthlyFeeMsgType} onValueChange={(value) => setWhatsAppMonthlyFeeMsgType(value as 'due_soon' | 'overdue' | 'custom')}>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="due_soon" id="rb-mf-due_soon" />
+                <Label htmlFor="rb-mf-due_soon">Lembrete Próximo Vencimento</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="overdue" id="rb-mf-overdue" />
+                <Label htmlFor="rb-mf-overdue">Aviso de Atraso</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="custom" id="rb-mf-custom" />
+                <Label htmlFor="rb-mf-custom">Personalizada</Label>
+              </div>
+            </RadioGroup>
+
+            {(whatsAppMonthlyFeeMsgType === 'due_soon' && selectedPatientForWhatsAppMonthlyFee) && (
+              <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground">
+                <p>
+                  Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem?
+                  {getDaysUntilDue(selectedPatientForWhatsAppMonthlyFee.dueDate) === 0
+                    ? ` Sua mensalidade de R$${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)} vence hoje. Lembre-se de efetuar o pagamento!`
+                    : ` Faltam ${getDaysUntilDue(selectedPatientForWhatsAppMonthlyFee.dueDate)} dia${(getDaysUntilDue(selectedPatientForWhatsAppMonthlyFee.dueDate) || 0) > 1 ? 's' : ''} para o vencimento da sua mensalidade de R$${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}.`
+                  }
+                </p>
+              </CardContent></Card>
+            )}
+             {(whatsAppMonthlyFeeMsgType === 'overdue' && selectedPatientForWhatsAppMonthlyFee) && (
+              <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground">
+                <p>Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem? Identificamos que sua mensalidade de R$${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}, vencida em {format(selectedPatientForWhatsAppMonthlyFee.dueDate, 'dd/MM/yyyy')}, está em atraso. Por favor, regularize sua situação.</p>
+              </CardContent></Card>
+            )}
+            {whatsAppMonthlyFeeMsgType === 'custom' && (
+              <Textarea
+                value={customWhatsAppMonthlyFeeMsg}
+                onChange={(e) => setCustomWhatsAppMonthlyFeeMsg(e.target.value)}
+                placeholder={`Mensagem para ${selectedPatientForWhatsAppMonthlyFee?.patientName}...`}
+                rows={4}
+              />
+            )}
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose>
+            <Button onClick={handleSendWhatsAppMonthlyFeeMessage} disabled={!selectedPatientForWhatsAppMonthlyFee?.patientPhone}>
+              <Send className="mr-2 h-4 w-4" /> Enviar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isRegisterMonthlyPaymentDashboardDialogOpen} onOpenChange={(isOpen) => {
+          setIsRegisterMonthlyPaymentDashboardDialogOpen(isOpen);
+          if (!isOpen) {
+              setSelectedPatientForMonthlyPaymentDashboard(null);
+              setTransactionFormForDashboardMonthlyFee({});
+          }
+      }}>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Registrar Pagamento de Mensalidade</DialogTitle>
+              <DialogDescription>Confirme os dados para registrar o pagamento da mensalidade de <strong>{selectedPatientForMonthlyPaymentDashboard?.patientName}</strong>.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSaveDashboardMonthlyPayment} className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="dashMonthlyPaymentDescription" className="text-right col-span-1">Descrição*</Label>
+                <Input id="dashMonthlyPaymentDescription" value={transactionFormForDashboardMonthlyFee.description || ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, description: e.target.value }))} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="dashMonthlyPaymentAmount" className="text-right col-span-1">Valor (R$)*</Label>
+                <Input id="dashMonthlyPaymentAmount" type="number" step="0.01" value={transactionFormForDashboardMonthlyFee.amount ?? ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="dashMonthlyPaymentDate" className="text-right col-span-1">Data Pagamento*</Label>
+                <Input id="dashMonthlyPaymentDate" type="date" value={transactionFormForDashboardMonthlyFee.date || ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, date: e.target.value}))} className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="dashMonthlyPaymentMethod" className="text-right col-span-1">Método*</Label>
+                <Select value={transactionFormForDashboardMonthlyFee.paymentMethod} onValueChange={(value) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, paymentMethod: value as PaymentMethod}))}>
+                  <SelectTrigger id="dashMonthlyPaymentMethod" className="col-span-3"><SelectValue /></SelectTrigger>
+                  <SelectContent>{paymentMethods.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+               <Input type="hidden" value={transactionFormForDashboardMonthlyFee.status} />
+               <Input type="hidden" value={transactionFormForDashboardMonthlyFee.type} />
+               <Input type="hidden" value={transactionFormForDashboardMonthlyFee.patientId} />
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="dashMonthlyPaymentNotes" className="text-right col-span-1 pt-2">Observações</Label>
+                <Textarea id="dashMonthlyPaymentNotes" value={transactionFormForDashboardMonthlyFee.notes || ''} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, notes: e.target.value}))} className="col-span-3" rows={2} placeholder="Detalhes adicionais"/>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+                <Button type="submit">Registrar Pagamento</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
 
       <PlansModal
         isOpen={isPlansModalOpen}
