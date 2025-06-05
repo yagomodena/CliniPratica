@@ -12,8 +12,8 @@ export type FormState = {
   status: 'success' | 'error' | 'idle';
   fields?: Record<string, string>;
   issues?: string[];
-  userId?: string; // Added userId
-  userEmail?: string; // Added userEmail
+  userId?: string;
+  userEmail?: string;
 };
 
 const initialState: FormState = {
@@ -39,7 +39,7 @@ export async function submitRegistrationForm(
     return {
       message: 'Falha ao registrar. Por favor, verifique os campos.',
       status: 'error',
-      fields: formData as Record<string, string>, 
+      fields: formData as Record<string, string>,
       issues: parsed.error.issues.map(issue => issue.message),
     };
   }
@@ -74,6 +74,11 @@ export async function submitRegistrationForm(
         usuarios: true,
       },
       criadoEm: serverTimestamp(),
+      // Initialize Mercado Pago fields
+      mercadoPagoSubscriptionId: null,
+      mercadoPagoSubscriptionStatus: null,
+      mercadoPagoPreapprovalPlanId: null,
+      mercadoPagoNextPaymentDate: null,
     };
 
     await setDoc(doc(db, 'usuarios', user.uid), userDoc);
@@ -81,8 +86,8 @@ export async function submitRegistrationForm(
     return {
       message: 'Cadastro realizado com sucesso! Você será redirecionado em breve.',
       status: 'success',
-      userId: user.uid, // Return userId
-      userEmail: email,   // Return userEmail
+      userId: user.uid,
+      userEmail: email,
     };
   } catch (error: any) {
     console.error('Erro ao registrar:', error);
