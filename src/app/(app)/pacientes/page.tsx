@@ -28,7 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, 
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -71,7 +71,7 @@ type Patient = {
   slug: string;
   lastVisit: string;
   nextVisit: string;
-  objetivoPaciente?: string; 
+  objetivoPaciente?: string;
   nomeEmpresa?: string;
   hasMonthlyFee?: boolean;
   monthlyFeeAmount?: number;
@@ -124,9 +124,9 @@ export default function PacientesPage() {
     dob: '',
     address: '',
     status: 'Ativo',
-    objetivoPaciente: '', 
+    objetivoPaciente: '',
     hasMonthlyFee: false,
-    monthlyFeeAmount: 0,
+    monthlyFeeAmount: undefined, // Changed from 0 to undefined
     monthlyFeeDueDate: 1,
   });
 
@@ -138,7 +138,7 @@ export default function PacientesPage() {
       setNewPatient(prev => ({ ...prev, [name]: value }));
     }
   };
-  
+
   const handleNumericInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     const amount = parseFloat(value);
@@ -206,10 +206,10 @@ export default function PacientesPage() {
   }, [fetchCurrentUserData]);
 
   useEffect(() => {
-    if (currentUser && currentUserData) { 
+    if (currentUser && currentUserData) {
       fetchPatients();
     }
-  }, [currentUser, currentUserData]); 
+  }, [currentUser, currentUserData]);
 
   useEffect(() => {
     if(currentUserData){
@@ -225,7 +225,7 @@ export default function PacientesPage() {
 
 
   const fetchPatients = async () => {
-    if (!currentUser || !currentUserData) return; 
+    if (!currentUser || !currentUserData) return;
     try {
       let q;
       if (currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa) {
@@ -233,7 +233,7 @@ export default function PacientesPage() {
       } else {
         q = query(collection(db, 'pacientes'), where('uid', '==', currentUser.uid));
       }
-      
+
       const querySnapshot = await getDocs(q);
       const loadedPatients: Patient[] = [];
       querySnapshot.forEach((docSnap) => {
@@ -256,7 +256,7 @@ export default function PacientesPage() {
           objetivoPaciente: data.objetivoPaciente || '',
           nomeEmpresa: data.nomeEmpresa || '',
           hasMonthlyFee: data.hasMonthlyFee || false,
-          monthlyFeeAmount: data.monthlyFeeAmount || 0,
+          monthlyFeeAmount: data.monthlyFeeAmount === 0 ? 0 : (data.monthlyFeeAmount || undefined), // Ensure 0 is kept if set
           monthlyFeeDueDate: data.monthlyFeeDueDate || 1,
         });
       });
@@ -277,7 +277,7 @@ export default function PacientesPage() {
     let activePatientsCount = 0;
     if (currentUserData.plano === 'Gratuito' || currentUserData.plano === 'Essencial') {
         const activePatientsQuery = query(
-            collection(db, 'pacientes'), 
+            collection(db, 'pacientes'),
             where(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? 'nomeEmpresa' : 'uid', '==', currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? currentUserData.nomeEmpresa : currentUser.uid),
             where('status', '==', 'Ativo')
         );
@@ -321,7 +321,7 @@ export default function PacientesPage() {
       toast({ title: "Data de Nascimento Inválida", description: "A data de nascimento não pode ser futura.", variant: "destructive" });
       return;
     }
-    
+
     if (newPatient.hasMonthlyFee) {
         if (newPatient.monthlyFeeAmount === undefined || newPatient.monthlyFeeAmount <= 0) {
             toast({ title: "Valor da Mensalidade Inválido", description: "O valor da mensalidade deve ser maior que zero.", variant: "destructive" });
@@ -339,9 +339,9 @@ export default function PacientesPage() {
     try {
       await addDoc(collection(db, 'pacientes'), {
         ...newPatient,
-        email: newPatient.email || '', 
-        uid: currentUser.uid, 
-        nomeEmpresa: nomeEmpresaParaSalvar, 
+        email: newPatient.email || '',
+        uid: currentUser.uid,
+        nomeEmpresa: nomeEmpresaParaSalvar,
         status: newPatient.status || 'Ativo',
         objetivoPaciente: newPatient.objetivoPaciente || '',
         createdAt: serverTimestamp(),
@@ -352,12 +352,12 @@ export default function PacientesPage() {
         history: [],
         documents: [],
         hasMonthlyFee: newPatient.hasMonthlyFee || false,
-        monthlyFeeAmount: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeAmount || 0) : 0,
+        monthlyFeeAmount: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeAmount || 0) : 0, // Store 0 if not set but has fee
         monthlyFeeDueDate: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeDueDate || 1) : 1,
       });
 
       toast({ title: "Sucesso!", description: `Paciente ${newPatient.name} adicionado.`, variant: "success" });
-      setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: 0, monthlyFeeDueDate: 1 });
+      setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: undefined, monthlyFeeDueDate: 1 });
       setIsNewPatientDialogOpen(false);
       await fetchPatients();
     } catch (error) {
@@ -485,7 +485,7 @@ export default function PacientesPage() {
     if (newStatus === 'Ativo') {
       let activePatientsCount = 0;
       const activePatientsQuery = query(
-        collection(db, 'pacientes'), 
+        collection(db, 'pacientes'),
         where(currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? 'nomeEmpresa' : 'uid', '==', currentUserData.plano === 'Clínica' && currentUserData.nomeEmpresa ? currentUserData.nomeEmpresa : currentUser.uid),
         where('status', '==', 'Ativo')
       );
@@ -535,7 +535,7 @@ export default function PacientesPage() {
       });
       setPatients(prev =>
         prev.map(p =>
-          p.internalId === patientInternalId ? { ...p, status: patientToUpdate.status } : p 
+          p.internalId === patientInternalId ? { ...p, status: patientToUpdate.status } : p
         )
       );
     }
@@ -580,7 +580,7 @@ export default function PacientesPage() {
                 setNewPatient(prev => ({ ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' }));
             }
             if (!isOpen) { // Reset form on close
-                setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: 0, monthlyFeeDueDate: 1 });
+                setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: undefined, monthlyFeeDueDate: 1 });
             }
         }}>
           <DialogTrigger asChild>
@@ -589,7 +589,7 @@ export default function PacientesPage() {
               Novo Paciente
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-lg"> 
+          <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Adicionar Novo Paciente</DialogTitle>
               <DialogDescription>
@@ -713,7 +713,7 @@ export default function PacientesPage() {
                             name="monthlyFeeAmount"
                             type="number"
                             step="0.01"
-                            value={newPatient.monthlyFeeAmount ?? ''}
+                            value={newPatient.monthlyFeeAmount || ''}
                             onChange={handleNumericInputChange}
                             className="col-span-3"
                             placeholder="0.00"
@@ -960,4 +960,3 @@ export default function PacientesPage() {
     </div>
   );
 }
-    

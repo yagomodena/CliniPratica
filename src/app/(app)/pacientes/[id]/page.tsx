@@ -35,7 +35,9 @@ import {
   updateDoc,
   deleteDoc,
   orderBy,
-  Timestamp
+  Timestamp,
+  onSnapshot, // Added for reactive currentUserData
+  Unsubscribe // Added for cleanup
 } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -79,6 +81,9 @@ type Patient = {
   nextVisit?: string;
   nomeEmpresa?: string;
   anamnese?: string;
+  hasMonthlyFee?: boolean;
+  monthlyFeeAmount?: number;
+  monthlyFeeDueDate?: number;
 };
 
 type AppointmentTypeObject = {
@@ -476,25 +481,115 @@ export default function PacienteDetalhePage() {
     return () => unsubscribeAuth();
   }, []);
 
-  const fetchCurrentUserData = useCallback(async (user: FirebaseUser | null): Promise<any | null> => {
-    if (!user) {
-      console.warn("fetchCurrentUserData: No user provided.");
-      return null;
-    }
-    try {
-      const userDocRef = doc(db, 'usuarios', user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-      if (userDocSnap.exists()) {
-        return { ...userDocSnap.data(), uid: user.uid };
+  // Reactive currentUserData
+  useEffect(() => {
+    let unsubscribe: Unsubscribe = () => {};
+    if (firebaseUserAuth) {
+      setIsLoading(true); // Set loading true when auth user changes, before data is fetched
+      const userDocRef = doc(db, 'usuarios', firebaseUserAuth.uid);
+      unsubscribe = onSnapshot(userDocRef, async (userDocSnap) => {
+        if (userDocSnap.exists()) {
+          const uData = { ...userDocSnap.data(), uid: firebaseUserAuth.uid };
+          setCurrentUserData(uData);
+          // Fetch dependent data only after currentUserData is confirmed
+          await fetchAppointmentTypes(uData);
+          await fetchPatientObjectives(uData);
+          const userArea = uData.areaAtuacao || "Outro";
+          const templates = ANAMNESE_TEMPLATES[userArea] || ANAMNESE_TEMPLATES["Outro"] || [];
+          setAnamneseTemplatesForUser(templates);
+          if (patientSlug) { // Only load patient data if slug is available
+            await loadPatientDoc(firebaseUserAuth, uData);
+          } else {
+             setIsLoading(false); // Stop loading if no slug
+          }
+        } else {
+          console.warn("User profile data not found for UID:", firebaseUserAuth.uid);
+          setCurrentUserData(null);
+          setAppointmentTypes(initialAppointmentTypesData.map(ft => ({ ...ft, id: `fallback-type-${ft.name.toLowerCase().replace(/\s+/g, '-')}` })).sort((a, b) => a.name.localeCompare(b.name)));
+          setPatientObjectives(initialPatientObjectivesData.map(o => ({...o, id: `fallback-obj-${o.name.toLowerCase()}`})).sort((a,b) => a.name.localeCompare(b.name)));
+          setAnamneseTemplatesForUser(ANAMNESE_TEMPLATES["Outro"] || []);
+          setIsLoading(false);
+          toast({ title: "Erro de Perfil", description: "Dados de perfil não encontrados. Você será redirecionado.", variant: "destructive" });
+          router.push('/login');
+        }
+      }, (error) => {
+        console.error("Error listening to user profile data:", error);
+        toast({ title: "Erro de Perfil", description: "Não foi possível carregar dados do perfil em tempo real.", variant: "destructive" });
+        setCurrentUserData(null);
+        setIsLoading(false);
+        router.push('/login');
+      });
+    } else {
+      setCurrentUserData(null);
+      setPatient(undefined);
+      setIsLoading(false);
+      if (firebaseUserAuth === null && patientSlug) { // If tried to access while logged out
+          router.push('/login');
       }
-      console.warn("fetchCurrentUserData: User profile data not found for UID:", user.uid);
-      return null;
-    } catch (error) {
-      console.error("Error fetching user profile data:", error);
-      toast({ title: "Erro de Perfil", description: "Não foi possível carregar dados do perfil.", variant: "destructive" });
-      return null;
     }
-  }, [toast]);
+    return () => unsubscribe();
+  }, [firebaseUserAuth, patientSlug, router, toast]); // Removed loadPatientDoc from here
+
+
+  const loadPatientDoc = useCallback(async (currentUserAuth: FirebaseUser, uData: any) => {
+    if (!patientSlug || !uData) {
+      setIsLoading(false);
+      return;
+    }
+    // setIsLoading(true); // isLoading is handled by the currentUserData effect now
+    try {
+      const patientsRef = collection(db, 'pacientes');
+      let q;
+      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
+        q = query(patientsRef, where('slug', '==', patientSlug), where('nomeEmpresa', '==', uData.nomeEmpresa));
+      } else {
+        q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUserAuth.uid));
+      }
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const docSnap = querySnapshot.docs[0];
+        const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>;
+        let uniqueIdCounter = Date.now();
+        const processedHistory = (data.history || []).map((histItem) => ({
+          ...histItem,
+          id: histItem.id || `hist-load-${docSnap.id}-${uniqueIdCounter++}`
+        }));
+        const fetchedPatient: Patient = {
+          ...data,
+          internalId: docSnap.id,
+          slug: patientSlug,
+          history: processedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+          documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
+          objetivoPaciente: data.objetivoPaciente || '',
+          anamnese: data.anamnese || '',
+          name: data.name || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          dob: data.dob || '',
+          address: data.address || '',
+          status: data.status || 'Ativo',
+          avatar: data.avatar || `https://placehold.co/100x100.png`,
+          lastVisit: data.lastVisit || '',
+          nextVisit: data.nextVisit || '',
+          nomeEmpresa: data.nomeEmpresa || '',
+          hasMonthlyFee: data.hasMonthlyFee || false,
+          monthlyFeeAmount: data.monthlyFeeAmount === 0 ? 0 : (data.monthlyFeeAmount || undefined),
+          monthlyFeeDueDate: data.monthlyFeeDueDate || 1,
+        };
+        setPatient(fetchedPatient);
+      } else {
+        toast({ title: "Paciente não encontrado", variant: "destructive" });
+        setPatient(undefined);
+        router.push('/pacientes');
+      }
+    } catch (error: any) {
+      console.error("Erro ao carregar dados do paciente:", error);
+      toast({ title: "Erro ao Carregar Paciente", description: "Falha ao carregar dados do paciente.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [patientSlug, router, toast]);
 
 
   const fetchAppointmentTypes = useCallback(async (userDataForPath: any) => {
@@ -544,100 +639,12 @@ export default function PacienteDetalhePage() {
     }
   }, [toast]);
 
-  const loadPageData = useCallback(async (currentUserAuth: FirebaseUser) => {
-    if (!patientSlug) {
-      setIsLoading(false);
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const uData = await fetchCurrentUserData(currentUserAuth);
-      if (!uData) {
-        toast({ title: "Erro de Perfil", description: "Dados de perfil não encontrados. Você será redirecionado para o login.", variant: "destructive" });
-        router.push('/login');
-        setIsLoading(false);
-        return;
-      }
-      setCurrentUserData(uData);
-
-      const userArea = uData.areaAtuacao || "Outro";
-      const templates = ANAMNESE_TEMPLATES[userArea] || ANAMNESE_TEMPLATES["Outro"] || [];
-      setAnamneseTemplatesForUser(templates);
-      setSelectedAnamneseModelKey(templates.length > 0 ? 'none' : 'none');
-
-
-      await Promise.all([
-        fetchAppointmentTypes(uData),
-        fetchPatientObjectives(uData)
-      ]);
-
-      const patientsRef = collection(db, 'pacientes');
-      let q;
-      if (uData.plano === 'Clínica' && uData.nomeEmpresa) {
-        q = query(patientsRef, where('slug', '==', patientSlug), where('nomeEmpresa', '==', uData.nomeEmpresa));
-      } else {
-        q = query(patientsRef, where('slug', '==', patientSlug), where('uid', '==', currentUserAuth.uid));
-      }
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        const docSnap = querySnapshot.docs[0];
-        const data = docSnap.data() as Omit<Patient, 'internalId' | 'slug'>;
-        let uniqueIdCounter = Date.now();
-        const processedHistory = (data.history || []).map((histItem) => ({
-          ...histItem,
-          id: histItem.id || `hist-load-${docSnap.id}-${uniqueIdCounter++}`
-        }));
-        const fetchedPatient: Patient = {
-          ...data,
-          internalId: docSnap.id,
-          slug: patientSlug,
-          history: processedHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-          documents: (data.documents || []).map((doc, idx) => ({ ...doc, id: `doc-load-${docSnap.id}-${idx}` })) as DocumentItem[],
-          objetivoPaciente: data.objetivoPaciente || '',
-          anamnese: data.anamnese || '',
-          name: data.name || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          dob: data.dob || '',
-          address: data.address || '',
-          status: data.status || 'Ativo',
-          avatar: data.avatar || `https://placehold.co/100x100.png`,
-          lastVisit: data.lastVisit || '',
-          nextVisit: data.nextVisit || '',
-          nomeEmpresa: data.nomeEmpresa || '',
-        };
-        setPatient(fetchedPatient);
-      } else {
-        toast({ title: "Paciente não encontrado", variant: "destructive" });
-        setPatient(undefined);
-        router.push('/pacientes');
-      }
-    } catch (error: any) {
-      console.error("Erro ao carregar dados da página:", error);
-      toast({ title: "Erro ao Carregar", description: "Falha ao carregar dados.", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [patientSlug, router, toast, fetchCurrentUserData, fetchAppointmentTypes, fetchPatientObjectives]);
-
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
     if (tabFromUrl) setActiveTab(tabFromUrl);
   }, [searchParams]);
 
-  useEffect(() => {
-    if (firebaseUserAuth === undefined) {
-      setIsLoading(true);
-    } else if (firebaseUserAuth === null) {
-      setIsLoading(false);
-      toast({ title: "Acesso Negado", description: "Faça login para continuar.", variant: "destructive" });
-      router.push('/login');
-    } else if (patientSlug && firebaseUserAuth) {
-      loadPageData(firebaseUserAuth);
-    }
-  }, [patientSlug, firebaseUserAuth, loadPageData, router, toast]);
 
   const getFirstActiveTypeName = useCallback(() => {
     return appointmentTypes.find(t => t.status === 'active')?.name || '';
@@ -655,6 +662,9 @@ export default function PacienteDetalhePage() {
         ...(prev?.internalId === patient.internalId ? prev : patient),
         objetivoPaciente: (prev?.internalId === patient.internalId ? prev.objetivoPaciente : patient.objetivoPaciente) || firstActiveObjective || '',
         anamnese: (prev?.internalId === patient.internalId ? prev.anamnese : patient.anamnese) || '',
+        hasMonthlyFee: patient.hasMonthlyFee || false,
+        monthlyFeeAmount: patient.monthlyFeeAmount === 0 ? 0 : (patient.monthlyFeeAmount || undefined),
+        monthlyFeeDueDate: patient.monthlyFeeDueDate || 1,
       }));
       if (activeTab === 'historico') {
         setNewHistoryType(prevHistoryType => prevHistoryType || firstActiveType || '');
@@ -676,6 +686,17 @@ export default function PacienteDetalhePage() {
       toast({ title: "Objetivo Inválido", description: "O objetivo do paciente selecionado não está ativo ou não existe.", variant: "destructive" });
       return;
     }
+    if (editedPatient.hasMonthlyFee) {
+        if (editedPatient.monthlyFeeAmount === undefined || editedPatient.monthlyFeeAmount <= 0) {
+            toast({ title: "Valor da Mensalidade Inválido", description: "O valor da mensalidade deve ser maior que zero.", variant: "destructive" });
+            return;
+        }
+        if (editedPatient.monthlyFeeDueDate === undefined || editedPatient.monthlyFeeDueDate < 1 || editedPatient.monthlyFeeDueDate > 31) {
+             toast({ title: "Dia de Vencimento Inválido", description: "O dia de vencimento deve ser entre 1 e 31.", variant: "destructive" });
+            return;
+        }
+    }
+
     try {
       const patientRef = doc(db, 'pacientes', editedPatient.internalId);
       const dataToSave: Partial<Patient> = {
@@ -687,9 +708,15 @@ export default function PacienteDetalhePage() {
         status: editedPatient.status || 'Ativo',
         objetivoPaciente: editedPatient.objetivoPaciente || '',
         anamnese: editedPatient.anamnese || '',
+        hasMonthlyFee: editedPatient.hasMonthlyFee || false,
+        monthlyFeeAmount: editedPatient.hasMonthlyFee ? (editedPatient.monthlyFeeAmount || 0) : null, // Save null if no fee
+        monthlyFeeDueDate: editedPatient.hasMonthlyFee ? (editedPatient.monthlyFeeDueDate || 1) : null, // Save null if no fee
       };
       await updateDoc(patientRef, dataToSave);
-      await loadPageData(firebaseUserAuth);
+      // No need to call loadPageData directly if relying on onSnapshot for patient data too,
+      // but for now, explicitly reloading patient data after save.
+      // If patient data itself becomes reactive via onSnapshot, this manual reload can be removed.
+      await loadPatientDoc(firebaseUserAuth, currentUserData);
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
     } catch (error) {
@@ -704,7 +731,10 @@ export default function PacienteDetalhePage() {
       setEditedPatient({
         ...patient,
         objetivoPaciente: patient.objetivoPaciente || getFirstActiveObjectiveName() || '',
-        anamnese: patient.anamnese || ''
+        anamnese: patient.anamnese || '',
+        hasMonthlyFee: patient.hasMonthlyFee || false,
+        monthlyFeeAmount: patient.monthlyFeeAmount === 0 ? 0 : (patient.monthlyFeeAmount || undefined),
+        monthlyFeeDueDate: patient.monthlyFeeDueDate || 1,
       });
       setIsEditing(true);
     }
@@ -721,6 +751,26 @@ export default function PacienteDetalhePage() {
     const { name, value } = e.target;
     setEditedPatient(prev => prev ? { ...prev, [name]: value } : undefined);
   };
+
+  const handleSwitchChangeForEdit = (name: keyof Patient, checked: boolean) => {
+    if (!editedPatient) return;
+    setEditedPatient(prev => {
+      if (!prev) return undefined;
+      const newState = { ...prev, [name]: checked };
+      if (name === 'hasMonthlyFee' && !checked) {
+        newState.monthlyFeeAmount = undefined; // Reset if fee is disabled
+        newState.monthlyFeeDueDate = 1; // Reset to default
+      }
+      return newState;
+    });
+  };
+
+  const handleNumericInputChangeForEdit = (name: keyof Patient, value: string) => {
+    if (!editedPatient) return;
+    const numValue = name === 'monthlyFeeAmount' ? parseFloat(value) : parseInt(value, 10);
+    setEditedPatient(prev => prev ? { ...prev, [name]: isNaN(numValue) ? (name === 'monthlyFeeAmount' ? undefined : 1) : numValue } : undefined);
+  };
+
 
   const handleAnamneseChange = (content: string) => {
     if (isEditing && editedPatient) {
@@ -739,7 +789,8 @@ export default function PacienteDetalhePage() {
       const patientRef = doc(db, 'pacientes', patient.internalId);
       const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
       await updateDoc(patientRef, { status: newStatus });
-      await loadPageData(firebaseUserAuth);
+      // Assuming patient data might become reactive, otherwise re-fetch:
+      await loadPatientDoc(firebaseUserAuth, currentUserData);
       toast({ title: `Paciente ${newStatus}`, description: `Status de ${patient.name} atualizado.`, variant: newStatus === 'Ativo' ? 'success' : 'warning', });
     } catch (error) {
       toast({ title: 'Erro', description: 'Não foi possível atualizar status.', variant: 'destructive' });
@@ -772,7 +823,7 @@ export default function PacienteDetalhePage() {
       const currentHistory = currentPatientData?.history || [];
       const updatedHistory = [newEntry, ...currentHistory];
       await updateDoc(patientRef, { history: updatedHistory });
-      await loadPageData(firebaseUserAuth);
+      await loadPatientDoc(firebaseUserAuth, currentUserData);
       setNewHistoryNote('');
       setNewHistoryType(getFirstActiveTypeName() || '');
       toast({ title: "Histórico Adicionado", description: "Novo registro adicionado com sucesso.", variant: "success" });
@@ -1166,17 +1217,15 @@ export default function PacienteDetalhePage() {
   const formatDate = (dateString: string | undefined, formatStr = 'PPP') => {
     if (!dateString) return 'Data não disponível';
     try {
-      // Assuming dateString is 'yyyy-MM-dd'
       const [year, month, day] = dateString.split('-').map(Number);
-      // JavaScript months are 0-indexed
       return format(new Date(year, month - 1, day), formatStr, { locale: ptBR });
-    } catch { 
-      // Fallback for other formats, or if parseISO was intended for full ISO strings
+    } catch {
       try { return format(parseISO(dateString), formatStr, { locale: ptBR }); }
       catch { return dateString; }
     }
   };
 
+  const showMonthlyFeeEditFields = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
 
   return (
     <div className="space-y-6">
@@ -1350,11 +1399,78 @@ export default function PacienteDetalhePage() {
                     <Label htmlFor="edit-status">Status</Label>
                     <select id="edit-status" name="status" value={editedPatient?.status || 'Ativo'} onChange={handleInputChange} className="flex h-10 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"><option value="Ativo">Ativo</option><option value="Inativo">Inativo</option></select>
                   </div>
+                  {showMonthlyFeeEditFields && (
+                    <>
+                      <div className="md:col-span-2 border-t pt-4 mt-2">
+                         <h4 className="text-md font-semibold mb-3 text-primary">Configuração de Mensalidade</h4>
+                      </div>
+                      <div className="space-y-1 flex items-center md:col-span-2">
+                        <Label htmlFor="edit-hasMonthlyFee" className="mr-2">Paciente possui mensalidade?</Label>
+                        <Switch
+                          id="edit-hasMonthlyFee"
+                          name="hasMonthlyFee"
+                          checked={editedPatient?.hasMonthlyFee || false}
+                          onCheckedChange={(checked) => handleSwitchChangeForEdit('hasMonthlyFee', checked)}
+                        />
+                      </div>
+                      {editedPatient?.hasMonthlyFee && (
+                        <>
+                          <div className="space-y-1">
+                            <Label htmlFor="edit-monthlyFeeAmount">Valor Mensalidade (R$)</Label>
+                            <Input
+                              id="edit-monthlyFeeAmount"
+                              name="monthlyFeeAmount"
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={editedPatient?.monthlyFeeAmount || ''}
+                              onChange={(e) => handleNumericInputChangeForEdit('monthlyFeeAmount', e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="edit-monthlyFeeDueDate">Dia Vencimento</Label>
+                            <Select
+                              name="monthlyFeeDueDate"
+                              value={editedPatient?.monthlyFeeDueDate?.toString() || '1'}
+                              onValueChange={(value) => handleNumericInputChangeForEdit('monthlyFeeDueDate', value)}
+                            >
+                              <SelectTrigger id="edit-monthlyFeeDueDate">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                                  <SelectItem key={day} value={day.toString()}>{day.toString().padStart(2, '0')}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                   <div><strong>Nome:</strong> {patient?.name}</div><div><strong>Nascimento:</strong> {formatDate(patient?.dob)}</div><div><strong>Email:</strong> {patient?.email}</div><div><strong>Telefone:</strong> {patient?.phone || '-'}</div>
                   <div className="md:col-span-2"><strong>Endereço:</strong> {patient?.address || '-'}</div><div><strong>Objetivo:</strong> {patient?.objetivoPaciente || '-'}</div><div><strong>Status:</strong> <Badge variant={patient?.status === 'Ativo' ? 'default' : 'secondary'} className={`ml-2 px-2 py-0.5 text-xs ${patient?.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{patient?.status}</Badge></div>
+                   {showMonthlyFeeEditFields && patient?.hasMonthlyFee && (
+                     <>
+                        <div className="md:col-span-2 border-t pt-4 mt-2">
+                             <h4 className="text-md font-semibold text-primary">Detalhes da Mensalidade</h4>
+                        </div>
+                        <div><strong>Possui Mensalidade:</strong> Sim</div>
+                        <div><strong>Valor:</strong> R$ {(patient.monthlyFeeAmount || 0).toFixed(2)}</div>
+                        <div><strong>Dia Vencimento:</strong> {patient.monthlyFeeDueDate?.toString().padStart(2, '0')}</div>
+                     </>
+                   )}
+                   {showMonthlyFeeEditFields && !patient?.hasMonthlyFee && (
+                     <>
+                        <div className="md:col-span-2 border-t pt-4 mt-2">
+                             <h4 className="text-md font-semibold text-primary">Detalhes da Mensalidade</h4>
+                        </div>
+                        <div><strong>Possui Mensalidade:</strong> Não</div>
+                     </>
+                   )}
                 </div>
               )}
             </TabsContent>
@@ -1421,7 +1537,7 @@ export default function PacienteDetalhePage() {
       <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Gerenciar Objetivos</DialogTitle></DialogHeader><div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">{patientObjectives.map((obj) => (<div key={obj.id || obj.name} className="flex items-center justify-between p-2 border rounded-md">{editingObjectiveInfo?.objective.id === obj.id ? (<div className="flex-grow flex items-center gap-2 mr-2"><Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" /><Button size="icon" className="h-8 w-8" onClick={handleSaveEditedObjectiveName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></div>) : (<span className={`flex-grow ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>)}<div className="flex gap-1 items-center ml-auto">{editingObjectiveInfo?.objective.id !== obj.id && (<><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteObjectiveDialog(obj)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}<Switch checked={obj.status === 'active'} onCheckedChange={() => setObjectiveToToggleStatusConfirm(obj)} aria-label={`Status ${obj.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" /></div></div>))}{patientObjectives.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum objetivo.</p>}</div><DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={!!objectiveToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setObjectiveToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja {objectiveToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{objectiveToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => objectiveToToggleStatusConfirm && handleToggleObjectiveStatus(objectiveToToggleStatusConfirm)} className={objectiveToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{objectiveToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={isDeleteObjectiveConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setObjectiveToDelete(null); setIsDeleteObjectiveConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{objectiveToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteObjective} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-      
+
       <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}>
         <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
           <DialogHeader>
@@ -1443,9 +1559,9 @@ export default function PacienteDetalhePage() {
                   )}
                 </div>
                 <h3 className="font-semibold mb-2 text-base">Observações:</h3>
-                <div 
-                  className="history-note-content prose prose-sm sm:prose-base max-w-none" 
-                  dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes || '<p>Nenhuma observação registrada.</p>' }} 
+                <div
+                  className="history-note-content prose prose-sm sm:prose-base max-w-none"
+                  dangerouslySetInnerHTML={{ __html: selectedHistoryNote.notes || '<p>Nenhuma observação registrada.</p>' }}
                 />
               </>
             )}
@@ -1481,4 +1597,3 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
-
