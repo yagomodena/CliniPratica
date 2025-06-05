@@ -7,10 +7,10 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Loader2, Search } from 'lucide-react';
+import { AlertTriangle, Loader2, Search, Users } from 'lucide-react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where, getCountFromServer } from 'firebase/firestore';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -25,6 +25,7 @@ type SystemUser = {
   statusCobranca?: 'ativo' | 'pendente' | 'cancelado' | string;
   plano?: string;
   criadoEm?: any; // Firestore Timestamp or Date
+  patientCount?: number; // Nova propriedade
 };
 
 export default function AdminPage() {
@@ -45,12 +46,12 @@ export default function AdminPage() {
         } else {
           setIsAuthorized(false);
           setIsLoading(false);
-          router.push('/dashboard'); // Redirect non-admin users
+          router.push('/dashboard'); 
         }
       } else {
         setIsAuthorized(false);
         setIsLoading(false);
-        router.push('/login'); // Redirect unauthenticated users
+        router.push('/login'); 
       }
     });
     return () => unsubscribe();
@@ -60,13 +61,30 @@ export default function AdminPage() {
     setIsLoading(true);
     try {
       const usersRef = collection(db, 'usuarios');
-      const q = query(usersRef, orderBy('criadoEm', 'desc')); // Order by creation date or other relevant field
-      const querySnapshot = await getDocs(q);
-      const usersList: SystemUser[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        usersList.push({
-          id: doc.id,
+      const qUsers = query(usersRef, orderBy('criadoEm', 'desc'));
+      const usersSnapshot = await getDocs(qUsers);
+      const usersListPromises: Promise<SystemUser>[] = usersSnapshot.docs.map(async (docSnap) => {
+        const data = docSnap.data();
+        let patientCount = 0;
+
+        const patientsRef = collection(db, 'pacientes');
+        let patientQuery;
+
+        if (data.plano === 'Clínica' && data.nomeEmpresa) {
+          patientQuery = query(patientsRef, where('nomeEmpresa', '==', data.nomeEmpresa), where('status', '==', 'Ativo'));
+        } else {
+          patientQuery = query(patientsRef, where('uid', '==', docSnap.id), where('status', '==', 'Ativo'));
+        }
+        
+        try {
+            const patientCountSnapshot = await getCountFromServer(patientQuery);
+            patientCount = patientCountSnapshot.data().count;
+        } catch (countError) {
+            console.error(`Erro ao contar pacientes para ${data.email || docSnap.id}:`, countError);
+        }
+
+        return {
+          id: docSnap.id,
           nomeCompleto: data.nomeCompleto,
           nomeEmpresa: data.nomeEmpresa,
           email: data.email,
@@ -74,12 +92,15 @@ export default function AdminPage() {
           statusCobranca: data.statusCobranca,
           plano: data.plano,
           criadoEm: data.criadoEm?.toDate ? data.criadoEm.toDate() : (data.criadoEm ? new Date(data.criadoEm) : undefined),
-        });
+          patientCount: patientCount,
+        };
       });
+      
+      const usersList = await Promise.all(usersListPromises);
       setSystemUsers(usersList);
+
     } catch (error) {
       console.error("Erro ao buscar usuários do sistema:", error);
-      // Handle error (e.g., show toast)
     } finally {
       setIsLoading(false);
     }
@@ -105,6 +126,15 @@ export default function AdminPage() {
     }
   };
 
+  const getPatientCountBadgeVariant = (count: number | undefined, plan: string | undefined) => {
+    if (count === undefined || !plan) return 'secondary';
+    if (plan === 'Gratuito' && count >= 10) return 'destructive';
+    if (plan === 'Essencial' && count >= 50) return 'destructive';
+    if (plan === 'Gratuito' && count >= 7) return 'warning';
+    if (plan === 'Essencial' && count >= 40) return 'warning';
+    return 'default';
+  }
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
@@ -115,8 +145,6 @@ export default function AdminPage() {
   }
 
   if (!isAuthorized) {
-    // This case should ideally be handled by the redirect in useEffect,
-    // but as a fallback:
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] text-center">
         <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
@@ -148,42 +176,51 @@ export default function AdminPage() {
         </CardHeader>
         <CardContent>
           {filteredUsers.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome Completo</TableHead>
-                  <TableHead className="hidden md:table-cell">Empresa</TableHead>
-                  <TableHead>E-mail</TableHead>
-                  <TableHead className="hidden lg:table-cell">Telefone</TableHead>
-                  <TableHead>Status Cobrança</TableHead>
-                  <TableHead>Plano</TableHead>
-                  <TableHead className="hidden sm:table-cell">Cadastrado em</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsers.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.nomeCompleto || 'N/A'}</TableCell>
-                    <TableCell className="hidden md:table-cell">{user.nomeEmpresa || 'N/A'}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell className="hidden lg:table-cell">{user.telefone || 'N/A'}</TableCell>
-                    <TableCell>
-                      {user.statusCobranca ? (
-                        <Badge variant={getStatusCobrancaBadgeVariant(user.statusCobranca)} className="capitalize">
-                          {user.statusCobranca}
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">N/A</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{user.plano || 'N/A'}</TableCell>
-                    <TableCell className="hidden sm:table-cell">
-                      {user.criadoEm ? format(user.criadoEm, 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'N/A'}
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome Completo</TableHead>
+                    <TableHead className="hidden md:table-cell">Empresa</TableHead>
+                    <TableHead>E-mail</TableHead>
+                    <TableHead className="hidden lg:table-cell">Telefone</TableHead>
+                    <TableHead>Plano</TableHead>
+                    <TableHead className="text-center">Qtd. Pacientes</TableHead>
+                    <TableHead>Status Cobrança</TableHead>
+                    <TableHead className="hidden sm:table-cell">Cadastrado em</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredUsers.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium">{user.nomeCompleto || 'N/A'}</TableCell>
+                      <TableCell className="hidden md:table-cell">{user.nomeEmpresa || 'N/A'}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{user.telefone || 'N/A'}</TableCell>
+                      <TableCell>{user.plano || 'N/A'}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={getPatientCountBadgeVariant(user.patientCount, user.plano)} className="text-xs">
+                          <Users className="mr-1 h-3 w-3" />
+                          {user.patientCount !== undefined ? user.patientCount : '-'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {user.statusCobranca ? (
+                          <Badge variant={getStatusCobrancaBadgeVariant(user.statusCobranca)} className="capitalize">
+                            {user.statusCobranca}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">N/A</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {user.criadoEm ? format(user.criadoEm, 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'N/A'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           ) : (
             <p className="text-center text-muted-foreground py-8">
               {systemUsers.length > 0 ? 'Nenhum usuário encontrado com os critérios de busca.' : 'Nenhum usuário cadastrado no sistema ainda.'}
