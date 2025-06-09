@@ -1261,11 +1261,11 @@ export default function PacienteDetalhePage() {
         </CardHeader>
         <CardContent className="p-0">
           <Tabs defaultValue={initialTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="flex flex-col sm:flex-row w-full items-stretch sm:items-center justify-start rounded-none border-b bg-transparent px-0 sm:px-4">
-                <TabsTrigger value="historico" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Histórico</TabsTrigger>
-                <TabsTrigger value="anamnese" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Anamnese</TabsTrigger>
-                <TabsTrigger value="documentos" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Documentos</TabsTrigger>
-                <TabsTrigger value="dados" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Dados Cadastrais</TabsTrigger>
+            <TabsList className="flex w-full flex-col rounded-none border-b border-border bg-transparent p-0 sm:flex-row sm:items-center">
+                <TabsTrigger value="historico" className="w-full rounded-none border-b-2 border-transparent px-3 py-2.5 text-center text-sm font-medium transition-colors data-[state=active]:border-primary data-[state=active]:text-primary hover:text-primary/80 sm:w-auto sm:flex-shrink-0 sm:border-b-2 sm:px-4 sm:py-3 sm:text-left">Histórico</TabsTrigger>
+                <TabsTrigger value="anamnese" className="w-full rounded-none border-b-2 border-transparent px-3 py-2.5 text-center text-sm font-medium transition-colors data-[state=active]:border-primary data-[state=active]:text-primary hover:text-primary/80 sm:w-auto sm:flex-shrink-0 sm:border-b-2 sm:px-4 sm:py-3 sm:text-left">Anamnese</TabsTrigger>
+                <TabsTrigger value="documentos" className="w-full rounded-none border-b-2 border-transparent px-3 py-2.5 text-center text-sm font-medium transition-colors data-[state=active]:border-primary data-[state=active]:text-primary hover:text-primary/80 sm:w-auto sm:flex-shrink-0 sm:border-b-2 sm:px-4 sm:py-3 sm:text-left">Documentos</TabsTrigger>
+                <TabsTrigger value="dados" className="w-full rounded-none border-b-2 border-transparent px-3 py-2.5 text-center text-sm font-medium transition-colors data-[state=active]:border-primary data-[state=active]:text-primary hover:text-primary/80 sm:w-auto sm:flex-shrink-0 sm:border-b-2 sm:px-4 sm:py-3 sm:text-left">Dados Cadastrais</TabsTrigger>
             </TabsList>
             <TabsContent value="historico" className="p-6 space-y-6 mt-0">
               <Card>
@@ -1488,7 +1488,7 @@ export default function PacienteDetalhePage() {
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
                         <Label htmlFor="newCustomTypeLancar" className="sm:text-right sm:col-span-3">Lançar Financeiro Automático?</Label>
-                        <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="justify-self-start sm:justify-self-end sm:col-span-1" />
+                        <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="justify-self-start sm:col-span-1" />
                     </div>
                 </>
             )}
@@ -1508,10 +1508,10 @@ export default function PacienteDetalhePage() {
                     <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 md:col-span-3" placeholder="Nome" />
                     {currentUserData?.plano !== 'Gratuito' && (
                         <>
-                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8" placeholder="Valor" />
+                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8" placeholder="Valor"/>
                             <div className="flex items-center justify-start sm:justify-end gap-2 md:col-span-2">
                                 <Label htmlFor={`editLancar-${type.id}`} className="text-xs whitespace-nowrap">Lançar Auto.?</Label>
-                                <Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked } } : null)} />
+                                <Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked }} : null)} />
                             </div>
                         </>
                     )}
