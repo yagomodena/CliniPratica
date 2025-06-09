@@ -1359,7 +1359,7 @@ export default function AgendaPage() {
       </div>
 
       <Dialog open={isRecordAttendanceDialogOpen} onOpenChange={(isOpen) => { setIsRecordAttendanceDialogOpen(isOpen); if (!isOpen) setAppointmentToRecordAttendance(null); }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Registrar Atendimento</DialogTitle>
             <DialogDescription>Paciente: <strong>{appointmentToRecordAttendance?.patientName}</strong> <br/>Horário: {appointmentToRecordAttendance?.time}</DialogDescription>
@@ -1489,34 +1489,26 @@ export default function AgendaPage() {
 
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
         <DialogContent className="w-[90vw] max-w-xs sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Novo Tipo de Atendimento</DialogTitle>
-            <DialogDescription>Insira os detalhes.</DialogDescription>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Novo Tipo de Atendimento</DialogTitle><DialogDescription>Insira os detalhes.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
-              <Label htmlFor="newCustomTypeName" className="block text-left sm:text-right sm:col-span-1">Nome*</Label>
-              <Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-full sm:col-span-3" />
+                <Label htmlFor="newCustomTypeName" className="block text-left sm:text-right sm:col-span-1">Nome*</Label>
+                <Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-full sm:col-span-3" />
             </div>
             {currentUserData?.plano !== 'Gratuito' && (
                 <>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
-                      <Label htmlFor="newCustomTypeValor" className="block text-left sm:text-right sm:col-span-1">Valor (R$)</Label>
-                      <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-full sm:col-span-3" placeholder="0.00" />
+                        <Label htmlFor="newCustomTypeValor" className="block text-left sm:text-right sm:col-span-1">Valor (R$)</Label>
+                        <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-full sm:col-span-3" placeholder="0.00" />
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
-                      <Label htmlFor="newCustomTypeLancar" className="block text-left sm:text-right sm:col-span-3">Lançar Financeiro Automático?</Label>
-                      <div className="col-span-full sm:col-span-1 flex justify-start">
-                        <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} />
-                      </div>
+                        <Label htmlFor="newCustomTypeLancar" className="block text-left sm:text-right sm:col-span-3">Lançar Financeiro Automático?</Label>
+                        <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-full sm:col-span-1 justify-self-start" />
                     </div>
                 </>
             )}
           </div>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline" onClick={() => setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' })}>Cancelar</Button></DialogClose>
-            <Button onClick={handleAddCustomType}>Salvar</Button>
-          </DialogFooter>
+          <DialogFooter><DialogClose asChild><Button variant="outline" onClick={() => setNewCustomType({ name: '', valor: 0, lancarFinanceiroAutomatico: false, status: 'active' })}>Cancelar</Button></DialogClose><Button onClick={handleAddCustomType}>Salvar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1526,9 +1518,9 @@ export default function AgendaPage() {
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
               <div key={type.id || type.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2 border rounded-md gap-2">
-                {editingTypeInfo && editingTypeInfo.type.id === type.id ? (
+                {editingTypeInfo?.type.id === type.id ? (
                   <div className="flex-grow w-full space-y-2 sm:space-y-0 sm:grid sm:grid-cols-1 md:grid-cols-3 sm:gap-2 items-center sm:mr-2">
-                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 md:col-span-3" placeholder="Nome do tipo" />
+                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 md:col-span-3" placeholder="Nome" />
                     {currentUserData?.plano !== 'Gratuito' && (
                         <>
                             <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8" placeholder="Valor"/>
@@ -1541,24 +1533,22 @@ export default function AgendaPage() {
                   </div>
                 ) : (
                   <div className="flex-grow w-full">
-                    <span className={` ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
+                    <span className={`${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                     {currentUserData?.plano !== 'Gratuito' && (
-                        <div className="text-xs text-muted-foreground">
-                            Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}
-                        </div>
+                        <div className="text-xs text-muted-foreground">Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}</div>
                     )}
                   </div>
                 )}
                 <div className="flex gap-1 items-center self-end sm:self-center sm:ml-auto flex-shrink-0">
-                  {editingTypeInfo && editingTypeInfo.type.id === type.id ? (
+                  {editingTypeInfo?.type.id === type.id ? (
                     <>
-                      <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button>
+                        <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button>
                     </>
                   ) : (
                     <>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentData: { name: type.name, valor: type.valor, lancarFinanceiroAutomatico: type.lancarFinanceiroAutomatico } })} title="Editar"><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentData: { name: type.name, valor: type.valor, lancarFinanceiroAutomatico: type.lancarFinanceiroAutomatico } })} title="Editar"><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
                     </>
                   )}
                   <Switch checked={type.status === 'active'} onCheckedChange={() => setTypeToToggleStatusConfirm(type)} aria-label={`Status ${type.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0" />
@@ -1571,19 +1561,8 @@ export default function AgendaPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Confirmar Status</AlertDialogTitle><AlertDialogDescription>Deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{typeToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm)} className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{typeToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{typeToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteType} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status</AlertDialogTitle><AlertDialogDescription>Deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{typeToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm)} className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{typeToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{typeToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteType} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
       <AlertDialog open={isDeleteApptConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setAppointmentToDeleteInfo(null); setIsDeleteApptConfirmOpen(isOpen); }}>
         <AlertDialogContent>
@@ -1600,7 +1579,7 @@ export default function AgendaPage() {
               <div className="flex items-center space-x-2"><RadioGroupItem value="predefined" id="rb-predefined-confirm" /><Label htmlFor="rb-predefined-confirm">Usar padrão</Label></div>
               <div className="flex items-center space-x-2"><RadioGroupItem value="custom" id="rb-custom-confirm" /><Label htmlFor="rb-custom-confirm">Personalizada</Label></div>
             </RadioGroup>
-            {whatsAppMsgType === 'predefined' && selectedApptForWhatsApp && <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground"><p>Olá {selectedApptForWhatsApp.patientName}, tudo bem? Confirmando seu agendamento para {selectedApptForWhatsApp.type} no dia {format(parse(selectedApptForWhatsApp.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy', { locale: ptBR })} às {selectedApptForWhatsApp.time}. Em caso de imprevisto, por favor, nos avise com antecedência. Até breve!</p></CardContent></Card>}
+            {whatsAppMsgType === 'predefined' && selectedApptForWhatsApp && <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground"><p>Olá {selectedApptForWhatsApp.patientName}, tudo bem? Confirmando seu agendamento para ${selectedApptForWhatsApp.type} no dia ${format(parse(selectedApptForWhatsApp.date, 'yyyy-MM-dd', new Date()), 'dd/MM/yyyy', { locale: ptBR })} às ${selectedApptForWhatsApp.time}. Em caso de imprevisto, por favor, nos avise com antecedência. Até breve!</p></CardContent></Card>}
             {whatsAppMsgType === 'custom' && <Textarea value={customWhatsAppMsg} onChange={(e) => setCustomWhatsAppMsg(e.target.value)} placeholder={`Mensagem para ${selectedApptForWhatsApp?.patientName}...`} rows={4} />}
           </div>
           <DialogFooter><DialogClose asChild><Button variant="outline">Cancelar</Button></DialogClose><Button onClick={handleSendWhatsAppConfirmation} disabled={!whatsAppPatientDetails.phone || isFetchingPatientPhone}><Send className="mr-2 h-4 w-4" /> Enviar</Button></DialogFooter>
