@@ -132,39 +132,49 @@ export function UserForm({ onSubmit, initialData, onCancel }: UserFormProps) {
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="grid gap-6 py-4">
-      <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="nomeCompleto" className="text-right">Nome Completo*</Label>
-        <Input id="nomeCompleto" {...register('nomeCompleto')} className="col-span-3" />
-        {errors.nomeCompleto && <p className="col-span-4 text-right text-sm text-destructive">{errors.nomeCompleto.message}</p>}
+      <div className="grid grid-cols-1 items-start gap-y-2 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+        <Label htmlFor="nomeCompleto" className="block text-left sm:text-right sm:col-span-1">Nome Completo*</Label>
+        <div className="col-span-full sm:col-span-3">
+          <Input id="nomeCompleto" {...register('nomeCompleto')} className="w-full" />
+          {errors.nomeCompleto && <p className="text-sm text-destructive mt-1">{errors.nomeCompleto.message}</p>}
+        </div>
       </div>
 
-      <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="email" className="text-right">Email*</Label>
-        <Input id="email" {...register('email')} className="col-span-3" />
-        {errors.email && <p className="col-span-4 text-right text-sm text-destructive">{errors.email.message}</p>}
+      <div className="grid grid-cols-1 items-start gap-y-2 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+        <Label htmlFor="email" className="block text-left sm:text-right sm:col-span-1">Email*</Label>
+        <div className="col-span-full sm:col-span-3">
+          <Input id="email" {...register('email')} className="w-full" />
+          {errors.email && <p className="text-sm text-destructive mt-1">{errors.email.message}</p>}
+        </div>
       </div>
 
-      <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="cargo" className="text-right">Cargo*</Label>
-        <Input id="cargo" {...register('cargo')} className="col-span-3" />
-        {errors.cargo && <p className="col-span-4 text-right text-sm text-destructive">{errors.cargo.message}</p>}
+      <div className="grid grid-cols-1 items-start gap-y-2 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+        <Label htmlFor="cargo" className="block text-left sm:text-right sm:col-span-1">Cargo*</Label>
+        <div className="col-span-full sm:col-span-3">
+          <Input id="cargo" {...register('cargo')} className="w-full" />
+          {errors.cargo && <p className="text-sm text-destructive mt-1">{errors.cargo.message}</p>}
+        </div>
       </div>
 
-      <div className="grid grid-cols-4 items-center gap-4">
-        <Label htmlFor="password" className="text-right">
+      <div className="grid grid-cols-1 items-start gap-y-2 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+        <Label htmlFor="password" className="block text-left sm:text-right sm:col-span-1">
           {isEditing ? 'Nova Senha' : 'Senha*'}
         </Label>
-        <Input id="password" type="password" {...register('password')} className="col-span-3" placeholder={isEditing ? 'Deixe em branco para manter atual' : ''} />
-        {errors.password && <p className="col-span-4 text-right text-sm text-destructive">{errors.password.message}</p>}
+        <div className="col-span-full sm:col-span-3">
+          <Input id="password" type="password" {...register('password')} className="w-full" placeholder={isEditing ? 'Deixe em branco para manter atual' : ''} />
+          {errors.password && <p className="text-sm text-destructive mt-1">{errors.password.message}</p>}
+        </div>
       </div>
 
       {(isEditing ? !!passwordValue : true) && (
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Label htmlFor="confirmPassword" className="text-right">
+        <div className="grid grid-cols-1 items-start gap-y-2 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+          <Label htmlFor="confirmPassword" className="block text-left sm:text-right sm:col-span-1">
             {isEditing ? 'Confirmar Nova Senha' : 'Confirmar Senha*'}
           </Label>
-          <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="col-span-3" />
-          {errors.confirmPassword && <p className="col-span-4 text-right text-sm text-destructive">{errors.confirmPassword.message}</p>}
+          <div className="col-span-full sm:col-span-3">
+            <Input id="confirmPassword" type="password" {...register('confirmPassword')} className="w-full" />
+            {errors.confirmPassword && <p className="text-sm text-destructive mt-1">{errors.confirmPassword.message}</p>}
+          </div>
         </div>
       )}
 
