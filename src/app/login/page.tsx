@@ -33,6 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { User, Shield } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -242,10 +243,25 @@ export default function LoginPage() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Entrando...' : 'Entrar'}
+              <Shield className="mr-2 h-4 w-4" /> {/* Icon for professional login */}
+              {isLoading ? 'Entrando...' : 'Entrar (Profissional)'}
             </Button>
           </form>
-          <div className="text-center text-sm text-muted-foreground">
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Ou
+              </span>
+            </div>
+          </div>
+          <Button variant="outline" className="w-full" onClick={() => router.push('/portal-paciente/login')}>
+            <User className="mr-2 h-4 w-4" /> {/* Icon for patient login */}
+            Acessar como Paciente
+          </Button>
+          <div className="mt-6 text-center text-sm text-muted-foreground">
             Não tem uma conta?{' '}
             <Link href="/#planos" className="font-medium text-primary hover:underline">
               Crie uma agora
