@@ -126,7 +126,7 @@ export default function PacientesPage() {
     status: 'Ativo',
     objetivoPaciente: '',
     hasMonthlyFee: false,
-    monthlyFeeAmount: undefined, // Changed from 0 to undefined
+    monthlyFeeAmount: undefined, 
     monthlyFeeDueDate: 1,
   });
 
@@ -256,7 +256,7 @@ export default function PacientesPage() {
           objetivoPaciente: data.objetivoPaciente || '',
           nomeEmpresa: data.nomeEmpresa || '',
           hasMonthlyFee: data.hasMonthlyFee || false,
-          monthlyFeeAmount: data.monthlyFeeAmount === 0 ? 0 : (data.monthlyFeeAmount || undefined), // Ensure 0 is kept if set
+          monthlyFeeAmount: data.monthlyFeeAmount === 0 ? 0 : (data.monthlyFeeAmount || undefined),
           monthlyFeeDueDate: data.monthlyFeeDueDate || 1,
         });
       });
@@ -352,8 +352,8 @@ export default function PacientesPage() {
         history: [],
         documents: [],
         hasMonthlyFee: newPatient.hasMonthlyFee || false,
-        monthlyFeeAmount: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeAmount || 0) : 0, // Store 0 if not set but has fee
-        monthlyFeeDueDate: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeDueDate || 1) : 1,
+        monthlyFeeAmount: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeAmount || 0) : null, // Save null if no fee
+        monthlyFeeDueDate: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeDueDate || 1) : null, // Save null if no fee
       });
 
       toast({ title: "Sucesso!", description: `Paciente ${newPatient.name} adicionado.`, variant: "success" });
@@ -579,7 +579,7 @@ export default function PacientesPage() {
             if (isOpen && patientObjectives.length > 0 && !newPatient.objetivoPaciente) {
                 setNewPatient(prev => ({ ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' }));
             }
-            if (!isOpen) { // Reset form on close
+            if (!isOpen) { 
                 setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: undefined, monthlyFeeDueDate: 1 });
             }
         }}>
@@ -589,7 +589,7 @@ export default function PacientesPage() {
               Novo Paciente
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="max-w-md sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Adicionar Novo Paciente</DialogTitle>
               <DialogDescription>
@@ -597,9 +597,9 @@ export default function PacientesPage() {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleAddPatient}>
-              <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2"> {/* Added max-height and overflow */}
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="name" className="text-right">
+              <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="name" className="sm:text-right sm:col-span-1">
                     Nome*
                   </Label>
                   <Input
@@ -607,12 +607,12 @@ export default function PacientesPage() {
                     name="name"
                     value={newPatient.name}
                     onChange={handleInputChange}
-                    className="col-span-3"
+                    className="sm:col-span-3"
                     required
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="email" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="email" className="sm:text-right sm:col-span-1">
                     Email
                   </Label>
                   <Input
@@ -621,11 +621,11 @@ export default function PacientesPage() {
                     type="email"
                     value={newPatient.email}
                     onChange={handleInputChange}
-                    className="col-span-3"
+                    className="sm:col-span-3"
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="phone" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="phone" className="sm:text-right sm:col-span-1">
                     Telefone
                   </Label>
                   <Input
@@ -634,11 +634,11 @@ export default function PacientesPage() {
                     type="tel"
                     value={newPatient.phone}
                     onChange={handleInputChange}
-                    className="col-span-3"
+                    className="sm:col-span-3"
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="dob" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="dob" className="sm:text-right sm:col-span-1">
                     Nascimento
                   </Label>
                   <Input
@@ -647,12 +647,12 @@ export default function PacientesPage() {
                     type="date"
                     value={newPatient.dob}
                     onChange={handleInputChange}
-                    className="col-span-3"
+                    className="sm:col-span-3"
                     max={format(today, 'yyyy-MM-dd')}
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="address" className="text-right">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                  <Label htmlFor="address" className="sm:text-right sm:col-span-1">
                     Endereço
                   </Label>
                   <Input
@@ -660,12 +660,12 @@ export default function PacientesPage() {
                     name="address"
                     value={newPatient.address}
                     onChange={handleInputChange}
-                    className="col-span-3"
+                    className="sm:col-span-3"
                   />
                 </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="objetivoPaciente" className="text-right">Objetivo</Label>
-                    <div className="col-span-3 flex items-center gap-1">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                    <Label htmlFor="objetivoPaciente" className="sm:text-right sm:col-span-1">Objetivo</Label>
+                    <div className="sm:col-span-3 flex items-center gap-1">
                         <Select value={newPatient.objetivoPaciente || ''} onValueChange={(value) => handleSelectChange('objetivoPaciente', value)}>
                             <SelectTrigger id="objetivoPaciente" className="flex-grow">
                                 <SelectValue placeholder="Selecione o objetivo" />
@@ -686,11 +686,10 @@ export default function PacientesPage() {
                     </div>
                 </div>
 
-                {/* Monthly Fee Fields - Conditional Display */}
                 {showMonthlyFeeFields && (
                   <>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="hasMonthlyFee" className="text-right col-span-3">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                      <Label htmlFor="hasMonthlyFee" className="sm:text-right sm:col-span-3">
                         Paciente possui mensalidade?
                       </Label>
                       <Switch
@@ -698,14 +697,14 @@ export default function PacientesPage() {
                         name="hasMonthlyFee"
                         checked={newPatient.hasMonthlyFee || false}
                         onCheckedChange={(checked) => setNewPatient(prev => ({ ...prev, hasMonthlyFee: checked }))}
-                        className="col-span-1 justify-self-start"
+                        className="sm:col-span-1 justify-self-start"
                       />
                     </div>
 
                     {newPatient.hasMonthlyFee && (
                       <>
-                        <div className="grid grid-cols-4 items-center gap-4">
-                          <Label htmlFor="monthlyFeeAmount" className="text-right">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                          <Label htmlFor="monthlyFeeAmount" className="sm:text-right sm:col-span-1">
                             Valor Mensalidade (R$)*
                           </Label>
                           <Input
@@ -715,20 +714,20 @@ export default function PacientesPage() {
                             step="0.01"
                             value={newPatient.monthlyFeeAmount || ''}
                             onChange={handleNumericInputChange}
-                            className="col-span-3"
+                            className="sm:col-span-3"
                             placeholder="0.00"
                             required={newPatient.hasMonthlyFee}
                           />
                         </div>
-                        <div className="grid grid-cols-4 items-center gap-4">
-                          <Label htmlFor="monthlyFeeDueDate" className="text-right">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                          <Label htmlFor="monthlyFeeDueDate" className="sm:text-right sm:col-span-1">
                             Dia Vencimento*
                           </Label>
                           <Select
                             value={newPatient.monthlyFeeDueDate?.toString() || '1'}
                             onValueChange={(value) => handleSelectChange('monthlyFeeDueDate', parseInt(value))}
                           >
-                            <SelectTrigger id="monthlyFeeDueDate" className="col-span-3">
+                            <SelectTrigger id="monthlyFeeDueDate" className="sm:col-span-3">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -743,7 +742,7 @@ export default function PacientesPage() {
                   </>
                 )}
               </div>
-              <DialogFooter className="pt-4 border-t"> {/* Add border top to footer */}
+              <DialogFooter className="pt-4 border-t">
                 <DialogClose asChild>
                   <Button type="button" variant="outline">Cancelar</Button>
                 </DialogClose>
@@ -871,9 +870,9 @@ export default function PacientesPage() {
             <DialogTitle>Adicionar Novo Objetivo</DialogTitle>
             <DialogDescription>Insira o nome do novo objetivo do paciente.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <Label htmlFor="newCustomObjectiveName">Nome do Objetivo</Label>
-            <Input id="newCustomObjectiveName" value={newCustomObjectiveName} onChange={(e) => setNewCustomObjectiveName(e.target.value)} placeholder="Ex: Reduzir Estresse" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4 py-4">
+            <Label htmlFor="newCustomObjectiveName" className="sm:text-right sm:col-span-1">Nome*</Label>
+            <Input id="newCustomObjectiveName" value={newCustomObjectiveName} onChange={(e) => setNewCustomObjectiveName(e.target.value)} placeholder="Ex: Reduzir Estresse" className="sm:col-span-3" />
           </div>
           <DialogFooter>
             <DialogClose asChild><Button type="button" variant="outline" onClick={() => setNewCustomObjectiveName('')}>Cancelar</Button></DialogClose>
