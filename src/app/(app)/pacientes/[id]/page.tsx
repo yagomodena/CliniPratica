@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign, BookText, CheckCircle, UserCog } from "lucide-react";
+import { ArrowLeft, Edit, FileText, PlusCircle, Trash2, Upload, Save, X, CalendarPlus, UserCheck, UserX, Plus, Search, Pencil, Eye, FileDown, Loader2, Info, MoreVertical, DollarSign, BookText, CheckCircle, UserCog, Menu } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -15,6 +15,7 @@ import dynamic from 'next/dynamic';
 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose, } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetClose } from "@/components/ui/sheet"; // Added SheetClose
 import { format, parseISO, isFuture } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -459,6 +460,7 @@ export default function PacienteDetalhePage() {
 
   const initialTab = searchParams.get('tab') || "historico";
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
 
   const [isDeleteHistoryConfirmOpen, setIsDeleteHistoryConfirmOpen] = useState(false);
@@ -1129,6 +1131,7 @@ export default function PacienteDetalhePage() {
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
+    setIsMobileMenuOpen(false); // Close mobile menu on tab change
     if (value === "documentos") {
       toast({ title: "Em Desenvolvimento", description: "A funcionalidade de gestão de documentos estará disponível em breve!", variant: "default" });
     }
@@ -1221,6 +1224,13 @@ export default function PacienteDetalhePage() {
 
   const showMonthlyFeeEditFields = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
 
+  const tabItems = [
+    { value: "historico", label: "Histórico" },
+    { value: "anamnese", label: "Anamnese" },
+    { value: "documentos", label: "Documentos" },
+    { value: "dados", label: "Dados Cadastrais" },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
@@ -1261,12 +1271,43 @@ export default function PacienteDetalhePage() {
         </CardHeader>
         <CardContent className="p-0">
           <Tabs defaultValue={initialTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="flex flex-col sm:flex-row sm:h-auto sm:items-center sm:rounded-md sm:bg-muted sm:p-1">
-                <TabsTrigger value="historico" className="w-full justify-start text-left px-4 py-3 text-sm font-medium transition-colors border-b border-border data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:border-b-0 sm:w-auto sm:justify-center sm:text-center sm:rounded-sm sm:px-3 sm:py-1.5 sm:data-[state=active]:bg-background sm:data-[state=active]:text-foreground sm:data-[state=active]:shadow-sm hover:bg-muted/50 sm:hover:bg-accent/50">Histórico</TabsTrigger>
-                <TabsTrigger value="anamnese" className="w-full justify-start text-left px-4 py-3 text-sm font-medium transition-colors border-b border-border data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:border-b-0 sm:w-auto sm:justify-center sm:text-center sm:rounded-sm sm:px-3 sm:py-1.5 sm:data-[state=active]:bg-background sm:data-[state=active]:text-foreground sm:data-[state=active]:shadow-sm hover:bg-muted/50 sm:hover:bg-accent/50">Anamnese</TabsTrigger>
-                <TabsTrigger value="documentos" className="w-full justify-start text-left px-4 py-3 text-sm font-medium transition-colors border-b border-border data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:border-b-0 sm:w-auto sm:justify-center sm:text-center sm:rounded-sm sm:px-3 sm:py-1.5 sm:data-[state=active]:bg-background sm:data-[state=active]:text-foreground sm:data-[state=active]:shadow-sm hover:bg-muted/50 sm:hover:bg-accent/50">Documentos</TabsTrigger>
-                <TabsTrigger value="dados" className="w-full justify-start text-left px-4 py-3 text-sm font-medium transition-colors border-b border-border data-[state=active]:bg-primary data-[state=active]:text-primary-foreground sm:border-b-0 sm:w-auto sm:justify-center sm:text-center sm:rounded-sm sm:px-3 sm:py-1.5 sm:data-[state=active]:bg-background sm:data-[state=active]:text-foreground sm:data-[state=active]:shadow-sm hover:bg-muted/50 sm:hover:bg-accent/50">Dados Cadastrais</TabsTrigger>
-            </TabsList>
+            <div className="px-4 pt-4 md:px-6 md:pt-6"> {/* Padding for the container of TabsList/SheetTrigger */}
+                <div className="md:hidden mb-4">
+                <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+                    <SheetTrigger asChild>
+                    <Button variant="outline" className="w-full">
+                        <Menu className="mr-2 h-4 w-4" />
+                        Navegar Seções ({tabItems.find(t => t.value === activeTab)?.label})
+                    </Button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="w-[280px] sm:w-[320px]">
+                    <SheetHeader className="border-b pb-4 mb-4">
+                        <SheetTitle>Seções do Paciente</SheetTitle>
+                    </SheetHeader>
+                    <nav className="flex flex-col gap-2">
+                        {tabItems.map((tab) => (
+                        <SheetClose asChild key={tab.value}>
+                            <Button
+                            variant={activeTab === tab.value ? "secondary" : "ghost"}
+                            className="w-full justify-start"
+                            onClick={() => handleTabChange(tab.value)}
+                            >
+                            {tab.label}
+                            </Button>
+                        </SheetClose>
+                        ))}
+                    </nav>
+                    </SheetContent>
+                </Sheet>
+                </div>
+                <TabsList className="hidden md:inline-flex h-auto items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
+                {tabItems.map((tab) => (
+                    <TabsTrigger key={tab.value} value={tab.value} className="px-3 py-1.5 text-sm font-medium">
+                    {tab.label}
+                    </TabsTrigger>
+                ))}
+                </TabsList>
+            </div>
             <TabsContent value="historico" className="p-6 space-y-6 mt-0">
               <Card>
                 <CardHeader><CardTitle className="text-lg font-semibold flex items-center"><CalendarPlus className="mr-2 h-5 w-5 text-primary" /> Novo Registro</CardTitle></CardHeader>
@@ -1549,13 +1590,13 @@ export default function PacienteDetalhePage() {
       <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status</AlertDialogTitle><AlertDialogDescription>Deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{typeToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm)} className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{typeToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{typeToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteType} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
-      <Dialog open={isAddObjectiveDialogOpen} onOpenChange={setIsAddObjectiveDialogOpen}><DialogContent className="w-[90vw] max-w-xs sm:max-w-[400px]"><DialogHeader><DialogTitle>Novo Objetivo</DialogTitle><DialogDescription>Insira o nome.</DialogDescription></DialogHeader><div className="grid grid-cols-1 gap-2 py-4 sm:grid-cols-4 sm:items-center sm:gap-4"><Label htmlFor="newCustomObjectiveNameModal" className="block text-left sm:text-right sm:col-span-1">Nome*</Label><Input id="newCustomObjectiveNameModal" value={newCustomObjectiveName} onChange={(e) => setNewCustomObjectiveName(e.target.value)} className="col-span-full sm:col-span-3"/></div><DialogFooter><DialogClose asChild><Button variant="outline" onClick={() => setNewCustomObjectiveName('')}>Cancelar</Button></DialogClose><Button onClick={handleAddCustomObjective}>Salvar</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}><DialogContent className="w-[90vw] max-w-md sm:max-w-md"><DialogHeader><DialogTitle>Gerenciar Objetivos</DialogTitle></DialogHeader><div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">{patientObjectives.map((obj) => (<div key={obj.id || obj.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2 border rounded-md gap-2">{editingObjectiveInfo?.objective.id === obj.id ? (<div className="flex-grow w-full flex items-center gap-2 sm:mr-2"><Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" /><Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedObjectiveName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingObjectiveInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></div>) : (<span className={`flex-grow w-full ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>)}<div className="flex gap-1 items-center self-end sm:self-center sm:ml-auto flex-shrink-0">{editingObjectiveInfo?.objective.id !== obj.id && (<><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteObjectiveDialog(obj)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}<Switch checked={obj.status === 'active'} onCheckedChange={() => setObjectiveToToggleStatusConfirm(obj)} aria-label={`Status ${obj.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0" /></div></div>))}{patientObjectives.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum objetivo.</p>}</div><DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
+      <Dialog open={isAddObjectiveDialogOpen} onOpenChange={setIsAddObjectiveDialogOpen}><DialogContent className="w-[90vw] max-w-xs sm:max-w-sm"><DialogHeader><DialogTitle>Novo Objetivo</DialogTitle><DialogDescription>Insira o nome.</DialogDescription></DialogHeader><div className="grid grid-cols-1 gap-2 py-4 sm:grid-cols-4 sm:items-center sm:gap-4"><Label htmlFor="newCustomObjectiveNameModal" className="block text-left sm:text-right sm:col-span-1">Nome*</Label><Input id="newCustomObjectiveNameModal" value={newCustomObjectiveName} onChange={(e) => setNewCustomObjectiveName(e.target.value)} className="col-span-full sm:col-span-3"/></div><DialogFooter><DialogClose asChild><Button variant="outline" onClick={() => setNewCustomObjectiveName('')}>Cancelar</Button></DialogClose><Button onClick={handleAddCustomObjective}>Salvar</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}><DialogContent className="w-[90vw] max-w-md sm:max-w-lg"><DialogHeader><DialogTitle>Gerenciar Objetivos</DialogTitle></DialogHeader><div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">{patientObjectives.map((obj) => (<div key={obj.id || obj.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2 border rounded-md gap-2">{editingObjectiveInfo?.objective.id === obj.id ? (<div className="flex-grow w-full flex items-center gap-2 sm:mr-2"><Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" /><Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedObjectiveName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingObjectiveInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></div>) : (<span className={`flex-grow w-full ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>)}<div className="flex gap-1 items-center self-end sm:self-center sm:ml-auto flex-shrink-0">{editingObjectiveInfo?.objective.id !== obj.id && (<><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteObjectiveDialog(obj)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}<Switch checked={obj.status === 'active'} onCheckedChange={() => setObjectiveToToggleStatusConfirm(obj)} aria-label={`Status ${obj.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0" /></div></div>))}{patientObjectives.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum objetivo.</p>}</div><DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={!!objectiveToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setObjectiveToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja {objectiveToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{objectiveToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => objectiveToToggleStatusConfirm && handleToggleObjectiveStatus(objectiveToToggleStatusConfirm)} className={objectiveToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{objectiveToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={isDeleteObjectiveConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setObjectiveToDelete(null); setIsDeleteObjectiveConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{objectiveToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteObjective} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
       <Dialog open={isHistoryNoteModalOpen} onOpenChange={setIsHistoryNoteModalOpen}>
-        <DialogContent className="sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle>Detalhes da Evolução</DialogTitle>
             {selectedHistoryNote && (
