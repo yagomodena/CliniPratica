@@ -354,7 +354,7 @@ export default function AgendaPage() {
       }
     });
     return () => unsubscribe();
-  }, [fetchCurrentUserData, fetchAppointments, fetchClinicUsers]); // Added fetchClinicUsers
+  }, [fetchCurrentUserData, fetchAppointments, fetchClinicUsers]);
 
   const fetchPatientsForUser = useCallback(async (user: FirebaseUser, uData: any) => {
     if (!user || !uData) {
@@ -1185,79 +1185,97 @@ export default function AgendaPage() {
               <PlusCircle className="mr-2 h-4 w-4" /> Novo Agendamento
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[520px]"> {/* Increased width for clinic users select */}
+          <DialogContent className="w-[90vw] max-w-md sm:max-w-[520px]">
             <DialogHeader>
               <DialogTitle>Novo Agendamento</DialogTitle>
               <DialogDescription>Preencha os detalhes.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleAddAppointment} className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="newPatientId" className="text-right col-span-1">Paciente*</Label>
-                <Select value={newAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'patientId', value)} required>
-                  <SelectTrigger id="newPatientId" className="col-span-3"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
-                  <SelectContent>
-                    {isLoadingPatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum paciente</SelectItem> : firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                <Label htmlFor="newPatientId" className="block text-left sm:text-right sm:col-span-1">Paciente*</Label>
+                <div className="col-span-full sm:col-span-3">
+                  <Select value={newAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'patientId', value)} required>
+                    <SelectTrigger id="newPatientId" className="w-full"><SelectValue placeholder="Selecione o paciente" /></SelectTrigger>
+                    <SelectContent>
+                      {isLoadingPatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum paciente</SelectItem> : firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
+
               {currentUserData?.plano === 'Clínica' && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="responsibleUserId" className="text-right col-span-1">Profissional</Label>
-                  <Select 
-                    value={newAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : newAppointmentForm.responsibleUserId} 
-                    onValueChange={(value) => {
-                        const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
-                        handleFormSelectChange(setNewAppointmentForm, 'responsibleUserId', valToStore);
-                    }}
-                  >
-                    <SelectTrigger id="responsibleUserId" className="col-span-3">
-                      <SelectValue placeholder="Clínica / Não especificado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={UNASSIGNED_RESPONSIBLE_VALUE}>Clínica / Não especificado</SelectItem>
-                      {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                  <Label htmlFor="responsibleUserId" className="block text-left sm:text-right sm:col-span-1">Profissional</Label>
+                  <div className="col-span-full sm:col-span-3">
+                    <Select 
+                      value={newAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : newAppointmentForm.responsibleUserId} 
+                      onValueChange={(value) => {
+                          const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
+                          handleFormSelectChange(setNewAppointmentForm, 'responsibleUserId', valToStore);
+                      }}
+                    >
+                      <SelectTrigger id="responsibleUserId" className="w-full">
+                        <SelectValue placeholder="Clínica / Não especificado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={UNASSIGNED_RESPONSIBLE_VALUE}>Clínica / Não especificado</SelectItem>
+                        {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               )}
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="newType" className="text-right col-span-1">Tipo*</Label>
-                <div className="col-span-3 flex items-center gap-1">
-                  <Select value={newAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'type', value)} required>
-                    <SelectTrigger id="newType" className="flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
-                    <SelectContent>
-                      {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
-                      {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar" className="flex-shrink-0"><Plus className="h-4 w-4" /></Button>
-                  <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
+
+              <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                <Label htmlFor="newType" className="block text-left sm:text-right sm:col-span-1">Tipo*</Label>
+                <div className="col-span-full sm:col-span-3">
+                  <div className="space-y-2 sm:space-y-0 sm:flex sm:items-center sm:gap-1">
+                    <Select value={newAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setNewAppointmentForm, 'type', value)} required>
+                      <SelectTrigger id="newType" className="w-full sm:flex-grow"><SelectValue placeholder="Selecione o tipo" /></SelectTrigger>
+                      <SelectContent>
+                        {activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}
+                        {activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum tipo ativo</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-1 w-full sm:w-auto justify-end sm:justify-start">
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar" className="flex-shrink-0"><Plus className="h-4 w-4" /></Button>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
                 </div>
               </div>
+
               {showNaoLancarFinanceiroSwitch && currentUserData?.plano !== 'Gratuito' && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="naoLancarFinanceiroNew" className="text-right col-span-3">Gerar Lançamento Financeiro?</Label>
-                  <Switch
-                    id="naoLancarFinanceiroNew"
-                    checked={!newAppointmentForm.naoLancarFinanceiro}
-                    onCheckedChange={(checked) => handleFormInputChange(setNewAppointmentForm, 'naoLancarFinanceiro', !checked)}
-                    className="col-span-1 justify-self-start"
-                  />
+                <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                  <Label htmlFor="naoLancarFinanceiroNew" className="block text-left sm:text-right sm:col-span-3">Gerar Lançamento Financeiro?</Label>
+                  <div className="col-span-full sm:col-span-1 flex justify-start">
+                    <Switch
+                      id="naoLancarFinanceiroNew"
+                      checked={!newAppointmentForm.naoLancarFinanceiro}
+                      onCheckedChange={(checked) => handleFormInputChange(setNewAppointmentForm, 'naoLancarFinanceiro', !checked)}
+                    />
+                  </div>
                 </div>
               )}
-               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="newDate" className="text-right col-span-1">Data*</Label>
-                <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
+               <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                <Label htmlFor="newDate" className="block text-left sm:text-right sm:col-span-1">Data*</Label>
+                <div className="col-span-full sm:col-span-3">
+                  <Input id="newDate" type="date" value={newAppointmentForm.date} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'date', e.target.value)} className="w-full" min={clientToday ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
+                </div>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="newTime" className="text-right col-span-1">Hora*</Label>
-                <Input id="newTime" type="time" value={newAppointmentForm.time} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'time', e.target.value)} className="col-span-3" required />
+              <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                <Label htmlFor="newTime" className="block text-left sm:text-right sm:col-span-1">Hora*</Label>
+                <div className="col-span-full sm:col-span-3">
+                  <Input id="newTime" type="time" value={newAppointmentForm.time} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'time', e.target.value)} className="w-full" required />
+                </div>
               </div>
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="newNotes" className="text-right col-span-1 pt-2">Observações</Label>
-                <Textarea id="newNotes" value={newAppointmentForm.notes} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'notes', e.target.value as string)} className="col-span-3" rows={3} />
+              <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-start sm:gap-x-4">
+                <Label htmlFor="newNotes" className="block text-left sm:text-right sm:col-span-1 pt-0 sm:pt-2">Observações</Label>
+                <div className="col-span-full sm:col-span-3">
+                  <Textarea id="newNotes" value={newAppointmentForm.notes} onChange={(e) => handleFormInputChange(setNewAppointmentForm, 'notes', e.target.value as string)} className="w-full" rows={3} />
+                </div>
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
@@ -1377,74 +1395,89 @@ export default function AgendaPage() {
             setShowNaoLancarFinanceiroSwitch(false);
         }
        }}>
-        <DialogContent className="sm:max-w-[520px]"> {/* Increased width */}
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>Editar Agendamento</DialogTitle>
             <DialogDescription>Modifique os detalhes.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveEditedAppointment} className="grid gap-4 py-4">
-             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="editPatientId" className="text-right col-span-1">Paciente*</Label>
-              <Select value={editAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'patientId', value)} required>
-                <SelectTrigger id="editPatientId" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>{isLoadingPatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum</SelectItem> : firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-              </Select>
+             <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+              <Label htmlFor="editPatientId" className="block text-left sm:text-right sm:col-span-1">Paciente*</Label>
+              <div className="col-span-full sm:col-span-3">
+                <Select value={editAppointmentForm.patientId} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'patientId', value)} required>
+                  <SelectTrigger id="editPatientId" className="w-full"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>{isLoadingPatients ? <SelectItem value="loading" disabled>Carregando...</SelectItem> : firebasePatients.length === 0 ? <SelectItem value="no-patients" disabled>Nenhum</SelectItem> : firebasePatients.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
             </div>
             {currentUserData?.plano === 'Clínica' && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="editResponsibleUserId" className="text-right col-span-1">Profissional</Label>
-                  <Select 
-                    value={editAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : editAppointmentForm.responsibleUserId} 
-                    onValueChange={(value) => {
-                        const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
-                        handleFormSelectChange(setEditAppointmentForm, 'responsibleUserId', valToStore);
-                    }}
-                  >
-                    <SelectTrigger id="editResponsibleUserId" className="col-span-3">
-                      <SelectValue placeholder="Clínica / Não especificado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={UNASSIGNED_RESPONSIBLE_VALUE}>Clínica / Não especificado</SelectItem>
-                      {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                  <Label htmlFor="editResponsibleUserId" className="block text-left sm:text-right sm:col-span-1">Profissional</Label>
+                  <div className="col-span-full sm:col-span-3">
+                    <Select 
+                      value={editAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : editAppointmentForm.responsibleUserId} 
+                      onValueChange={(value) => {
+                          const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
+                          handleFormSelectChange(setEditAppointmentForm, 'responsibleUserId', valToStore);
+                      }}
+                    >
+                      <SelectTrigger id="editResponsibleUserId" className="w-full">
+                        <SelectValue placeholder="Clínica / Não especificado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={UNASSIGNED_RESPONSIBLE_VALUE}>Clínica / Não especificado</SelectItem>
+                        {isLoadingClinicUsers ? <SelectItem value="loading-users" disabled>Carregando...</SelectItem> : clinicUsers.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>{user.nomeCompleto}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               )}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="editType" className="text-right col-span-1">Tipo*</Label>
-              <div className="col-span-3 flex items-center gap-1">
-                <Select value={editAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'type', value)} required>
-                  <SelectTrigger id="editType" className="flex-grow"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                  <SelectContent>{activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}{activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum</SelectItem>}</SelectContent>
-                </Select>
-                <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar" className="flex-shrink-0"><Plus className="h-4 w-4" /></Button>
-                <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
+            <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+              <Label htmlFor="editType" className="block text-left sm:text-right sm:col-span-1">Tipo*</Label>
+              <div className="col-span-full sm:col-span-3">
+                <div className="space-y-2 sm:space-y-0 sm:flex sm:items-center sm:gap-1">
+                  <Select value={editAppointmentForm.type} onValueChange={(value) => handleFormSelectChange(setEditAppointmentForm, 'type', value)} required>
+                    <SelectTrigger id="editType" className="w-full sm:flex-grow"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>{activeAppointmentTypes.map((type) => <SelectItem key={type.id || type.name} value={type.name}>{type.name}</SelectItem>)}{activeAppointmentTypes.length === 0 && <SelectItem value="no-types" disabled>Nenhum</SelectItem>}</SelectContent>
+                  </Select>
+                  <div className="flex gap-1 w-full sm:w-auto justify-end sm:justify-start">
+                    <Button type="button" variant="outline" size="icon" onClick={() => setIsAddTypeDialogOpen(true)} title="Adicionar" className="flex-shrink-0"><Plus className="h-4 w-4" /></Button>
+                    <Button type="button" variant="outline" size="icon" onClick={() => setIsManageTypesDialogOpen(true)} title="Gerenciar" className="flex-shrink-0"><Search className="h-4 w-4" /></Button>
+                  </div>
+                </div>
               </div>
             </div>
             {showNaoLancarFinanceiroSwitch && currentUserData?.plano !== 'Gratuito' && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="naoLancarFinanceiroEdit" className="text-right col-span-3">Gerar Lançamento Financeiro?</Label>
-                  <Switch
-                    id="naoLancarFinanceiroEdit"
-                    checked={!editAppointmentForm.naoLancarFinanceiro}
-                    onCheckedChange={(checked) => handleFormInputChange(setEditAppointmentForm, 'naoLancarFinanceiro', !checked)}
-                    className="col-span-1 justify-self-start"
-                  />
+                <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+                  <Label htmlFor="naoLancarFinanceiroEdit" className="block text-left sm:text-right sm:col-span-3">Gerar Lançamento Financeiro?</Label>
+                  <div className="col-span-full sm:col-span-1 flex justify-start">
+                    <Switch
+                      id="naoLancarFinanceiroEdit"
+                      checked={!editAppointmentForm.naoLancarFinanceiro}
+                      onCheckedChange={(checked) => handleFormInputChange(setEditAppointmentForm, 'naoLancarFinanceiro', !checked)}
+                    />
+                  </div>
                 </div>
               )}
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="editDate" className="text-right col-span-1">Data*</Label>
-              <Input id="editDate" type="date" value={editAppointmentForm.date} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)} className="col-span-3" min={clientToday && editingAppointmentInfo && editingAppointmentInfo.appointment.date === format(clientToday, 'yyyy-MM-dd') ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
+            <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+              <Label htmlFor="editDate" className="block text-left sm:text-right sm:col-span-1">Data*</Label>
+              <div className="col-span-full sm:col-span-3">
+                <Input id="editDate" type="date" value={editAppointmentForm.date} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'date', e.target.value)} className="w-full" min={clientToday && editingAppointmentInfo && editingAppointmentInfo.appointment.date === format(clientToday, 'yyyy-MM-dd') ? format(clientToday, 'yyyy-MM-dd') : undefined} required />
+              </div>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="editTime" className="text-right col-span-1">Hora*</Label>
-              <Input id="editTime" type="time" value={editAppointmentForm.time} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'time', e.target.value)} className="col-span-3" required />
+            <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
+              <Label htmlFor="editTime" className="block text-left sm:text-right sm:col-span-1">Hora*</Label>
+              <div className="col-span-full sm:col-span-3">
+                <Input id="editTime" type="time" value={editAppointmentForm.time} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'time', e.target.value)} className="w-full" required />
+              </div>
             </div>
-            <div className="grid grid-cols-4 items-start gap-4">
-              <Label htmlFor="editNotes" className="text-right col-span-1 pt-2">Observações</Label>
-              <Textarea id="editNotes" value={editAppointmentForm.notes} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'notes', e.target.value as string)} className="col-span-3" rows={3} />
+            <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-start sm:gap-x-4">
+              <Label htmlFor="editNotes" className="block text-left sm:text-right sm:col-span-1 pt-0 sm:pt-2">Observações</Label>
+              <div className="col-span-full sm:col-span-3">
+                <Textarea id="editNotes" value={editAppointmentForm.notes} onChange={(e) => handleFormInputChange(setEditAppointmentForm, 'notes', e.target.value as string)} className="w-full" rows={3} />
+              </div>
             </div>
             <DialogFooter>
               <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
@@ -1574,3 +1607,4 @@ export default function AgendaPage() {
     </div>
   );
 }
+
