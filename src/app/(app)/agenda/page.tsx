@@ -1207,8 +1207,8 @@ export default function AgendaPage() {
                 <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
                   <Label htmlFor="responsibleUserId" className="block text-left sm:text-right sm:col-span-1">Profissional</Label>
                   <div className="col-span-full sm:col-span-3">
-                    <Select 
-                      value={newAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : newAppointmentForm.responsibleUserId} 
+                    <Select
+                      value={newAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : newAppointmentForm.responsibleUserId}
                       onValueChange={(value) => {
                           const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
                           handleFormSelectChange(setNewAppointmentForm, 'responsibleUserId', valToStore);
@@ -1414,8 +1414,8 @@ export default function AgendaPage() {
                 <div className="grid grid-cols-1 items-start gap-y-1 sm:grid-cols-4 sm:items-center sm:gap-x-4">
                   <Label htmlFor="editResponsibleUserId" className="block text-left sm:text-right sm:col-span-1">Profissional</Label>
                   <div className="col-span-full sm:col-span-3">
-                    <Select 
-                      value={editAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : editAppointmentForm.responsibleUserId} 
+                    <Select
+                      value={editAppointmentForm.responsibleUserId === '' ? UNASSIGNED_RESPONSIBLE_VALUE : editAppointmentForm.responsibleUserId}
                       onValueChange={(value) => {
                           const valToStore = value === UNASSIGNED_RESPONSIBLE_VALUE ? '' : value;
                           handleFormSelectChange(setEditAppointmentForm, 'responsibleUserId', valToStore);
@@ -1488,25 +1488,27 @@ export default function AgendaPage() {
       </Dialog>
 
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="w-[90vw] max-w-xs sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Novo Tipo de Atendimento</DialogTitle>
             <DialogDescription>Insira os detalhes.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="newCustomTypeName" className="text-right col-span-1">Nome*</Label>
-              <Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-3" />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+              <Label htmlFor="newCustomTypeName" className="block text-left sm:text-right sm:col-span-1">Nome*</Label>
+              <Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-full sm:col-span-3" />
             </div>
             {currentUserData?.plano !== 'Gratuito' && (
                 <>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="newCustomTypeValor" className="text-right col-span-1">Valor (R$)</Label>
-                    <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-3" placeholder="0.00" />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                      <Label htmlFor="newCustomTypeValor" className="block text-left sm:text-right sm:col-span-1">Valor (R$)</Label>
+                      <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-full sm:col-span-3" placeholder="0.00" />
                     </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="newCustomTypeLancar" className="text-right col-span-3">Lançar Financeiro Automático?</Label>
-                    <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-1 justify-self-start" />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                      <Label htmlFor="newCustomTypeLancar" className="block text-left sm:text-right sm:col-span-3">Lançar Financeiro Automático?</Label>
+                      <div className="col-span-full sm:col-span-1 flex justify-start">
+                        <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} />
+                      </div>
                     </div>
                 </>
             )}
@@ -1519,26 +1521,26 @@ export default function AgendaPage() {
       </Dialog>
 
       <Dialog open={isManageTypesDialogOpen} onOpenChange={setIsManageTypesDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
           <DialogHeader><DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle></DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
-              <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
+              <div key={type.id || type.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2 border rounded-md gap-2">
                 {editingTypeInfo && editingTypeInfo.type.id === type.id ? (
-                  <div className="flex-grow grid grid-cols-3 gap-2 mr-2 items-center">
-                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-3" placeholder="Nome do tipo" />
+                  <div className="flex-grow w-full space-y-2 sm:space-y-0 sm:grid sm:grid-cols-1 md:grid-cols-3 sm:gap-2 items-center sm:mr-2">
+                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 md:col-span-3" placeholder="Nome do tipo" />
                     {currentUserData?.plano !== 'Gratuito' && (
                         <>
-                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor"/>
-                            <div className="col-span-2 flex items-center justify-end mt-1 gap-2">
-                                <Label htmlFor={`editLancar-${type.id}`} className="text-xs">Lançar Financeiro Auto.?</Label>
+                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8" placeholder="Valor"/>
+                            <div className="flex items-center justify-start sm:justify-end gap-2 md:col-span-2">
+                                <Label htmlFor={`editLancar-${type.id}`} className="text-xs whitespace-nowrap">Lançar Auto.?</Label>
                                 <Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked }} : null)} />
                             </div>
                         </>
                     )}
                   </div>
                 ) : (
-                  <div className="flex-grow">
+                  <div className="flex-grow w-full">
                     <span className={` ${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
                     {currentUserData?.plano !== 'Gratuito' && (
                         <div className="text-xs text-muted-foreground">
@@ -1547,7 +1549,7 @@ export default function AgendaPage() {
                     )}
                   </div>
                 )}
-                <div className="flex gap-1 items-center ml-auto">
+                <div className="flex gap-1 items-center self-end sm:self-center sm:ml-auto flex-shrink-0">
                   {editingTypeInfo && editingTypeInfo.type.id === type.id ? (
                     <>
                       <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button>
@@ -1559,7 +1561,7 @@ export default function AgendaPage() {
                       <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
                     </>
                   )}
-                  <Switch checked={type.status === 'active'} onCheckedChange={() => setTypeToToggleStatusConfirm(type)} aria-label={`Status ${type.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" />
+                  <Switch checked={type.status === 'active'} onCheckedChange={() => setTypeToToggleStatusConfirm(type)} aria-label={`Status ${type.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0" />
                 </div>
               </div>
             ))}
