@@ -719,49 +719,49 @@ export default function FinanceiroPage() {
           <DialogTrigger asChild>
             <Button><PlusCircle className="mr-2 h-4 w-4" /> Adicionar Transação</Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[520px]">
+          <DialogContent className="w-[90vw] max-w-md sm:max-w-[520px]">
             <DialogHeader>
               <DialogTitle>{editingTransaction ? 'Editar Transação' : 'Nova Transação Manual'}</DialogTitle>
               <DialogDescription>Insira os detalhes da transação financeira.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSaveTransaction} className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="description" className="text-right col-span-1">Descrição*</Label>
-                <Input id="description" value={transactionForm.description} onChange={(e) => handleFormInputChange('description', e.target.value)} className="col-span-3" placeholder="Ex: Consulta, Sessão Extra" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="description" className="text-left sm:text-right sm:col-span-1">Descrição*</Label>
+                <Input id="description" value={transactionForm.description} onChange={(e) => handleFormInputChange('description', e.target.value)} className="col-span-full sm:col-span-3" placeholder="Ex: Consulta, Sessão Extra" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="amount" className="text-right col-span-1">Valor (R$)*</Label>
-                <Input id="amount" type="number" step="0.01" value={transactionForm.amount ?? ''} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-3" placeholder="0.00" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="amount" className="text-left sm:text-right sm:col-span-1">Valor (R$)*</Label>
+                <Input id="amount" type="number" step="0.01" value={transactionForm.amount ?? ''} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-full sm:col-span-3" placeholder="0.00" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="date" className="text-right col-span-1">Data*</Label>
-                <Input id="date" type="date" value={transactionForm.date} onChange={(e) => handleDateChange(e.target.value)} className="col-span-3" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="date" className="text-left sm:text-right sm:col-span-1">Data*</Label>
+                <Input id="date" type="date" value={transactionForm.date} onChange={(e) => handleDateChange(e.target.value)} className="col-span-full sm:col-span-3" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="paymentMethod" className="text-right col-span-1">Método*</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="paymentMethod" className="text-left sm:text-right sm:col-span-1">Método*</Label>
                 <Select value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)}>
-                  <SelectTrigger id="paymentMethod" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger id="paymentMethod" className="col-span-full sm:col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>{paymentMethods.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="status" className="text-right col-span-1">Status*</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="status" className="text-left sm:text-right sm:col-span-1">Status*</Label>
                 <Select value={transactionForm.status} onValueChange={(value) => handleFormSelectChange('status', value)}>
-                  <SelectTrigger id="status" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger id="status" className="col-span-full sm:col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>{transactionStatuses.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="type" className="text-right col-span-1">Tipo*</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="type" className="text-left sm:text-right sm:col-span-1">Tipo*</Label>
                  <Select value={transactionForm.type} onValueChange={(value) => handleFormSelectChange('type', value)} disabled={editingTransaction?.type === 'atendimento' || editingTransaction?.type === 'mensalidade_paciente'}>
-                  <SelectTrigger id="type" className="col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger id="type" className="col-span-full sm:col-span-3"><SelectValue placeholder="Selecione" /></SelectTrigger>
                   <SelectContent>{transactionTypes.map(type => <SelectItem key={type} value={type} disabled={(editingTransaction?.type === 'atendimento' && type === 'atendimento') || (editingTransaction?.type === 'mensalidade_paciente' && type === 'mensalidade_paciente') }>{type === 'atendimento' ? 'Lançado pela Agenda' : (type === 'mensalidade_paciente' ? 'Mensalidade Paciente' : 'Manual')}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                 <Label htmlFor="patientId" className="text-right col-span-1">Associar Paciente</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                 <Label htmlFor="patientId" className="text-left sm:text-right sm:col-span-1">Associar Paciente</Label>
                 <Select value={transactionForm.patientId || 'none'} onValueChange={(value) => handleFormSelectChange('patientId', value === 'none' ? undefined : value)} disabled={editingTransaction?.type === 'atendimento' || editingTransaction?.type === 'mensalidade_paciente'}>
-                  <SelectTrigger id="patientId" className="col-span-3">
+                  <SelectTrigger id="patientId" className="col-span-full sm:col-span-3">
                     <SelectValue placeholder="Selecione o paciente (opcional)" />
                   </SelectTrigger>
                   <SelectContent>
@@ -769,9 +769,9 @@ export default function FinanceiroPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="notes" className="text-right col-span-1 pt-2">Observações</Label>
-                <Textarea id="notes" value={transactionForm.notes} onChange={(e) => handleFormInputChange('notes', e.target.value)} className="col-span-3" rows={2} placeholder="Detalhes adicionais sobre a transação"/>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                <Label htmlFor="notes" className="text-left sm:text-right sm:col-span-1 pt-0 sm:pt-2">Observações</Label>
+                <Textarea id="notes" value={transactionForm.notes} onChange={(e) => handleFormInputChange('notes', e.target.value)} className="col-span-full sm:col-span-3" rows={2} placeholder="Detalhes adicionais sobre a transação"/>
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
@@ -1042,37 +1042,37 @@ export default function FinanceiroPage() {
               setTransactionForm({ description: '', amount: undefined, paymentMethod: 'Pix', status: 'Recebido', type: 'manual', date: format(new Date(), 'yyyy-MM-dd'), patientId: 'none'});
           }
       }}>
-          <DialogContent className="sm:max-w-[520px]">
+          <DialogContent className="w-[90vw] max-w-md sm:max-w-[520px]">
             <DialogHeader>
               <DialogTitle>Registrar Pagamento de Mensalidade</DialogTitle>
               <DialogDescription>Confirme os dados para registrar o pagamento da mensalidade de <strong>{selectedPatientForMonthlyPayment?.name}</strong>.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSaveTransaction} className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="monthlyPaymentDescription" className="text-right col-span-1">Descrição*</Label>
-                <Input id="monthlyPaymentDescription" value={transactionForm.description} onChange={(e) => handleFormInputChange('description', e.target.value)} className="col-span-3" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="monthlyPaymentDescription" className="text-left sm:text-right sm:col-span-1">Descrição*</Label>
+                <Input id="monthlyPaymentDescription" value={transactionForm.description} onChange={(e) => handleFormInputChange('description', e.target.value)} className="col-span-full sm:col-span-3" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="monthlyPaymentAmount" className="text-right col-span-1">Valor (R$)*</Label>
-                <Input id="monthlyPaymentAmount" type="number" step="0.01" value={transactionForm.amount ?? ''} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-3" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="monthlyPaymentAmount" className="text-left sm:text-right sm:col-span-1">Valor (R$)*</Label>
+                <Input id="monthlyPaymentAmount" type="number" step="0.01" value={transactionForm.amount ?? ''} onChange={(e) => handleFormInputChange('amount', parseFloat(e.target.value) || 0)} className="col-span-full sm:col-span-3" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="monthlyPaymentDate" className="text-right col-span-1">Data Pagamento*</Label>
-                <Input id="monthlyPaymentDate" type="date" value={transactionForm.date} onChange={(e) => handleDateChange(e.target.value)} className="col-span-3" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="monthlyPaymentDate" className="text-left sm:text-right sm:col-span-1">Data Pagamento*</Label>
+                <Input id="monthlyPaymentDate" type="date" value={transactionForm.date} onChange={(e) => handleDateChange(e.target.value)} className="col-span-full sm:col-span-3" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="monthlyPaymentMethod" className="text-right col-span-1">Método*</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="monthlyPaymentMethod" className="text-left sm:text-right sm:col-span-1">Método*</Label>
                 <Select value={transactionForm.paymentMethod} onValueChange={(value) => handleFormSelectChange('paymentMethod', value)}>
-                  <SelectTrigger id="monthlyPaymentMethod" className="col-span-3"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="monthlyPaymentMethod" className="col-span-full sm:col-span-3"><SelectValue /></SelectTrigger>
                   <SelectContent>{paymentMethods.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
                <Input type="hidden" value={transactionForm.status} />
                <Input type="hidden" value={transactionForm.type} />
                <Input type="hidden" value={transactionForm.patientId} />
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="monthlyPaymentNotes" className="text-right col-span-1 pt-2">Observações</Label>
-                <Textarea id="monthlyPaymentNotes" value={transactionForm.notes} onChange={(e) => handleFormInputChange('notes', e.target.value)} className="col-span-3" rows={2} placeholder="Detalhes adicionais"/>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                <Label htmlFor="monthlyPaymentNotes" className="text-left sm:text-right sm:col-span-1 pt-0 sm:pt-2">Observações</Label>
+                <Textarea id="monthlyPaymentNotes" value={transactionForm.notes} onChange={(e) => handleFormInputChange('notes', e.target.value)} className="col-span-full sm:col-span-3" rows={2} placeholder="Detalhes adicionais"/>
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
@@ -1085,3 +1085,4 @@ export default function FinanceiroPage() {
     </div>
   );
 }
+
