@@ -485,22 +485,21 @@ export default function PacienteDetalhePage() {
   useEffect(() => {
     let unsubscribe: Unsubscribe = () => {};
     if (firebaseUserAuth) {
-      setIsLoading(true); // Set loading true when auth user changes, before data is fetched
+      setIsLoading(true);
       const userDocRef = doc(db, 'usuarios', firebaseUserAuth.uid);
       unsubscribe = onSnapshot(userDocRef, async (userDocSnap) => {
         if (userDocSnap.exists()) {
           const uData = { ...userDocSnap.data(), uid: firebaseUserAuth.uid };
           setCurrentUserData(uData);
-          // Fetch dependent data only after currentUserData is confirmed
           await fetchAppointmentTypes(uData);
           await fetchPatientObjectives(uData);
           const userArea = uData.areaAtuacao || "Outro";
           const templates = ANAMNESE_TEMPLATES[userArea] || ANAMNESE_TEMPLATES["Outro"] || [];
           setAnamneseTemplatesForUser(templates);
-          if (patientSlug) { // Only load patient data if slug is available
+          if (patientSlug) {
             await loadPatientDoc(firebaseUserAuth, uData);
           } else {
-             setIsLoading(false); // Stop loading if no slug
+             setIsLoading(false);
           }
         } else {
           console.warn("User profile data not found for UID:", firebaseUserAuth.uid);
@@ -523,12 +522,12 @@ export default function PacienteDetalhePage() {
       setCurrentUserData(null);
       setPatient(undefined);
       setIsLoading(false);
-      if (firebaseUserAuth === null && patientSlug) { // If tried to access while logged out
+      if (firebaseUserAuth === null && patientSlug) {
           router.push('/login');
       }
     }
     return () => unsubscribe();
-  }, [firebaseUserAuth, patientSlug, router, toast]); // Removed loadPatientDoc from here
+  }, [firebaseUserAuth, patientSlug, router, toast]);
 
 
   const loadPatientDoc = useCallback(async (currentUserAuth: FirebaseUser, uData: any) => {
@@ -536,7 +535,6 @@ export default function PacienteDetalhePage() {
       setIsLoading(false);
       return;
     }
-    // setIsLoading(true); // isLoading is handled by the currentUserData effect now
     try {
       const patientsRef = collection(db, 'pacientes');
       let q;
@@ -709,13 +707,10 @@ export default function PacienteDetalhePage() {
         objetivoPaciente: editedPatient.objetivoPaciente || '',
         anamnese: editedPatient.anamnese || '',
         hasMonthlyFee: editedPatient.hasMonthlyFee || false,
-        monthlyFeeAmount: editedPatient.hasMonthlyFee ? (editedPatient.monthlyFeeAmount || 0) : null, // Save null if no fee
-        monthlyFeeDueDate: editedPatient.hasMonthlyFee ? (editedPatient.monthlyFeeDueDate || 1) : null, // Save null if no fee
+        monthlyFeeAmount: editedPatient.hasMonthlyFee ? (editedPatient.monthlyFeeAmount || 0) : null,
+        monthlyFeeDueDate: editedPatient.hasMonthlyFee ? (editedPatient.monthlyFeeDueDate || 1) : null,
       };
       await updateDoc(patientRef, dataToSave);
-      // No need to call loadPageData directly if relying on onSnapshot for patient data too,
-      // but for now, explicitly reloading patient data after save.
-      // If patient data itself becomes reactive via onSnapshot, this manual reload can be removed.
       await loadPatientDoc(firebaseUserAuth, currentUserData);
       toast({ title: "Sucesso!", description: `Dados de ${editedPatient.name} atualizados.`, variant: "success" });
       setIsEditing(false);
@@ -758,8 +753,8 @@ export default function PacienteDetalhePage() {
       if (!prev) return undefined;
       const newState = { ...prev, [name]: checked };
       if (name === 'hasMonthlyFee' && !checked) {
-        newState.monthlyFeeAmount = undefined; // Reset if fee is disabled
-        newState.monthlyFeeDueDate = 1; // Reset to default
+        newState.monthlyFeeAmount = undefined;
+        newState.monthlyFeeDueDate = 1;
       }
       return newState;
     });
@@ -789,7 +784,6 @@ export default function PacienteDetalhePage() {
       const patientRef = doc(db, 'pacientes', patient.internalId);
       const newStatus = patient.status === 'Ativo' ? 'Inativo' : 'Ativo';
       await updateDoc(patientRef, { status: newStatus });
-      // Assuming patient data might become reactive, otherwise re-fetch:
       await loadPatientDoc(firebaseUserAuth, currentUserData);
       toast({ title: `Paciente ${newStatus}`, description: `Status de ${patient.name} atualizado.`, variant: newStatus === 'Ativo' ? 'success' : 'warning', });
     } catch (error) {
@@ -1267,11 +1261,11 @@ export default function PacienteDetalhePage() {
         </CardHeader>
         <CardContent className="p-0">
           <Tabs defaultValue={initialTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
-            <TabsList className="flex flex-wrap w-full items-center justify-start rounded-none border-b bg-transparent px-2 py-0 sm:px-4">
-                <TabsTrigger value="historico" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Histórico</TabsTrigger>
-                <TabsTrigger value="anamnese" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Anamnese</TabsTrigger>
-                <TabsTrigger value="documentos" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Documentos</TabsTrigger>
-                <TabsTrigger value="dados" className="flex-auto sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto">Dados Cadastrais</TabsTrigger>
+            <TabsList className="flex flex-col sm:flex-row w-full items-stretch sm:items-center justify-start rounded-none border-b bg-transparent px-0 sm:px-4">
+                <TabsTrigger value="historico" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Histórico</TabsTrigger>
+                <TabsTrigger value="anamnese" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Anamnese</TabsTrigger>
+                <TabsTrigger value="documentos" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Documentos</TabsTrigger>
+                <TabsTrigger value="dados" className="flex-1 sm:flex-initial rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent px-3 py-2 text-xs sm:text-sm sm:px-4 sm:py-3 h-auto text-center sm:text-left">Dados Cadastrais</TabsTrigger>
             </TabsList>
             <TabsContent value="historico" className="p-6 space-y-6 mt-0">
               <Card>
@@ -1479,14 +1473,23 @@ export default function PacienteDetalhePage() {
       </Card>
 
       <Dialog open={isAddTypeDialogOpen} onOpenChange={setIsAddTypeDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="w-[90vw] max-w-xs sm:max-w-sm">
           <DialogHeader><DialogTitle>Novo Tipo de Atendimento</DialogTitle><DialogDescription>Insira os detalhes.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeName" className="text-right col-span-1">Nome*</Label><Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="col-span-3" /></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="newCustomTypeName" className="sm:text-right sm:col-span-1">Nome*</Label>
+                <Input id="newCustomTypeName" value={newCustomType.name} onChange={(e) => setNewCustomType(prev => ({ ...prev, name: e.target.value }))} className="sm:col-span-3" />
+            </div>
             {currentUserData?.plano !== 'Gratuito' && (
                 <>
-                    <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeValor" className="text-right col-span-1">Valor (R$)</Label><Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="col-span-3" placeholder="0.00" /></div>
-                    <div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="newCustomTypeLancar" className="text-right col-span-3">Lançar Financeiro Automático?</Label><Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="col-span-1 justify-self-start" /></div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                        <Label htmlFor="newCustomTypeValor" className="sm:text-right sm:col-span-1">Valor (R$)</Label>
+                        <Input id="newCustomTypeValor" type="number" value={newCustomType.valor || ''} onChange={(e) => setNewCustomType(prev => ({ ...prev, valor: parseFloat(e.target.value) || 0 }))} className="sm:col-span-3" placeholder="0.00" />
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                        <Label htmlFor="newCustomTypeLancar" className="sm:text-right sm:col-span-3">Lançar Financeiro Automático?</Label>
+                        <Switch id="newCustomTypeLancar" checked={newCustomType.lancarFinanceiroAutomatico} onCheckedChange={(checked) => setNewCustomType(prev => ({ ...prev, lancarFinanceiroAutomatico: checked }))} className="justify-self-start sm:justify-self-end sm:col-span-1" />
+                    </div>
                 </>
             )}
           </div>
@@ -1495,32 +1498,45 @@ export default function PacienteDetalhePage() {
       </Dialog>
 
       <Dialog open={isManageTypesDialogOpen} onOpenChange={setIsManageTypesDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
           <DialogHeader><DialogTitle>Gerenciar Tipos de Atendimento</DialogTitle></DialogHeader>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">
             {appointmentTypes.map((type) => (
-              <div key={type.id || type.name} className="flex items-center justify-between p-2 border rounded-md">
+              <div key={type.id || type.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2 border rounded-md gap-2">
                 {editingTypeInfo?.type.id === type.id ? (
-                  <div className="flex-grow grid grid-cols-3 gap-2 mr-2 items-center">
-                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 col-span-3" placeholder="Nome" />
+                  <div className="flex-grow w-full space-y-2 sm:space-y-0 sm:grid sm:grid-cols-1 md:grid-cols-3 sm:gap-2 items-center sm:mr-2">
+                    <Input value={editingTypeInfo.currentData?.name || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, name: e.target.value } } : null)} className="h-8 md:col-span-3" placeholder="Nome" />
                     {currentUserData?.plano !== 'Gratuito' && (
                         <>
-                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8 col-span-1" placeholder="Valor" />
-                            <div className="col-span-2 flex items-center justify-end mt-1 gap-2"><Label htmlFor={`editLancar-${type.id}`} className="text-xs">Lançar Auto.?</Label><Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked } } : null)} /></div>
+                            <Input type="number" value={editingTypeInfo.currentData?.valor || ''} onChange={(e) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, valor: parseFloat(e.target.value) || 0 } } : null)} className="h-8" placeholder="Valor" />
+                            <div className="flex items-center justify-start sm:justify-end gap-2 md:col-span-2">
+                                <Label htmlFor={`editLancar-${type.id}`} className="text-xs whitespace-nowrap">Lançar Auto.?</Label>
+                                <Switch id={`editLancar-${type.id}`} checked={editingTypeInfo.currentData?.lancarFinanceiroAutomatico || false} onCheckedChange={(checked) => setEditingTypeInfo(prev => prev ? { ...prev, currentData: { ...prev.currentData, lancarFinanceiroAutomatico: checked } } : null)} />
+                            </div>
                         </>
                     )}
                   </div>
                 ) : (
-                  <div className="flex-grow"><span className={`${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
-                  {currentUserData?.plano !== 'Gratuito' && (
-                    <div className="text-xs text-muted-foreground">Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}</div>
-                  )}
+                  <div className="flex-grow w-full">
+                    <span className={`${type.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{type.name}</span>
+                    {currentUserData?.plano !== 'Gratuito' && (
+                        <div className="text-xs text-muted-foreground">Valor: R$ {(type.valor || 0).toFixed(2)} - Lanç. Auto: {type.lancarFinanceiroAutomatico ? 'Sim' : 'Não'}</div>
+                    )}
                   </div>
                 )}
-                <div className="flex gap-1 items-center ml-auto">
-                  {editingTypeInfo?.type.id === type.id ? (<><Button size="icon" className="h-8 w-8" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></>)
-                    : (<><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTypeInfo({ type: type, currentData: { name: type.name, valor: type.valor, lancarFinanceiroAutomatico: type.lancarFinanceiroAutomatico } })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}
-                  <Switch checked={type.status === 'active'} onCheckedChange={() => setTypeToToggleStatusConfirm(type)} aria-label={`Status ${type.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" />
+                <div className="flex gap-1 items-center self-end sm:self-center sm:ml-auto flex-shrink-0">
+                  {editingTypeInfo?.type.id === type.id ? (
+                    <>
+                        <Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedTypeName} title="Salvar"><Save className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button>
+                    </>
+                  ) : (
+                    <>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingTypeInfo({ type: type, currentData: { name: type.name, valor: type.valor, lancarFinanceiroAutomatico: type.lancarFinanceiroAutomatico } })} title="Editar"><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteTypeDialog(type)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
+                    </>
+                  )}
+                  <Switch checked={type.status === 'active'} onCheckedChange={() => setTypeToToggleStatusConfirm(type)} aria-label={`Status ${type.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0" />
                 </div>
               </div>
             ))}
@@ -1533,8 +1549,8 @@ export default function PacienteDetalhePage() {
       <AlertDialog open={!!typeToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setTypeToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status</AlertDialogTitle><AlertDialogDescription>Deseja {typeToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{typeToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => typeToToggleStatusConfirm && handleToggleTypeStatus(typeToToggleStatusConfirm)} className={typeToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{typeToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={isDeleteTypeConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setTypeToDelete(null); setIsDeleteTypeConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Exclusão</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{typeToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setTypeToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteType} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
-      <Dialog open={isAddObjectiveDialogOpen} onOpenChange={setIsAddObjectiveDialogOpen}><DialogContent className="sm:max-w-[400px]"><DialogHeader><DialogTitle>Novo Objetivo</DialogTitle><DialogDescription>Insira o nome.</DialogDescription></DialogHeader><div className="grid gap-4 py-4"><Label htmlFor="newCustomObjectiveNameModal">Nome*</Label><Input id="newCustomObjectiveNameModal" value={newCustomObjectiveName} onChange={(e) => setNewCustomObjectiveName(e.target.value)} /></div><DialogFooter><DialogClose asChild><Button variant="outline" onClick={() => setNewCustomObjectiveName('')}>Cancelar</Button></DialogClose><Button onClick={handleAddCustomObjective}>Salvar</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Gerenciar Objetivos</DialogTitle></DialogHeader><div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">{patientObjectives.map((obj) => (<div key={obj.id || obj.name} className="flex items-center justify-between p-2 border rounded-md">{editingObjectiveInfo?.objective.id === obj.id ? (<div className="flex-grow flex items-center gap-2 mr-2"><Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" /><Button size="icon" className="h-8 w-8" onClick={handleSaveEditedObjectiveName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></div>) : (<span className={`flex-grow ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>)}<div className="flex gap-1 items-center ml-auto">{editingObjectiveInfo?.objective.id !== obj.id && (<><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteObjectiveDialog(obj)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}<Switch checked={obj.status === 'active'} onCheckedChange={() => setObjectiveToToggleStatusConfirm(obj)} aria-label={`Status ${obj.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400" /></div></div>))}{patientObjectives.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum objetivo.</p>}</div><DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
+      <Dialog open={isAddObjectiveDialogOpen} onOpenChange={setIsAddObjectiveDialogOpen}><DialogContent className="w-[90vw] max-w-xs sm:max-w-[400px]"><DialogHeader><DialogTitle>Novo Objetivo</DialogTitle><DialogDescription>Insira o nome.</DialogDescription></DialogHeader><div className="grid grid-cols-1 gap-2 py-4 sm:grid-cols-4 sm:items-center sm:gap-4"><Label htmlFor="newCustomObjectiveNameModal" className="sm:text-right sm:col-span-1">Nome*</Label><Input id="newCustomObjectiveNameModal" value={newCustomObjectiveName} onChange={(e) => setNewCustomObjectiveName(e.target.value)} className="sm:col-span-3"/></div><DialogFooter><DialogClose asChild><Button variant="outline" onClick={() => setNewCustomObjectiveName('')}>Cancelar</Button></DialogClose><Button onClick={handleAddCustomObjective}>Salvar</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}><DialogContent className="w-[90vw] max-w-md sm:max-w-md"><DialogHeader><DialogTitle>Gerenciar Objetivos</DialogTitle></DialogHeader><div className="space-y-3 max-h-[60vh] overflow-y-auto py-4 px-1">{patientObjectives.map((obj) => (<div key={obj.id || obj.name} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-2 border rounded-md gap-2">{editingObjectiveInfo?.objective.id === obj.id ? (<div className="flex-grow w-full flex items-center gap-2 sm:mr-2"><Input value={editingObjectiveInfo.currentName} onChange={(e) => setEditingObjectiveInfo(prev => prev ? { ...prev, currentName: e.target.value } : null)} className="h-8" /><Button size="icon" className="h-8 w-8 flex-shrink-0" onClick={handleSaveEditedObjectiveName} title="Salvar"><Save className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingObjectiveInfo(null)} title="Cancelar"><X className="h-4 w-4" /></Button></div>) : (<span className={`flex-grow w-full ${obj.status === 'inactive' ? 'text-muted-foreground line-through' : ''}`}>{obj.name}</span>)}<div className="flex gap-1 items-center self-end sm:self-center sm:ml-auto flex-shrink-0">{editingObjectiveInfo?.objective.id !== obj.id && (<><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => setEditingObjectiveInfo({ objective: obj, currentName: obj.name })} title="Editar"><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 text-destructive hover:bg-destructive/10" onClick={() => handleOpenDeleteObjectiveDialog(obj)} title="Excluir"><Trash2 className="h-4 w-4" /></Button></>)}<Switch checked={obj.status === 'active'} onCheckedChange={() => setObjectiveToToggleStatusConfirm(obj)} aria-label={`Status ${obj.name}`} className="data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-slate-400 flex-shrink-0" /></div></div>))}{patientObjectives.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhum objetivo.</p>}</div><DialogFooter><DialogClose asChild><Button variant="outline">Fechar</Button></DialogClose></DialogFooter></DialogContent></Dialog>
       <AlertDialog open={!!objectiveToToggleStatusConfirm} onOpenChange={(isOpen) => !isOpen && setObjectiveToToggleStatusConfirm(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Status Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja {objectiveToToggleStatusConfirm?.status === 'active' ? 'desativar' : 'ativar'} "{objectiveToToggleStatusConfirm?.name}"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToToggleStatusConfirm(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => objectiveToToggleStatusConfirm && handleToggleObjectiveStatus(objectiveToToggleStatusConfirm)} className={objectiveToToggleStatusConfirm?.status === 'active' ? "bg-destructive hover:bg-destructive/90" : "bg-green-600 hover:bg-green-700"}>{objectiveToToggleStatusConfirm?.status === 'active' ? 'Desativar' : 'Ativar'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={isDeleteObjectiveConfirmOpen} onOpenChange={(isOpen) => { if (!isOpen) setObjectiveToDelete(null); setIsDeleteObjectiveConfirmOpen(isOpen); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir Objetivo</AlertDialogTitle><AlertDialogDescription>Deseja excluir "<strong>{objectiveToDelete?.name}</strong>"?</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setObjectiveToDelete(null)}>Cancelar</AlertDialogCancel><AlertDialogAction onClick={handleConfirmDeleteObjective} className="bg-destructive hover:bg-destructive/90">Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
 
@@ -1597,3 +1613,4 @@ export default function PacienteDetalhePage() {
     </div>
   );
 }
+
