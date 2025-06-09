@@ -8,10 +8,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from '@/components/ui/button';
-import { CalendarCheck, FileText, DollarSign, User, Loader2, AlertTriangle, Eye, Info, ExternalLink } from "lucide-react";
+import { CalendarCheck, FileText, DollarSign, User, Loader2, AlertTriangle, Eye, Info, ExternalLink, Gift } from "lucide-react";
 import { db } from '@/firebase';
 import { doc, getDoc, collection, query, where, getDocs, Timestamp, orderBy } from 'firebase/firestore';
-import { format, parseISO, startOfMonth, endOfMonth, isSameMonth, setDate } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, isSameMonth, setDate, getMonth, getDate } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Dialog,
@@ -52,6 +52,7 @@ type PatientData = {
   monthlyFeeAmount?: number;
   monthlyFeeDueDate?: number;
   nomeEmpresa?: string; // To potentially link to professional's portal if needed
+  dob?: string; // Added dob for birthday check
 };
 
 type MonthlyFeeStatus = {
@@ -73,6 +74,7 @@ export default function PatientDashboardPage() {
 
   const [isHistoryNoteModalOpen, setIsHistoryNoteModalOpen] = useState(false);
   const [selectedHistoryNote, setSelectedHistoryNote] = useState<HistoryItem | null>(null);
+  const [showBirthdayBanner, setShowBirthdayBanner] = useState(false);
 
   const fetchPatientData = useCallback(async (id: string) => {
     setIsLoading(true);
@@ -89,7 +91,7 @@ export default function PatientDashboardPage() {
           id: histItem.id || `hist-portal-${id}-${uniqueIdCounter++}`
         })).sort((a: HistoryItem, b: HistoryItem) => new Date(b.date).getTime() - new Date(a.date).getTime());
         
-        setPatientData({
+        const fetchedPatientData: PatientData = {
           name: data.name,
           email: data.email,
           phone: data.phone,
@@ -101,7 +103,26 @@ export default function PatientDashboardPage() {
           monthlyFeeAmount: data.monthlyFeeAmount,
           monthlyFeeDueDate: data.monthlyFeeDueDate,
           nomeEmpresa: data.nomeEmpresa,
-        });
+          dob: data.dob,
+        };
+        setPatientData(fetchedPatientData);
+
+        // Birthday check
+        if (fetchedPatientData.dob) {
+          try {
+            const today = new Date();
+            const birthDate = parseISO(fetchedPatientData.dob);
+            if (getMonth(today) === getMonth(birthDate) && getDate(today) === getDate(birthDate)) {
+              setShowBirthdayBanner(true);
+            } else {
+              setShowBirthdayBanner(false);
+            }
+          } catch (error) {
+            console.error("Error parsing birth date for birthday check:", error);
+            setShowBirthdayBanner(false);
+          }
+        }
+
 
         // Fetch appointments
         const apptsRef = collection(db, 'agendamentos');
@@ -135,23 +156,17 @@ export default function PatientDashboardPage() {
             const finTxRef = collection(db, 'financialTransactions');
             let finTxQuery;
 
-            // Determine whose transactions to query based on whether a professional's company name is set
             if (data.nomeEmpresa) {
                  finTxQuery = query(
                     finTxRef,
-                    where('nomeEmpresa', '==', data.nomeEmpresa), // Assuming the clinic admin sets this
+                    where('nomeEmpresa', '==', data.nomeEmpresa), 
                     where('patientId', '==', id),
                     where('type', '==', 'mensalidade_paciente'),
                     where('date', '>=', Timestamp.fromDate(startOfMonth(today))),
                     where('date', '<=', Timestamp.fromDate(endOfMonth(today)))
                 );
             } else {
-                // This case might be tricky if we don't know the professional's UID
-                // For now, we'll assume monthly fees are tied to an ownerId (professional's UID)
-                // If the patient document has 'uid' (professional's uid who created patient), use that.
-                // This part might need refinement based on how finance is structured.
-                // Let's assume the patient document has a `uid` field pointing to the professional.
-                 const professionalUid = data.uid; // This field needs to exist on the patient document
+                 const professionalUid = data.uid; 
                  if (professionalUid) {
                     finTxQuery = query(
                         finTxRef,
@@ -194,7 +209,6 @@ export default function PatientDashboardPage() {
       }
     } catch (error) {
       console.error("Erro ao buscar dados do paciente:", error);
-      // Optionally, show a toast message here
       router.replace('/portal-paciente/login');
     } finally {
       setIsLoading(false);
@@ -257,6 +271,20 @@ export default function PatientDashboardPage() {
 
   return (
     <div className="space-y-8">
+      {showBirthdayBanner && (
+        <Card className="mb-6 bg-gradient-to-r from-yellow-400 via-red-500 to-pink-500 text-white shadow-lg animate-in fade-in-50 slide-in-from-top-10 duration-500">
+          <CardHeader className="pb-3 pt-4">
+            <CardTitle className="text-2xl font-bold flex items-center">
+              <Gift className="mr-3 h-7 w-7" /> 
+              Feliz Aniversário, {patientData?.name}!
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 pb-4">
+            <p className="text-base">Desejamos a você um dia maravilhoso, cheio de alegria e realizações!</p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="shadow-lg overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-primary to-accent/80 p-6 text-primary-foreground">
           <div className="flex flex-col sm:flex-row items-center gap-4">
