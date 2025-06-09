@@ -116,7 +116,7 @@ type MonthlyFeeEntry = {
 // Local state type for the dashboard's monthly payment registration form
 type DashboardMonthlyFeeFormState = {
   description: string;
-  amountString: string; // Use string for input binding
+  amountString: string; 
   paymentMethod: PaymentMethod;
   status: TransactionStatus;
   type: TransactionType;
@@ -1188,7 +1188,7 @@ export default function DashboardPage() {
                   <PlusCircle className="h-4 w-4" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[480px]">
+              <DialogContent className="max-w-sm sm:max-w-[480px]">
                 <DialogHeader>
                   <DialogTitle>Criar Novo Alerta</DialogTitle>
                   <DialogDescription>
@@ -1496,7 +1496,7 @@ export default function DashboardPage() {
           setAlertForm({ patientId: '', reason: '' });
         }
       }}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="max-w-sm sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Editar Alerta</DialogTitle>
             <DialogDescription>
