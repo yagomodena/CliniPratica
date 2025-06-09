@@ -1559,7 +1559,7 @@ export default function DashboardPage() {
 
 
       <Dialog open={isBirthdayMessageDialogOpen} onOpenChange={setIsBirthdayMessageDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Mensagem de Aniversário</DialogTitle>
             <DialogDescription>
@@ -1607,7 +1607,7 @@ export default function DashboardPage() {
       </Dialog>
 
       <Dialog open={isWhatsAppMonthlyFeeDialogOpen} onOpenChange={setIsWhatsAppMonthlyFeeDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Mensagem de Mensalidade</DialogTitle>
             <DialogDescription>
