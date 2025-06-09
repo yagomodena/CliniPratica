@@ -1672,45 +1672,45 @@ export default function DashboardPage() {
               setTransactionFormForDashboardMonthlyFee(initialDashboardMonthlyFeeFormState);
           }
       }}>
-          <DialogContent className="sm:max-w-[520px]">
+          <DialogContent className="w-[90vw] max-w-md sm:max-w-[520px]">
             <DialogHeader>
               <DialogTitle>Registrar Pagamento de Mensalidade</DialogTitle>
               <DialogDescription>Confirme os dados para registrar o pagamento da mensalidade de <strong>{selectedPatientForMonthlyPaymentDashboard?.patientName}</strong>.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSaveDashboardMonthlyPayment} className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="dashMonthlyPaymentDescription" className="text-right col-span-1">Descrição*</Label>
-                <Input id="dashMonthlyPaymentDescription" value={transactionFormForDashboardMonthlyFee.description} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, description: e.target.value }))} className="col-span-3" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="dashMonthlyPaymentDescription" className="text-left sm:text-right sm:col-span-1">Descrição*</Label>
+                <Input id="dashMonthlyPaymentDescription" value={transactionFormForDashboardMonthlyFee.description} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, description: e.target.value }))} className="col-span-full sm:col-span-3" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="dashMonthlyPaymentAmount" className="text-right col-span-1">Valor (R$)*</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="dashMonthlyPaymentAmount" className="text-left sm:text-right sm:col-span-1">Valor (R$)*</Label>
                 <Input 
                   id="dashMonthlyPaymentAmount" 
                   type="number" 
                   step="0.01" 
                   value={transactionFormForDashboardMonthlyFee.amountString} 
                   onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, amountString: e.target.value }))} 
-                  className="col-span-3"
+                  className="col-span-full sm:col-span-3"
                   placeholder="0.00"
                 />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="dashMonthlyPaymentDate" className="text-right col-span-1">Data Pagamento*</Label>
-                <Input id="dashMonthlyPaymentDate" type="date" value={transactionFormForDashboardMonthlyFee.date} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, date: e.target.value}))} className="col-span-3" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="dashMonthlyPaymentDate" className="text-left sm:text-right sm:col-span-1">Data Pagamento*</Label>
+                <Input id="dashMonthlyPaymentDate" type="date" value={transactionFormForDashboardMonthlyFee.date} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, date: e.target.value}))} className="col-span-full sm:col-span-3" />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="dashMonthlyPaymentMethod" className="text-right col-span-1">Método*</Label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="dashMonthlyPaymentMethod" className="text-left sm:text-right sm:col-span-1">Método*</Label>
                 <Select value={transactionFormForDashboardMonthlyFee.paymentMethod} onValueChange={(value) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, paymentMethod: value as PaymentMethod}))}>
-                  <SelectTrigger id="dashMonthlyPaymentMethod" className="col-span-3"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="dashMonthlyPaymentMethod" className="col-span-full sm:col-span-3"><SelectValue /></SelectTrigger>
                   <SelectContent>{paymentMethods.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
                <Input type="hidden" value={transactionFormForDashboardMonthlyFee.status} />
                <Input type="hidden" value={transactionFormForDashboardMonthlyFee.type} />
                <Input type="hidden" value={transactionFormForDashboardMonthlyFee.patientId} />
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="dashMonthlyPaymentNotes" className="text-right col-span-1 pt-2">Observações</Label>
-                <Textarea id="dashMonthlyPaymentNotes" value={transactionFormForDashboardMonthlyFee.notes} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, notes: e.target.value}))} className="col-span-3" rows={2} placeholder="Detalhes adicionais"/>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                <Label htmlFor="dashMonthlyPaymentNotes" className="text-left sm:text-right sm:col-span-1 pt-0 sm:pt-2">Observações</Label>
+                <Textarea id="dashMonthlyPaymentNotes" value={transactionFormForDashboardMonthlyFee.notes} onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({...prev, notes: e.target.value}))} className="col-span-full sm:col-span-3" rows={2} placeholder="Detalhes adicionais"/>
               </div>
               <DialogFooter>
                 <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
