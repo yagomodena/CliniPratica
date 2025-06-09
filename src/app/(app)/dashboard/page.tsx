@@ -1197,8 +1197,8 @@ export default function DashboardPage() {
                 </DialogHeader>
                 <form onSubmit={handleAddAlert}>
                   <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="alertPatientId" className="text-right">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                      <Label htmlFor="alertPatientId" className="sm:text-right">
                         Paciente*
                       </Label>
                       <Select
@@ -1206,7 +1206,7 @@ export default function DashboardPage() {
                         onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
 
                       >
-                        <SelectTrigger className="col-span-3">
+                        <SelectTrigger className="sm:col-span-3">
                           <SelectValue placeholder="Selecione o paciente" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1224,15 +1224,15 @@ export default function DashboardPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid grid-cols-4 items-start gap-4">
-                      <Label htmlFor="alertReason" className="text-right pt-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                      <Label htmlFor="alertReason" className="sm:text-right sm:pt-2">
                         Motivo*
                       </Label>
                       <Textarea
                         id="alertReason"
                         value={alertForm.reason}
                         onChange={(e) => handleAlertFormInputChange('reason', e.target.value)}
-                        className="col-span-3"
+                        className="sm:col-span-3"
                         rows={3}
                         placeholder="Descreva o alerta (ex: Verificar exame, Agendar retorno urgente)"
 
@@ -1505,8 +1505,8 @@ export default function DashboardPage() {
           </DialogHeader>
           <form onSubmit={handleEditAlert}>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="editAlertPatientId" className="text-right">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
+                <Label htmlFor="editAlertPatientId" className="sm:text-right">
                   Paciente*
                 </Label>
                 <Select
@@ -1514,7 +1514,7 @@ export default function DashboardPage() {
                   onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
 
                 >
-                  <SelectTrigger className="col-span-3">
+                  <SelectTrigger className="sm:col-span-3">
                     <SelectValue placeholder="Selecione o paciente" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1532,15 +1532,15 @@ export default function DashboardPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="editAlertReason" className="text-right pt-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
+                <Label htmlFor="editAlertReason" className="sm:text-right sm:pt-2">
                   Motivo*
                 </Label>
                 <Textarea
                   id="editAlertReason"
                   value={alertForm.reason}
                   onChange={(e) => handleAlertFormInputChange('reason', e.target.value)}
-                  className="col-span-3"
+                  className="sm:col-span-3"
                   rows={3}
                   placeholder="Descreva o alerta"
 
@@ -1644,7 +1644,7 @@ export default function DashboardPage() {
             )}
              {(whatsAppMonthlyFeeMsgType === 'overdue' && selectedPatientForWhatsAppMonthlyFee) && (
               <Card className="bg-muted/50"><CardContent className="p-3 text-sm text-muted-foreground">
-                <p>Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem? Identificamos que sua mensalidade de R${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}, vencida em ${format(selectedPatientForWhatsAppMonthlyFee.dueDate, 'dd/MM/yyyy', { locale: ptBR })}, está em atraso. Por favor, regularize sua situação.</p>
+                <p>Olá {selectedPatientForWhatsAppMonthlyFee.patientName}, tudo bem? Identificamos que sua mensalidade de R$${selectedPatientForWhatsAppMonthlyFee.amount.toFixed(2)}, vencida em ${format(selectedPatientForWhatsAppMonthlyFee.dueDate, 'dd/MM/yyyy', { locale: ptBR })}, está em atraso. Por favor, regularize sua situação.</p>
               </CardContent></Card>
             )}
             {whatsAppMonthlyFeeMsgType === 'custom' && (
