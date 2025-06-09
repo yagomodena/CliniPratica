@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation'; // Added usePathname
 import { Button } from '@/components/ui/button';
 import { LogOut, UserCircle } from 'lucide-react';
 import { Logo } from '@/components/icons/logo';
@@ -14,19 +14,31 @@ interface PatientPortalLayoutProps {
 
 export default function PatientPortalLayout({ children }: PatientPortalLayoutProps) {
   const router = useRouter();
+  const pathname = usePathname(); // Get current pathname
   const [patientName, setPatientName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const storedPatientId = localStorage.getItem('patientPortalId');
     const storedPatientName = localStorage.getItem('patientName');
-    if (!storedPatientId) {
-      router.replace('/portal-paciente/login');
-    } else {
+
+    if (storedPatientId) {
+      // Se há um ID de paciente, estamos "logados".
+      // Definimos o nome e paramos o carregamento para mostrar o conteúdo (dashboard).
       setPatientName(storedPatientName || 'Paciente');
       setIsLoading(false);
+    } else {
+      // Se NÃO há ID de paciente:
+      if (pathname !== '/portal-paciente/login') {
+        // E não estamos na página de login, então redirecionamos para lá.
+        router.replace('/portal-paciente/login');
+        // Neste caso, o redirecionamento tratará da próxima renderização.
+      } else {
+        // E ESTAMOS na página de login, então é o lugar certo. Paramos o carregamento.
+        setIsLoading(false);
+      }
     }
-  }, [router]);
+  }, [router, pathname]); // Dependencies: router and pathname
 
   const handleLogout = () => {
     localStorage.removeItem('patientPortalId');
