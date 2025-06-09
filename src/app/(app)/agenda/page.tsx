@@ -1572,7 +1572,7 @@ export default function AgendaPage() {
       </AlertDialog>
 
       <Dialog open={isConfirmWhatsAppDialogOpen} onOpenChange={setIsConfirmWhatsAppDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
           <DialogHeader><DialogTitle>Mensagem de Confirmação</DialogTitle><DialogDescription>Enviar para {selectedApptForWhatsApp?.patientName}. Tel: {isFetchingPatientPhone ? "Carregando..." : (whatsAppPatientDetails.phone || "Não cadastrado")}</DialogDescription></DialogHeader>
           <div className="space-y-4 py-4">
             <RadioGroup value={whatsAppMsgType} onValueChange={(value) => setWhatsAppMsgType(value as 'predefined' | 'custom')}>
