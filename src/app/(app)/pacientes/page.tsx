@@ -126,7 +126,7 @@ export default function PacientesPage() {
     status: 'Ativo',
     objetivoPaciente: '',
     hasMonthlyFee: false,
-    monthlyFeeAmount: undefined, 
+    monthlyFeeAmount: undefined,
     monthlyFeeDueDate: 1,
   });
 
@@ -352,8 +352,8 @@ export default function PacientesPage() {
         history: [],
         documents: [],
         hasMonthlyFee: newPatient.hasMonthlyFee || false,
-        monthlyFeeAmount: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeAmount || 0) : null, // Save null if no fee
-        monthlyFeeDueDate: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeDueDate || 1) : null, // Save null if no fee
+        monthlyFeeAmount: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeAmount || 0) : null,
+        monthlyFeeDueDate: newPatient.hasMonthlyFee ? (newPatient.monthlyFeeDueDate || 1) : null,
       });
 
       toast({ title: "Sucesso!", description: `Paciente ${newPatient.name} adicionado.`, variant: "success" });
@@ -579,7 +579,7 @@ export default function PacientesPage() {
             if (isOpen && patientObjectives.length > 0 && !newPatient.objetivoPaciente) {
                 setNewPatient(prev => ({ ...prev, objetivoPaciente: getFirstActiveObjectiveName() || '' }));
             }
-            if (!isOpen) { 
+            if (!isOpen) {
                 setNewPatient({ name: '', email: '', phone: '', dob: '', address: '', status: 'Ativo', objetivoPaciente: getFirstActiveObjectiveName(), hasMonthlyFee: false, monthlyFeeAmount: undefined, monthlyFeeDueDate: 1 });
             }
         }}>
@@ -589,7 +589,7 @@ export default function PacientesPage() {
               Novo Paciente
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md sm:max-w-lg">
+          <DialogContent className="w-[90vw] max-w-sm sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Adicionar Novo Paciente</DialogTitle>
               <DialogDescription>
@@ -865,7 +865,7 @@ export default function PacientesPage() {
       </Card>
 
       <Dialog open={isAddObjectiveDialogOpen} onOpenChange={setIsAddObjectiveDialogOpen}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="w-[90vw] max-w-xs sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Adicionar Novo Objetivo</DialogTitle>
             <DialogDescription>Insira o nome do novo objetivo do paciente.</DialogDescription>
@@ -882,7 +882,7 @@ export default function PacientesPage() {
       </Dialog>
 
       <Dialog open={isManageObjectivesDialogOpen} onOpenChange={setIsManageObjectivesDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[90vw] max-w-sm sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Gerenciar Objetivos do Paciente</DialogTitle>
             <DialogDescription>Edite, altere o status ou exclua os objetivos.</DialogDescription>
