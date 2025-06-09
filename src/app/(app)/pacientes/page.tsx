@@ -589,7 +589,7 @@ export default function PacientesPage() {
               Novo Paciente
             </Button>
           </DialogTrigger>
-          <DialogContent className="w-[90vw] max-w-sm sm:max-w-lg">
+          <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Adicionar Novo Paciente</DialogTitle>
               <DialogDescription>
@@ -959,3 +959,4 @@ export default function PacientesPage() {
     </div>
   );
 }
+
