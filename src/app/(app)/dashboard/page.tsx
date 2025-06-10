@@ -205,6 +205,7 @@ export default function DashboardPage() {
 
   const isFreePlan = currentUserData?.plano === 'Gratuito';
   const isProfessionalOrClinicPlan = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
+  const canSendWhatsAppMessages = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
 
 
   useEffect(() => {
@@ -1312,22 +1313,24 @@ export default function DashboardPage() {
                       {patient.name}
                     </span>
                     <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-auto p-1 text-green-600 hover:text-green-700"
-                          title={patient.phone ? "Enviar mensagem no WhatsApp" : "Telefone não disponível"}
-                          disabled={!patient.phone}
-                          onClick={() => {
-                            if (patient.phone) {
-                                openBirthdayMessageDialog(patient);
-                            } else {
-                                toast({ title: "Telefone Indisponível", description: `Telefone de ${patient.name} não cadastrado.`, variant: "warning" });
-                            }
-                          }}
-                        >
-                          <MessageSquareIcon className="h-4 w-4" />
-                        </Button>
+                       {canSendWhatsAppMessages && (
+                            <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-1 text-green-600 hover:text-green-700"
+                            title={patient.phone ? "Enviar mensagem no WhatsApp" : "Telefone não disponível"}
+                            disabled={!patient.phone}
+                            onClick={() => {
+                                if (patient.phone) {
+                                    openBirthdayMessageDialog(patient);
+                                } else {
+                                    toast({ title: "Telefone Indisponível", description: `Telefone de ${patient.name} não cadastrado.`, variant: "warning" });
+                                }
+                            }}
+                            >
+                            <MessageSquareIcon className="h-4 w-4" />
+                            </Button>
+                        )}
                       <Link
                         href={`/pacientes/${patient.slug}`}
                         passHref
@@ -1412,16 +1415,18 @@ export default function DashboardPage() {
                                 <Badge variant={getStatusBadgeVariant(entry.calculatedStatus)} className="text-xs capitalize h-6">
                                     {entry.calculatedStatus}
                                 </Badge>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-green-600 hover:text-green-700"
-                                  title="Enviar mensagem WhatsApp"
-                                  disabled={!entry.patientPhone}
-                                  onClick={() => openWhatsAppMonthlyFeeDialog(entry)}
-                                >
-                                    <MessageSquareIcon className="h-4 w-4" />
-                                </Button>
+                                {canSendWhatsAppMessages && (
+                                    <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-green-600 hover:text-green-700"
+                                    title="Enviar mensagem WhatsApp"
+                                    disabled={!entry.patientPhone}
+                                    onClick={() => openWhatsAppMonthlyFeeDialog(entry)}
+                                    >
+                                        <MessageSquareIcon className="h-4 w-4" />
+                                    </Button>
+                                )}
                                 {entry.calculatedStatus === 'Pendente' || entry.calculatedStatus === 'Atrasado' ? (
                                     <Button
                                         variant="ghost"

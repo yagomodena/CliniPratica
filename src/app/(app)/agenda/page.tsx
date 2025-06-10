@@ -1128,6 +1128,7 @@ export default function AgendaPage() {
   };
 
   const activeAppointmentTypes = appointmentTypes.filter(t => t.status === 'active');
+  const canSendWhatsAppMessages = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
 
   if (!clientToday || !selectedDate || !clientNow || isLoadingAppointments || isLoadingTypes || isLoadingClinicUsers) {
     return (
@@ -1330,7 +1331,7 @@ export default function AgendaPage() {
                   </div>
                   <div className="flex items-center gap-1 flex-wrap sm:flex-nowrap justify-end">
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-100" onClick={() => handleOpenEditDialog(appt, formattedDateKey)} title="Editar" disabled={appt.status === 'cancelado' || appt.status === 'realizado' || (clientNow && isBefore(appointmentDateTime, clientNow) && displayStatus !== 'Atrasado')}><Edit className="h-4 w-4" /></Button>
-                    {currentUserData?.plano !== 'Gratuito' && (
+                    {canSendWhatsAppMessages && (
                        <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:bg-green-100" onClick={() => openConfirmWhatsAppDialog(appt)} title="Mensagem" disabled={appt.status !== 'agendado' || (clientNow && isBefore(appointmentDateTime, clientNow) && displayStatus !== 'Atrasado')}><MessageSquare className="h-4 w-4" /></Button>
                     )}
                      <DropdownMenu>

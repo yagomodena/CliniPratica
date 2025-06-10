@@ -28,7 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger here
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -579,6 +579,7 @@ export default function PacientesPage() {
   const generateSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
   const showMonthlyFeeFields = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
+  const canSendWhatsAppMessages = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
 
   const handleOpenSendLoginInfoDialog = (patient: Patient) => {
     setSelectedPatientForLoginInfo(patient);
@@ -839,16 +840,18 @@ export default function PacientesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-teal-600 hover:bg-teal-100 h-8 w-8"
-                      title="Enviar Info de Login"
-                      onClick={() => handleOpenSendLoginInfoDialog(patient)}
-                      disabled={!patient.phone}
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                    </Button>
+                    {canSendWhatsAppMessages && (
+                        <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-teal-600 hover:bg-teal-100 h-8 w-8"
+                        title="Enviar Info de Login"
+                        onClick={() => handleOpenSendLoginInfoDialog(patient)}
+                        disabled={!patient.phone}
+                        >
+                        <MessageSquare className="h-4 w-4" />
+                        </Button>
+                    )}
                     <Button asChild variant="ghost" size="icon" className="text-blue-600 hover:bg-blue-100 h-8 w-8" title="Ver Detalhes">
                       <Link href={`/pacientes/${generateSlug(patient.name)}`}>
                         <Eye className="h-4 w-4" />
