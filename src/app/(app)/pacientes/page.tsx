@@ -1,11 +1,11 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, FormEvent } from 'react';
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Search, UserPlus, Trash2, Eye, UserCheck, UserX, Save, X, Plus, Pencil } from "lucide-react";
+import { PlusCircle, Search, UserPlus, Trash2, Eye, UserCheck, UserX, Save, X, Plus, Pencil, Send, MessageSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,7 +28,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -116,6 +115,10 @@ export default function PacientesPage() {
   const [isDeleteObjectiveConfirmOpen, setIsDeleteObjectiveConfirmOpen] = useState(false);
   const [objectiveToDelete, setObjectiveToDelete] = useState<PatientObjectiveObject | null>(null);
 
+  const [isSendLoginInfoDialogOpen, setIsSendLoginInfoDialogOpen] = useState(false);
+  const [selectedPatientForLoginInfo, setSelectedPatientForLoginInfo] = useState<Patient | null>(null);
+  const [baseUrl, setBaseUrl] = useState('');
+
 
   const [newPatient, setNewPatient] = useState<Partial<Omit<Patient, 'internalId'>>>({
     name: '',
@@ -129,6 +132,12 @@ export default function PacientesPage() {
     monthlyFeeAmount: undefined,
     monthlyFeeDueDate: 1,
   });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setBaseUrl(window.location.origin);
+    }
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -570,6 +579,44 @@ export default function PacientesPage() {
 
   const showMonthlyFeeFields = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
 
+  const handleOpenSendLoginInfoDialog = (patient: Patient) => {
+    setSelectedPatientForLoginInfo(patient);
+    setIsSendLoginInfoDialogOpen(true);
+  };
+
+  const getLoginMessage = (patient: Patient | null) => {
+    if (!patient || !baseUrl) return '';
+    const professionalName = currentUserData?.nomeCompleto || 'Seu profissional';
+    const portalUrl = `${baseUrl}/portal-paciente/login`;
+    return `Olá ${patient.name}, tudo bem?\n\nAqui estão seus dados de acesso ao nosso Portal do Paciente, onde você pode acompanhar suas evoluções, agendamentos e outras informações importantes:\n\n🔗 Link do Portal: ${portalUrl}\n🔑 Seu ID de Acesso: ${patient.internalId}\n\nBasta clicar no link (ou copiar e colar no seu navegador) e usar seu ID para entrar.\n\nAtenciosamente,\n${professionalName}`;
+  };
+
+  const handleSendLoginInfoViaWhatsApp = () => {
+    if (!selectedPatientForLoginInfo || !selectedPatientForLoginInfo.phone) {
+      toast({ title: "Erro", description: "Telefone do paciente não cadastrado.", variant: "destructive" });
+      return;
+    }
+    const message = getLoginMessage(selectedPatientForLoginInfo);
+    const cleanPhone = selectedPatientForLoginInfo.phone.replace(/\D/g, '');
+    const whatsappLink = `https://wa.me/${cleanPhone.startsWith('55') ? cleanPhone : '55' + cleanPhone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappLink, '_blank');
+    setIsSendLoginInfoDialogOpen(false);
+  };
+
+  const handleCopyLoginMessage = () => {
+    if (!selectedPatientForLoginInfo) return;
+    const message = getLoginMessage(selectedPatientForLoginInfo);
+    navigator.clipboard.writeText(message)
+      .then(() => {
+        toast({ title: "Mensagem Copiada!", description: "As informações de login foram copiadas para a área de transferência.", variant: "success" });
+      })
+      .catch(err => {
+        console.error('Erro ao copiar mensagem: ', err);
+        toast({ title: "Erro ao Copiar", description: "Não foi possível copiar a mensagem.", variant: "destructive" });
+      });
+  };
+
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -791,6 +838,16 @@ export default function PacientesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-teal-600 hover:bg-teal-100 h-8 w-8"
+                      title="Enviar Info de Login"
+                      onClick={() => handleOpenSendLoginInfoDialog(patient)}
+                      disabled={!patient.phone}
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                    </Button>
                     <Button asChild variant="ghost" size="icon" className="text-blue-600 hover:bg-blue-100 h-8 w-8" title="Ver Detalhes">
                       <Link href={`/pacientes/${generateSlug(patient.name)}`}>
                         <Eye className="h-4 w-4" />
@@ -956,7 +1013,41 @@ export default function PacientesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <Dialog open={isSendLoginInfoDialogOpen} onOpenChange={setIsSendLoginInfoDialogOpen}>
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Enviar Informações de Login para {selectedPatientForLoginInfo?.name}</DialogTitle>
+            <DialogDescription>
+              Revise a mensagem abaixo e envie para o paciente via WhatsApp ou copie para enviar por outro meio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <Card className="bg-muted/50">
+              <CardContent className="p-4 text-sm whitespace-pre-wrap">
+                {getLoginMessage(selectedPatientForLoginInfo)}
+              </CardContent>
+            </Card>
+            <p className="text-xs text-muted-foreground">
+              Certifique-se de que o paciente possui o WhatsApp e o número de telefone está correto antes de enviar.
+              A URL do portal é: <code className="bg-muted px-1 py-0.5 rounded">{baseUrl}/portal-paciente/login</code>
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCopyLoginMessage}>Copiar Mensagem</Button>
+            <Button
+              onClick={handleSendLoginInfoViaWhatsApp}
+              disabled={!selectedPatientForLoginInfo?.phone}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              <Send className="mr-2 h-4 w-4" /> Enviar via WhatsApp
+            </Button>
+            <DialogClose asChild>
+              <Button variant="secondary">Fechar</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
-
