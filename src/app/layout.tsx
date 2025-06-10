@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'CliniPrática Landing',
+  title: 'CliniPrática',
   description: 'Acompanhe seus pacientes com mais organização e praticidade.',
   icons: {
     icon: '/LOGO_MINIMALISTA.png', // Define o favicon principal
