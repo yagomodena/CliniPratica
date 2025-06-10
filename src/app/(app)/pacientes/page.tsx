@@ -118,7 +118,6 @@ export default function PacientesPage() {
 
   const [isSendLoginInfoDialogOpen, setIsSendLoginInfoDialogOpen] = useState(false);
   const [selectedPatientForLoginInfo, setSelectedPatientForLoginInfo] = useState<Patient | null>(null);
-  const [baseUrl, setBaseUrl] = useState('');
 
 
   const [newPatient, setNewPatient] = useState<Partial<Omit<Patient, 'internalId'>>>({
@@ -133,12 +132,6 @@ export default function PacientesPage() {
     monthlyFeeAmount: undefined,
     monthlyFeeDueDate: 1,
   });
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setBaseUrl(window.location.origin);
-    }
-  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -587,9 +580,9 @@ export default function PacientesPage() {
   };
 
   const getLoginMessage = (patient: Patient | null) => {
-    if (!patient || !baseUrl) return '';
+    if (!patient) return '';
     const professionalName = currentUserData?.nomeCompleto || 'Seu profissional';
-    const portalUrl = `${baseUrl}/portal-paciente/login`;
+    const portalUrl = 'https://clinipratica.com/portal-paciente/login';
     return `Olá ${patient.name}, tudo bem?\n\nAqui estão seus dados de acesso ao nosso Portal do Paciente, onde você pode acompanhar suas evoluções, agendamentos e outras informações importantes:\n\n🔗 Link do Portal: ${portalUrl}\n🔑 Seu ID de Acesso: ${patient.internalId}\n\nBasta clicar no link (ou copiar e colar no seu navegador) e usar seu ID para entrar.\n\nAtenciosamente,\n${professionalName}`;
   };
 
@@ -1033,7 +1026,7 @@ export default function PacientesPage() {
             </Card>
             <p className="text-xs text-muted-foreground">
               Certifique-se de que o paciente possui o WhatsApp e o número de telefone está correto antes de enviar.
-              A URL do portal é: <code className="bg-muted px-1 py-0.5 rounded">{baseUrl}/portal-paciente/login</code>
+              A URL do portal é: <code className="bg-muted px-1 py-0.5 rounded">https://clinipratica.com/portal-paciente/login</code>
             </p>
           </div>
           <DialogFooter>
@@ -1055,3 +1048,4 @@ export default function PacientesPage() {
     </div>
   );
 }
+
