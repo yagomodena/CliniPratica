@@ -57,6 +57,7 @@ export const plans: Plan[] = [
       { text: 'Todas as funcionalidades do Essencial', included: true },
       { text: 'Financeiro Completo (inclui contas a receber por paciente)', included: true },
       { text: 'Mensagens por WhatsApp (ilimitado)', included: true },
+      { text: 'Portal do paciente', included: true },
       { text: 'Relatórios avançados (todos)', included: true },
       { text: 'Suporte prioritário', included: true },
     ],
