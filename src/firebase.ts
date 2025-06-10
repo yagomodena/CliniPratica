@@ -7,7 +7,6 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 // Configuração do seu projeto Firebase
-// Make sure to export firebaseConfig so it can be used for secondary app instances
 export const firebaseConfig = {
   apiKey: "AIzaSyCoqOk3q5nfNRDL1tY2abLlTa5nhqq1TDU",
   authDomain: "clinipratica-d5519.firebaseapp.com",
