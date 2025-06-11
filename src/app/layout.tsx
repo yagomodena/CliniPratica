@@ -13,8 +13,7 @@ export const metadata: Metadata = {
   title: 'CliniPrática',
   description: 'Acompanhe seus pacientes com mais organização e praticidade.',
   icons: {
-    icon: '/LOGO_MINIMALISTA.png', // Define o favicon principal
-    // apple: '/apple-touch-icon.png', // Você pode adicionar outros ícones aqui se necessário
+    icon: '/favicon.ico',
   },
 };
 
