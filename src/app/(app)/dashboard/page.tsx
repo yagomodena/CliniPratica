@@ -1035,11 +1035,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-orange-600 dark:text-orange-300/90">
-              Sua assinatura está com o pagamento pendente. Por favor, verifique sua conta do Mercado Pago para regularizar a situação e evitar a interrupção dos serviços.
+              Sua assinatura está com o pagamento pendente. Se você já realizou o pagamento, por favor, aguarde até 24 horas para a atualização do status em nosso sistema. Caso contrário, entre em contato com o suporte para regularizar.
             </p>
-            <Button variant="link" className="p-0 h-auto mt-2 text-orange-700 hover:text-orange-800 dark:text-orange-300 dark:hover:text-orange-200" asChild>
-              <Link href="/configuracoes?tab=plano">Verificar Assinatura</Link>
-            </Button>
+            {/* Button removed as requested */}
           </CardContent>
         </Card>
       )}
@@ -1189,7 +1187,7 @@ export default function DashboardPage() {
                   <PlusCircle className="h-4 w-4" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-sm sm:max-w-[480px]">
+              <DialogContent className="w-[90vw] max-w-md sm:max-w-[480px]">
                 <DialogHeader>
                   <DialogTitle>Criar Novo Alerta</DialogTitle>
                   <DialogDescription>
@@ -1199,7 +1197,7 @@ export default function DashboardPage() {
                 <form onSubmit={handleAddAlert}>
                   <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
-                      <Label htmlFor="alertPatientId" className="sm:text-right">
+                      <Label htmlFor="alertPatientId" className="text-left sm:text-right sm:col-span-1">
                         Paciente*
                       </Label>
                       <Select
@@ -1207,7 +1205,7 @@ export default function DashboardPage() {
                         onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
 
                       >
-                        <SelectTrigger className="sm:col-span-3">
+                        <SelectTrigger className="col-span-full sm:col-span-3">
                           <SelectValue placeholder="Selecione o paciente" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1226,14 +1224,14 @@ export default function DashboardPage() {
                       </Select>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
-                      <Label htmlFor="alertReason" className="sm:text-right sm:pt-2">
+                      <Label htmlFor="alertReason" className="text-left sm:text-right sm:col-span-1 pt-0 sm:pt-2">
                         Motivo*
                       </Label>
                       <Textarea
                         id="alertReason"
                         value={alertForm.reason}
                         onChange={(e) => handleAlertFormInputChange('reason', e.target.value)}
-                        className="sm:col-span-3"
+                        className="col-span-full sm:col-span-3"
                         rows={3}
                         placeholder="Descreva o alerta (ex: Verificar exame, Agendar retorno urgente)"
 
@@ -1501,7 +1499,7 @@ export default function DashboardPage() {
           setAlertForm({ patientId: '', reason: '' });
         }
       }}>
-        <DialogContent className="max-w-sm sm:max-w-[480px]">
+        <DialogContent className="w-[90vw] max-w-md sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Editar Alerta</DialogTitle>
             <DialogDescription>
@@ -1511,7 +1509,7 @@ export default function DashboardPage() {
           <form onSubmit={handleEditAlert}>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
-                <Label htmlFor="editAlertPatientId" className="sm:text-right">
+                <Label htmlFor="editAlertPatientId" className="text-left sm:text-right sm:col-span-1">
                   Paciente*
                 </Label>
                 <Select
@@ -1519,7 +1517,7 @@ export default function DashboardPage() {
                   onValueChange={(value) => handleAlertFormSelectChange('patientId', value)}
 
                 >
-                  <SelectTrigger className="sm:col-span-3">
+                  <SelectTrigger className="col-span-full sm:col-span-3">
                     <SelectValue placeholder="Selecione o paciente" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1538,14 +1536,14 @@ export default function DashboardPage() {
                 </Select>
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-start sm:gap-4">
-                <Label htmlFor="editAlertReason" className="sm:text-right sm:pt-2">
+                <Label htmlFor="editAlertReason" className="text-left sm:text-right sm:col-span-1 pt-0 sm:pt-2">
                   Motivo*
                 </Label>
                 <Textarea
                   id="editAlertReason"
                   value={alertForm.reason}
                   onChange={(e) => handleAlertFormInputChange('reason', e.target.value)}
-                  className="sm:col-span-3"
+                  className="col-span-full sm:col-span-3"
                   rows={3}
                   placeholder="Descreva o alerta"
 

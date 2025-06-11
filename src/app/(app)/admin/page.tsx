@@ -7,12 +7,20 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Loader2, Search, Users } from 'lucide-react';
+import { AlertTriangle, Loader2, Search, Users, ChevronDown, Edit } from 'lucide-react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { collection, getDocs, query, orderBy, where, getCountFromServer } from 'firebase/firestore';
-import { format, parseISO } from 'date-fns';
+import { collection, getDocs, query, orderBy, where, getCountFromServer, doc, updateDoc } from 'firebase/firestore';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from '@/hooks/use-toast';
 
 const ADMIN_EMAIL = 'yagobmodena1@gmail.com';
 
@@ -25,37 +33,19 @@ type SystemUser = {
   statusCobranca?: 'ativo' | 'pendente' | 'cancelado' | string;
   plano?: string;
   criadoEm?: any; // Firestore Timestamp or Date
-  patientCount?: number; // Nova propriedade
+  patientCount?: number;
 };
+
+const billingStatusOptions: Array<SystemUser['statusCobranca']> = ['ativo', 'pendente', 'cancelado'];
 
 export default function AdminPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      if (user) {
-        if (user.email === ADMIN_EMAIL) {
-          setIsAuthorized(true);
-          fetchSystemUsers();
-        } else {
-          setIsAuthorized(false);
-          setIsLoading(false);
-          router.push('/dashboard'); 
-        }
-      } else {
-        setIsAuthorized(false);
-        setIsLoading(false);
-        router.push('/login'); 
-      }
-    });
-    return () => unsubscribe();
-  }, [router]);
 
   const fetchSystemUsers = async () => {
     setIsLoading(true);
@@ -106,6 +96,28 @@ export default function AdminPage() {
     }
   };
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      if (user) {
+        if (user.email === ADMIN_EMAIL) {
+          setIsAuthorized(true);
+          fetchSystemUsers();
+        } else {
+          setIsAuthorized(false);
+          setIsLoading(false);
+          router.push('/dashboard'); 
+        }
+      } else {
+        setIsAuthorized(false);
+        setIsLoading(false);
+        router.push('/login'); 
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
+
+
   const filteredUsers = useMemo(() => {
     if (!searchTerm) return systemUsers;
     return systemUsers.filter(user =>
@@ -135,6 +147,21 @@ export default function AdminPage() {
     return 'default';
   }
 
+  const handleUpdateBillingStatus = async (userId: string, newStatus: string) => {
+    try {
+      const userDocRef = doc(db, 'usuarios', userId);
+      await updateDoc(userDocRef, {
+        statusCobranca: newStatus,
+        // updatedAt: serverTimestamp(), // Firestore serverTimestamp cannot be used directly in client-side updateDoc like this. Use new Date() or specific logic if needed.
+      });
+      toast({ title: "Sucesso!", description: `Status de cobrança do usuário atualizado para ${newStatus}.` });
+      fetchSystemUsers(); // Recarrega a lista de usuários para refletir a mudança
+    } catch (error) {
+      console.error("Erro ao atualizar status de cobrança:", error);
+      toast({ title: "Erro", description: "Não foi possível atualizar o status de cobrança.", variant: "destructive" });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[calc(100vh-200px)]">
@@ -157,6 +184,28 @@ export default function AdminPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-foreground">Administração de Usuários</h1>
+
+      <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle>Legenda dos Status de Cobrança</CardTitle>
+          <CardDescription>Referência rápida para os status de cobrança utilizados no sistema.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-4">
+          {billingStatusOptions.map((status) => (
+            <div key={status} className="flex items-center gap-2">
+              <Badge variant={getStatusCobrancaBadgeVariant(status)} className="capitalize text-sm px-3 py-1">
+                {status}
+              </Badge>
+              <span className="text-sm text-muted-foreground">
+                {status === 'ativo' && '- Assinatura regularizada.'}
+                {status === 'pendente' && '- Pagamento aguardando confirmação ou ação necessária.'}
+                {status === 'cancelado' && '- Assinatura interrompida.'}
+              </span>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+      
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle>Todos os Usuários do Sistema</CardTitle>
@@ -205,13 +254,33 @@ export default function AdminPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {user.statusCobranca ? (
-                          <Badge variant={getStatusCobrancaBadgeVariant(user.statusCobranca)} className="capitalize">
-                            {user.statusCobranca}
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">N/A</Badge>
-                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="capitalize w-full justify-between text-left font-normal px-2 py-1 h-auto text-xs sm:text-sm">
+                              {user.statusCobranca ? (
+                                <Badge variant={getStatusCobrancaBadgeVariant(user.statusCobranca)} className="capitalize">
+                                  {user.statusCobranca}
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary">N/A</Badge>
+                              )}
+                              <ChevronDown className="ml-1 h-3 w-3 opacity-50"/>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {billingStatusOptions.map((statusOption) => (
+                              <DropdownMenuItem
+                                key={statusOption}
+                                onClick={() => handleUpdateBillingStatus(user.id, statusOption as string)}
+                                disabled={user.statusCobranca === statusOption}
+                                className="capitalize"
+                              >
+                                <Edit className="mr-2 h-3 w-3" />
+                                {statusOption}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         {user.criadoEm ? format(user.criadoEm, 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'N/A'}
