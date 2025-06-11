@@ -1055,7 +1055,7 @@ export default function DashboardPage() {
                 : 'Seu período de teste gratuito termina hoje!'}
             </p>
             <p className="text-xs text-blue-500 dark:text-blue-400">
-              Após o término, será necessário escolher um plano pago para continuar utilizando todas as funcionalidades.
+              Após o término, a cobrança para o plano {currentUserData?.plano ? `"${currentUserData.plano}"` : "selecionado"} será iniciada para você continuar utilizando todas as funcionalidades.
             </p>
             <div className="flex flex-col sm:flex-row gap-2 pt-2">
                 <Button size="sm" variant="outline" className="border-blue-400 text-blue-600 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-800" onClick={() => setIsPlansModalOpen(true)}>
@@ -1164,7 +1164,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-yellow-600 dark:text-yellow-300/90">
-              Seu período de teste gratuito terminou. Para continuar acessando todas as funcionalidades do CliniPrática, por favor, escolha um dos nossos planos pagos.
+              Seu período de teste gratuito terminou. Para continuar acessando todas as funcionalidades do CliniPrática, por favor, escolha um dos nossos planos pagos ou entre em contato com o suporte.
             </p>
              <Button variant="default" size="sm" className="mt-3 bg-yellow-500 hover:bg-yellow-600 text-yellow-900" onClick={() => setIsPlansModalOpen(true)}>
               Escolher Plano
