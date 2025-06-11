@@ -32,6 +32,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger, // Added AlertDialogTrigger
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -1128,7 +1129,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-orange-600 dark:text-orange-300/90">
-              Sua assinatura está com o pagamento pendente. Se você já realizou o pagamento, por favor, aguarde até 24 horas para a atualização do status em nosso sistema. Caso contrário, entre em contato com o suporte para regularizar.
+               Sua assinatura está com o pagamento pendente. Se você já realizou o pagamento, por favor, aguarde até 24 horas para a atualização do status em nosso sistema. Caso contrário, entre em contato com o suporte para regularizar.
             </p>
           </CardContent>
         </Card>
@@ -1198,7 +1199,7 @@ export default function DashboardPage() {
               {isLoadingWeeklyAppointments ? (
                 <p className="text-sm text-muted-foreground text-center py-8">Carregando dados...</p>
               ) : (
-                <ChartContainer config={chartConfig} className="h-full w-full">
+                <ChartContainer config={chartConfigAppointments} className="h-full w-full">
                   <RechartsBarChart data={actualWeeklyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
