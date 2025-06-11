@@ -215,7 +215,7 @@ export default function AdminPage() {
               <span className="text-sm text-muted-foreground">
                 {status === 'ativo' && '- Assinatura regularizada.'}
                 {status === 'pendente' && '- Pagamento aguardando confirmação ou ação necessária.'}
-                {status === 'cancelado' && '- Assinatura interrompida ou teste cancelado.'}
+                {status === 'cancelado' && '- Assinatura interrompida ou conta bloqueada.'}
                 {status === 'trial' && '- Usuário em período de teste gratuito.'}
                 {status === 'trial_ended' && '- Período de teste finalizado, aguardando ação.'}
               </span>
@@ -247,7 +247,17 @@ export default function AdminPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nome Completo</TableHead><TableHead className="hidden md:table-cell">Empresa</TableHead><TableHead>E-mail</TableHead><TableHead className="hidden xl:table-cell">CPF</TableHead><TableHead className="hidden lg:table-cell">Telefone</TableHead><TableHead>Plano</TableHead><TableHead className="text-center">Pacientes</TableHead><TableHead>Pag. Pref.</TableHead><TableHead>Status Cobrança</TableHead><TableHead className="hidden sm:table-cell">Teste Até</TableHead><TableHead className="hidden sm:table-cell">Cadastrado em</TableHead>
+                    <TableHead>Nome Completo</TableHead>
+                    <TableHead className="hidden md:table-cell">Empresa</TableHead>
+                    <TableHead>E-mail</TableHead>
+                    <TableHead className="hidden lg:table-cell">CPF</TableHead>
+                    <TableHead className="hidden lg:table-cell">Telefone</TableHead>
+                    <TableHead>Plano</TableHead>
+                    <TableHead className="text-center">Pacientes</TableHead>
+                    <TableHead>Pag. Pref.</TableHead>
+                    <TableHead>Status Cobrança</TableHead>
+                    <TableHead className="hidden sm:table-cell">Teste Até</TableHead>
+                    <TableHead className="hidden sm:table-cell">Cadastrado em</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -256,7 +266,7 @@ export default function AdminPage() {
                       <TableCell className="font-medium">{user.nomeCompleto || 'N/A'}</TableCell>
                       <TableCell className="hidden md:table-cell">{user.nomeEmpresa || 'N/A'}</TableCell>
                       <TableCell>{user.email}</TableCell>
-                      <TableCell className="hidden xl:table-cell">{user.cpf || 'N/A'}</TableCell>
+                      <TableCell className="hidden lg:table-cell">{user.cpf || 'N/A'}</TableCell>
                       <TableCell className="hidden lg:table-cell">{user.telefone || 'N/A'}</TableCell>
                       <TableCell>{user.plano || 'N/A'}</TableCell>
                       <TableCell className="text-center">
@@ -321,3 +331,4 @@ export default function AdminPage() {
     </div>
   );
 }
+
