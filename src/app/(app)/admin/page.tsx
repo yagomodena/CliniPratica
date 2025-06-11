@@ -7,10 +7,10 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Loader2, Search, Users, ChevronDown, Edit, CalendarDays } from 'lucide-react'; // Added CalendarDays
+import { AlertTriangle, Loader2, Search, Users, ChevronDown, Edit, CalendarDays } from 'lucide-react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { collection, getDocs, query, orderBy, where, getCountFromServer, doc, updateDoc, Timestamp } from 'firebase/firestore'; // Added Timestamp
+import { collection, getDocs, query, orderBy, where, getCountFromServer, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -30,12 +30,12 @@ type SystemUser = {
   nomeEmpresa?: string;
   email?: string;
   telefone?: string;
-  cpf?: string; // Added CPF
-  paymentMethodPreference?: string; // Added paymentMethodPreference
-  statusCobranca?: 'ativo' | 'pendente' | 'cancelado' | 'trial' | 'trial_ended' | string; // Added new statuses
+  cpf?: string;
+  paymentMethodPreference?: string;
+  statusCobranca?: 'ativo' | 'pendente' | 'cancelado' | 'trial' | 'trial_ended' | string;
   plano?: string;
   criadoEm?: any;
-  trialEndsAt?: Timestamp | null; // Added trialEndsAt
+  trialEndsAt?: Timestamp | null;
   patientCount?: number;
 };
 
@@ -149,8 +149,8 @@ export default function AdminPage() {
       case 'ativo': return 'success';
       case 'pendente': return 'warning';
       case 'cancelado': return 'destructive';
-      case 'trial': return 'default'; // Blue for trial
-      case 'trial_ended': return 'secondary'; // Gray for trial_ended
+      case 'trial': return 'default';
+      case 'trial_ended': return 'secondary';
       default: return 'secondary';
     }
   };
@@ -247,17 +247,7 @@ export default function AdminPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nome Completo</TableHead>
-                    <TableHead className="hidden md:table-cell">Empresa</TableHead>
-                    <TableHead>E-mail</TableHead>
-                    <TableHead className="hidden xl:table-cell">CPF</TableHead>
-                    <TableHead className="hidden lg:table-cell">Telefone</TableHead>
-                    <TableHead>Plano</TableHead>
-                    <TableHead className="text-center">Pacientes</TableHead>
-                    <TableHead>Pag. Pref.</TableHead>
-                    <TableHead>Status Cobrança</TableHead>
-                    <TableHead className="hidden sm:table-cell">Teste Até</TableHead> {/* New Column */}
-                    <TableHead className="hidden sm:table-cell">Cadastrado em</TableHead>
+                    <TableHead>Nome Completo</TableHead><TableHead className="hidden md:table-cell">Empresa</TableHead><TableHead>E-mail</TableHead><TableHead className="hidden xl:table-cell">CPF</TableHead><TableHead className="hidden lg:table-cell">Telefone</TableHead><TableHead>Plano</TableHead><TableHead className="text-center">Pacientes</TableHead><TableHead>Pag. Pref.</TableHead><TableHead>Status Cobrança</TableHead><TableHead className="hidden sm:table-cell">Teste Até</TableHead><TableHead className="hidden sm:table-cell">Cadastrado em</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
