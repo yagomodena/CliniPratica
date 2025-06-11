@@ -32,7 +32,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -126,7 +126,7 @@ type MonthlyFeeEntry = {
 
 type DashboardMonthlyFeeFormState = {
   description: string;
-  amountString: string; 
+  amountString: string;
   paymentMethod: PaymentMethod;
   status: TransactionStatus;
   type: TransactionType;
@@ -202,10 +202,10 @@ export default function DashboardPage() {
   const [selectedPatientForWhatsAppMonthlyFee, setSelectedPatientForWhatsAppMonthlyFee] = useState<MonthlyFeeEntry | null>(null);
   const [whatsAppMonthlyFeeMsgType, setWhatsAppMonthlyFeeMsgType] = useState<'due_soon' | 'overdue' | 'custom'>('due_soon');
   const [customWhatsAppMonthlyFeeMsg, setCustomWhatsAppMonthlyFeeMsg] = useState('');
-  
+
   const [isRegisterMonthlyPaymentDashboardDialogOpen, setIsRegisterMonthlyPaymentDashboardDialogOpen] = useState(false);
   const [selectedPatientForMonthlyPaymentDashboard, setSelectedPatientForMonthlyPaymentDashboard] = useState<MonthlyFeeEntry | null>(null);
-  const [transactionFormForDashboardMonthlyFee, setTransactionFormForDashboardMonthlyFee] = 
+  const [transactionFormForDashboardMonthlyFee, setTransactionFormForDashboardMonthlyFee] =
     useState<DashboardMonthlyFeeFormState>(initialDashboardMonthlyFeeFormState);
 
 
@@ -247,7 +247,7 @@ export default function DashboardPage() {
             setCurrentUserData({ ...data, uid: user.uid, plano: data.plano || "Gratuito" });
             setBillingStatus(data.statusCobranca || 'ativo');
             setIsPlanWarningVisible(data.plano === 'Gratuito' && data.statusCobranca !== 'trial'); // Show warning only if free and not in trial
-            
+
             // Calculate trial days remaining
             if (data.statusCobranca === 'trial' && data.trialEndsAt) {
                 const endsAtDate = (data.trialEndsAt as Timestamp).toDate();
@@ -851,7 +851,7 @@ export default function DashboardPage() {
 
   const getDaysUntilDue = (dueDate: Date): number | null => {
     if (!clientNow) return null;
-    if (isBefore(startOfDay(dueDate), startOfDay(clientNow))) return 0; 
+    if (isBefore(startOfDay(dueDate), startOfDay(clientNow))) return 0;
     return differenceInDays(startOfDay(dueDate), startOfDay(clientNow));
   };
 
@@ -885,7 +885,7 @@ export default function DashboardPage() {
       }
     } else if (whatsAppMonthlyFeeMsgType === 'overdue') {
       message = `Olá ${patientName}, tudo bem? Identificamos que sua mensalidade de R$${amount.toFixed(2)}, vencida em ${format(dueDate, 'dd/MM/yyyy', { locale: ptBR })}, está em atraso. Por favor, regularize sua situação.`;
-    } else { 
+    } else {
       if (!customWhatsAppMonthlyFeeMsg.trim()) {
         toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning"});
         return;
@@ -908,7 +908,7 @@ export default function DashboardPage() {
     setTransactionFormForDashboardMonthlyFee({
         description: `Mensalidade ${feeEntry.patientName} - ${format(feeEntry.dueDate, 'MMMM/yyyy', {locale: ptBR})}`,
         amountString: feeEntry.amount.toString(),
-        paymentMethod: 'Pix', 
+        paymentMethod: 'Pix',
         status: 'Recebido',
         type: 'mensalidade_paciente',
         date: format(clientNow, 'yyyy-MM-dd'),
@@ -926,7 +926,7 @@ export default function DashboardPage() {
     }
 
     const { description, amountString, paymentMethod, status, type, date, patientId, notes } = transactionFormForDashboardMonthlyFee;
-    
+
     const numericAmount = parseFloat(amountString);
 
     if (!description || amountString.trim() === '' || isNaN(numericAmount) || !paymentMethod || !status || !type || !date || !patientId ) {
@@ -968,7 +968,7 @@ export default function DashboardPage() {
       setIsRegisterMonthlyPaymentDashboardDialogOpen(false);
       setSelectedPatientForMonthlyPaymentDashboard(null);
       if (usuario && currentUserData && clientNow) {
-          fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow); 
+          fetchMonthlyFeeEntriesData(usuario, currentUserData, clientNow);
           fetchMonthlyRevenueData(usuario, currentUserData, clientNow);
       }
     } catch (error) {
@@ -1011,7 +1011,7 @@ export default function DashboardPage() {
       default: return 'secondary';
     }
   };
-  
+
   const handleCancelTrial = async () => {
     if (!usuario || !currentUserData) return;
     try {
@@ -1199,7 +1199,7 @@ export default function DashboardPage() {
               {isLoadingWeeklyAppointments ? (
                 <p className="text-sm text-muted-foreground text-center py-8">Carregando dados...</p>
               ) : (
-                <ChartContainer config={chartConfigAppointments} className="h-full w-full">
+                <ChartContainer config={chartConfig} className="h-full w-full">
                   <RechartsBarChart data={actualWeeklyAppointmentsData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} fontSize={12} />
@@ -1799,12 +1799,12 @@ export default function DashboardPage() {
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-center sm:gap-4">
                 <Label htmlFor="dashMonthlyPaymentAmount" className="text-left sm:text-right sm:col-span-1">Valor (R$)*</Label>
-                <Input 
-                  id="dashMonthlyPaymentAmount" 
-                  type="number" 
-                  step="0.01" 
-                  value={transactionFormForDashboardMonthlyFee.amountString} 
-                  onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, amountString: e.target.value }))} 
+                <Input
+                  id="dashMonthlyPaymentAmount"
+                  type="number"
+                  step="0.01"
+                  value={transactionFormForDashboardMonthlyFee.amountString}
+                  onChange={(e) => setTransactionFormForDashboardMonthlyFee(prev => ({ ...prev, amountString: e.target.value }))}
                   className="col-span-full sm:col-span-3"
                   placeholder="0.00"
                 />
@@ -1848,3 +1848,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
