@@ -9,9 +9,9 @@ import Link from "next/link";
 import { useRouter } from 'next/navigation';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth'; // Added signOut
-import { auth, db } from '@/firebase'; // Added db
-import { doc, getDoc } from 'firebase/firestore'; // Added doc, getDoc
+import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from 'firebase/auth';
+import { auth, db } from '@/firebase';
+import { doc, getDoc, updateDoc, Timestamp, serverTimestamp } from 'firebase/firestore'; // Added updateDoc, Timestamp, serverTimestamp
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -24,7 +24,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, // Added AlertDialog imports
+  AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { User, Shield } from "lucide-react";
+import { isPast } from 'date-fns'; // Added isPast
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,40 +49,61 @@ export default function LoginPage() {
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
 
   const [isAccountSuspendedAlertOpen, setIsAccountSuspendedAlertOpen] = useState(false);
+  const [isTrialEndedAlertOpen, setIsTrialEndedAlertOpen] = useState(false); // New state for trial ended alert
 
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
+    let shouldProceedWithLogin = true;
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Check Firestore for statusCobranca
       const userDocRef = doc(db, 'usuarios', user.uid);
       const userDocSnap = await getDoc(userDocRef);
 
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
-        if (userData.statusCobranca === 'cancelado') {
-          await signOut(auth); // Sign out the user
-          setIsLoading(false);
-          setIsAccountSuspendedAlertOpen(true); // Show suspension alert
-          // Do not proceed with login toast or redirect
-          return;
+        let currentStatus = userData.statusCobranca;
+
+        // Check if trial period has ended
+        if (currentStatus === 'trial' && userData.trialEndsAt && isPast((userData.trialEndsAt as Timestamp).toDate())) {
+          await updateDoc(userDocRef, { 
+            statusCobranca: 'trial_ended',
+            updatedAt: serverTimestamp() 
+          });
+          currentStatus = 'trial_ended'; // Update status for subsequent checks
+          console.log(`User ${user.uid} trial ended. Status updated to 'trial_ended'.`);
         }
+
+        if (currentStatus === 'cancelado') {
+          await signOut(auth); 
+          setIsAccountSuspendedAlertOpen(true);
+          shouldProceedWithLogin = false;
+        } else if (currentStatus === 'trial_ended') {
+          await signOut(auth);
+          setIsTrialEndedAlertOpen(true);
+          shouldProceedWithLogin = false;
+        }
+      } else {
+        console.warn(`User document not found for UID: ${user.uid} during login. This should not happen.`);
+        // Potentially sign out and show an error, or allow login if only displayName/email is needed initially.
+        // For now, proceed with caution as status checks depend on this document.
       }
-      // If status is not 'cancelado' or doc doesn't exist (shouldn't happen for logged in user), proceed.
 
-      toast({
-        title: 'Login realizado com sucesso!',
-        description: `👋 Bem-vindo de volta, ${user.displayName || user.email}`,
-        variant: 'success',
-      });
+      if (shouldProceedWithLogin) {
+        toast({
+          title: 'Login realizado com sucesso!',
+          description: `👋 Bem-vindo de volta, ${user.displayName || user.email}`,
+          variant: 'success',
+        });
+        router.push('/dashboard');
+      }
 
-      router.push('/dashboard');
     } catch (error: any) {
+      shouldProceedWithLogin = false; // Ensure no further login processing on error
       let toastMessage = 'Ocorreu um erro ao tentar fazer login. Por favor, tente novamente.';
       let consoleMessage = `Erro ao fazer login - Código: "${error.code}", Mensagem: "${error.message}"`;
 
@@ -90,11 +112,11 @@ export default function LoginPage() {
         case 'auth/wrong-password':
         case 'auth/invalid-credential':
           toastMessage = 'E-mail ou senha incorretos. Verifique e tente novamente.';
-          console.warn(consoleMessage, error); // Warn for common credential issues
+          console.warn(consoleMessage, error);
           break;
         case 'auth/invalid-email':
           toastMessage = 'O formato do e-mail informado é inválido.';
-          console.warn(consoleMessage, error); // Warn for invalid email format
+          console.warn(consoleMessage, error);
           break;
         case 'auth/user-disabled':
           toastMessage = 'Esta conta de usuário foi desabilitada.';
@@ -105,7 +127,7 @@ export default function LoginPage() {
           console.warn(consoleMessage, error);
           break;
         default:
-          console.error(consoleMessage, error); // Error for unexpected issues
+          console.error(consoleMessage, error);
           break;
       }
 
@@ -115,9 +137,14 @@ export default function LoginPage() {
         variant: 'destructive',
       });
     } finally {
-      if (!isAccountSuspendedAlertOpen) { // Only set isLoading to false if not showing the alert
+       if (!isAccountSuspendedAlertOpen && !isTrialEndedAlertOpen) {
          setIsLoading(false);
-      }
+       } else {
+         // If an alert is shown, we might want to keep isLoading true until alert is dismissed,
+         // or ensure it's false so other UI elements aren't stuck.
+         // For simplicity, setting it false.
+         setIsLoading(false);
+       }
     }
   };
 
@@ -186,7 +213,7 @@ export default function LoginPage() {
                   open={isResetPasswordDialogOpen} 
                   onOpenChange={(isOpen) => {
                     if (isOpen) {
-                      dismiss(); // Dismiss any active toasts when opening the dialog
+                      dismiss(); 
                     }
                     setIsResetPasswordDialogOpen(isOpen);
                   }}
@@ -243,7 +270,7 @@ export default function LoginPage() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              <Shield className="mr-2 h-4 w-4" /> {/* Icon for professional login */}
+              <Shield className="mr-2 h-4 w-4" />
               {isLoading ? 'Entrando...' : 'Entrar (Profissional)'}
             </Button>
           </form>
@@ -258,7 +285,7 @@ export default function LoginPage() {
             </div>
           </div>
           <Button variant="outline" className="w-full" onClick={() => router.push('/portal-paciente/login')}>
-            <User className="mr-2 h-4 w-4" /> {/* Icon for patient login */}
+            <User className="mr-2 h-4 w-4" />
             Acessar como Paciente
           </Button>
           <div className="mt-6 text-center text-sm text-muted-foreground">
@@ -290,7 +317,26 @@ export default function LoginPage() {
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => {
                 setIsAccountSuspendedAlertOpen(false);
-                router.push('/#planos'); // Redirect to plans section
+                router.push('/#planos'); 
+            }}>
+              Ver Planos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isTrialEndedAlertOpen} onOpenChange={setIsTrialEndedAlertOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Período de Teste Finalizado</AlertDialogTitle>
+            <AlertDialogDescription>
+              Seu período de teste gratuito de 30 dias terminou. Para continuar utilizando todas as funcionalidades do CliniPrática, por favor, escolha um dos nossos planos pagos ou entre em contato com o suporte.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => {
+                setIsTrialEndedAlertOpen(false);
+                router.push('/configuracoes?tab=plano'); // Redirect to plans inside the app
             }}>
               Ver Planos
             </AlertDialogAction>

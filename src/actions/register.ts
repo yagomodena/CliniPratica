@@ -5,7 +5,8 @@ import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schem
 import { auth, db } from '@/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { updateProfile } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore'; // Added Timestamp
+import { addDays } from 'date-fns'; // Added addDays
 
 export type FormState = {
   message: string;
@@ -14,6 +15,7 @@ export type FormState = {
   issues?: string[];
   userId?: string;
   userEmail?: string;
+  isTrial?: boolean; // Flag to indicate if it's a trial
 };
 
 const initialState: FormState = {
@@ -44,7 +46,7 @@ export async function submitRegistrationForm(
     };
   }
 
-  const { fullName, email, phone, companyName, password, area, plan } = parsed.data;
+  const { fullName, email, phone, cpf, companyName, password, area, plan, paymentMethodPreference } = parsed.data;
 
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -54,14 +56,20 @@ export async function submitRegistrationForm(
       displayName: fullName,
     });
 
+    const now = new Date();
+    const trialEndsDate = addDays(now, 30);
+
     const userDoc = {
       nomeCompleto: fullName,
       email,
       telefone: phone,
+      cpf, // Save CPF
       nomeEmpresa: companyName || '',
       areaAtuacao: area || '',
       plano: plan || 'Gratuito',
-      statusCobranca: 'ativo',
+      paymentMethodPreference, // Save payment method preference
+      statusCobranca: plan === 'Gratuito' ? 'ativo' : 'trial', // Set to 'trial' for paid plans
+      trialEndsAt: plan === 'Gratuito' ? null : Timestamp.fromDate(trialEndsDate), // Set trial end date
       fotoPerfilUrl: '',
       cargo: 'Administrador',
       permissoes: {
@@ -74,7 +82,6 @@ export async function submitRegistrationForm(
         usuarios: true,
       },
       criadoEm: serverTimestamp(),
-      // Initialize Mercado Pago fields
       mercadoPagoSubscriptionId: null,
       mercadoPagoSubscriptionStatus: null,
       mercadoPagoPreapprovalPlanId: null,
@@ -84,10 +91,13 @@ export async function submitRegistrationForm(
     await setDoc(doc(db, 'usuarios', user.uid), userDoc);
 
     return {
-      message: 'Cadastro realizado com sucesso! Você será redirecionado em breve.',
+      message: plan === 'Gratuito'
+        ? 'Cadastro realizado com sucesso! Você será redirecionado para o login.'
+        : 'Cadastro realizado com sucesso! Você está em um período de teste gratuito de 30 dias. Após o aviso, você será redirecionado para o login.',
       status: 'success',
       userId: user.uid,
       userEmail: email,
+      isTrial: plan !== 'Gratuito',
     };
   } catch (error: any) {
     console.error('Erro ao registrar:', error);

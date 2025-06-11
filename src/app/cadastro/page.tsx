@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { registrationFormSchema, type RegistrationFormValues } from '@/lib/schemas';
 import { submitRegistrationForm, type FormState as RegistrationFormState } from '@/actions/register';
 import { Logo } from '@/components/icons/logo';
-import { plans as allPlansData } from '@/lib/plans-data'; // Import plans data
+import { plans as allPlansData } from '@/lib/plans-data';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,8 +33,9 @@ const initialState: RegistrationFormState = {
   status: 'idle',
   fields: {},
   issues: [],
-  userId: undefined, // Added
-  userEmail: undefined, // Added
+  userId: undefined,
+  userEmail: undefined,
+  isTrial: false, // Added
 };
 
 const areasDeAtuacao = [
@@ -46,6 +47,12 @@ const areasDeAtuacao = [
   "Estética e Terapias",
   "Terapia Ocupacional",
   "Outro"
+];
+
+const paymentMethodOptions = [
+  "Boleto Bancário",
+  "Pix",
+  "Cartão de Crédito",
 ];
 
 function SubmitButton({ pending }: { pending: boolean }) {
@@ -67,6 +74,9 @@ function CadastroForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showPlanAlert, setShowPlanAlert] = useState(false);
+  const [showPostRegistrationAlert, setShowPostRegistrationAlert] = useState(false); // For trial alert
+  const [postRegistrationMessage, setPostRegistrationMessage] = useState('');
+
 
   const form = useForm<RegistrationFormValues>({
     resolver: zodResolver(registrationFormSchema),
@@ -74,10 +84,12 @@ function CadastroForm() {
       fullName: '',
       email: '',
       phone: '',
+      cpf: '', // Added
       companyName: '',
       password: '',
       confirmPassword: '',
       area: '',
+      paymentMethodPreference: undefined, // Added
       plan: planFromQuery,
     },
   });
@@ -92,26 +104,16 @@ function CadastroForm() {
 
 
   useEffect(() => {
-    if (state.status === 'success' && state.userId && state.userEmail) {
-      toast({
-        title: 'Sucesso!',
-        description: state.message,
-        variant: 'success',
-      });
-
-      const planName = planFromQuery;
-      const selectedPlanDetails = allPlansData.find(p => p.name === planName);
-
-      if (selectedPlanDetails?.mercadoPagoPreapprovalPlanId) {
-        const checkoutUrl =
-          `https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=${selectedPlanDetails.mercadoPagoPreapprovalPlanId}` +
-          `&external_reference=${encodeURIComponent(state.userId)}` +
-          `&payer_email=${encodeURIComponent(state.userEmail)}`;
-
-        setTimeout(() => {
-          window.location.href = checkoutUrl;
-        }, 1500);
+    if (state.status === 'success') {
+      if (state.isTrial) {
+        setPostRegistrationMessage(state.message);
+        setShowPostRegistrationAlert(true);
       } else {
+        toast({
+          title: 'Sucesso!',
+          description: state.message,
+          variant: 'success',
+        });
         router.push('/login');
       }
     }
@@ -135,17 +137,7 @@ function CadastroForm() {
         form.setError('confirmPassword', { type: 'server', message: 'As senhas não coincidem.' });
       }
     }
-
-    if (state.status === 'success' && (!state.userId || !state.userEmail)) {
-      toast({
-        title: 'Conta Criada!',
-        description: 'Cadastro realizado. Você será direcionado para o login.',
-        variant: 'default',
-      });
-
-      router.push('/login');
-    }
-  }, [state, toast, form, router, planFromQuery]);
+  }, [state, toast, form, router]);
 
   if (showPlanAlert) {
     return (
@@ -190,128 +182,180 @@ function CadastroForm() {
 
 
   return (
-    <Card className="w-full max-w-lg shadow-xl">
-      <CardHeader className="text-center">
-        <div className="mx-auto mb-6 w-fit">
-          <Logo textClassName="text-primary text-3xl" dotClassName="text-foreground text-3xl" />
-        </div>
-        <CardTitle className="text-3xl font-bold text-primary">Crie sua Conta no CliniPrática</CardTitle>
-        <CardDescription>
-          {planFromQuery ? `Você está se cadastrando para o plano: ${planFromQuery}. ` : 'Por favor, selecione um plano primeiro. '}
-          Preencha seus dados para começar.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={form.handleSubmit(onSubmitRHF)} className="space-y-4">
-          <input type="hidden" {...form.register('plan')} value={planFromQuery} />
+    <>
+      <Card className="w-full max-w-lg shadow-xl">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-6 w-fit">
+            <Logo textClassName="text-primary text-3xl" dotClassName="text-foreground text-3xl" />
+          </div>
+          <CardTitle className="text-3xl font-bold text-primary">Crie sua Conta no CliniPrática</CardTitle>
+          <CardDescription>
+            {planFromQuery ? `Você está se cadastrando para o plano: ${planFromQuery}. ` : 'Por favor, selecione um plano primeiro. '}
+            Preencha seus dados para começar.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={form.handleSubmit(onSubmitRHF)} className="space-y-4">
+            <input type="hidden" {...form.register('plan')} value={planFromQuery} />
 
-          <div>
-            <Label htmlFor="fullName">Nome Completo*</Label>
-            <Input id="fullName" placeholder="Seu nome completo" {...form.register('fullName')} />
-            {form.formState.errors.fullName && <p className="text-sm text-destructive mt-1">{form.formState.errors.fullName.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="email">Email*</Label>
-            <Input id="email" type="email" placeholder="seu@email.com" {...form.register('email')} />
-            {form.formState.errors.email && <p className="text-sm text-destructive mt-1">{form.formState.errors.email.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="phone">Telefone*</Label>
-            <Input id="phone" type="tel" placeholder="(XX) XXXXX-XXXX" {...form.register('phone')} />
-            {form.formState.errors.phone && <p className="text-sm text-destructive mt-1">{form.formState.errors.phone.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="companyName">Nome da Empresa {planFromQuery === 'Clínica' ? '*' : '(Opcional)'}</Label>
-            <Input id="companyName" placeholder="Nome da sua clínica ou consultório" {...form.register('companyName')} />
-            {form.formState.errors.companyName && <p className="text-sm text-destructive mt-1">{form.formState.errors.companyName.message}</p>}
-          </div>
-          <div>
-            <Label htmlFor="password">Senha*</Label>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Mínimo 6 caracteres"
-                {...form.register('password')}
-                className="pr-10"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute inset-y-0 right-0 flex items-center justify-center h-full w-10 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
+            <div>
+              <Label htmlFor="fullName">Nome Completo*</Label>
+              <Input id="fullName" placeholder="Seu nome completo" {...form.register('fullName')} />
+              {form.formState.errors.fullName && <p className="text-sm text-destructive mt-1">{form.formState.errors.fullName.message}</p>}
             </div>
-            {form.formState.errors.password && <p className="text-sm text-destructive mt-1">{form.formState.errors.password.message}</p>}
-          </div>
-
-          <div>
-            <Label htmlFor="confirmPassword">Confirmar Senha*</Label>
-            <div className="relative">
-              <Input
-                id="confirmPassword"
-                type={showConfirmPassword ? 'text' : 'password'}
-                placeholder="Repita a senha"
-                {...form.register('confirmPassword')}
-                className="pr-10"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute inset-y-0 right-0 flex items-center justify-center h-full w-10 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
-                tabIndex={-1}
-              >
-                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
+            <div>
+              <Label htmlFor="email">Email*</Label>
+              <Input id="email" type="email" placeholder="seu@email.com" {...form.register('email')} />
+              {form.formState.errors.email && <p className="text-sm text-destructive mt-1">{form.formState.errors.email.message}</p>}
             </div>
-            {form.formState.errors.confirmPassword && <p className="text-sm text-destructive mt-1">{form.formState.errors.confirmPassword.message}</p>}
-          </div>
+            <div>
+              <Label htmlFor="phone">Telefone*</Label>
+              <Input id="phone" type="tel" placeholder="(XX) XXXXX-XXXX" {...form.register('phone')} />
+              {form.formState.errors.phone && <p className="text-sm text-destructive mt-1">{form.formState.errors.phone.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="cpf">CPF*</Label>
+              <Input id="cpf" placeholder="XXX.XXX.XXX-XX" {...form.register('cpf')} />
+              {form.formState.errors.cpf && <p className="text-sm text-destructive mt-1">{form.formState.errors.cpf.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="companyName">Nome da Empresa {planFromQuery === 'Clínica' ? '*' : '(Opcional)'}</Label>
+              <Input id="companyName" placeholder="Nome da sua clínica ou consultório" {...form.register('companyName')} />
+              {form.formState.errors.companyName && <p className="text-sm text-destructive mt-1">{form.formState.errors.companyName.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="password">Senha*</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Mínimo 6 caracteres"
+                  {...form.register('password')}
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute inset-y-0 right-0 flex items-center justify-center h-full w-10 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              {form.formState.errors.password && <p className="text-sm text-destructive mt-1">{form.formState.errors.password.message}</p>}
+            </div>
 
-          <div>
-            <Label htmlFor="area">Área de Atuação*</Label>
-            <Controller
-              name="area"
-              control={form.control}
-              render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value || ''}>
-                  <SelectTrigger id="area">
-                    <SelectValue placeholder="Selecione sua área de atuação" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {areasDeAtuacao.map((areaOption) => (
-                      <SelectItem key={areaOption} value={areaOption}>
-                        {areaOption}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
+            <div>
+              <Label htmlFor="confirmPassword">Confirmar Senha*</Label>
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Repita a senha"
+                  {...form.register('confirmPassword')}
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute inset-y-0 right-0 flex items-center justify-center h-full w-10 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  aria-label={showConfirmPassword ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              {form.formState.errors.confirmPassword && <p className="text-sm text-destructive mt-1">{form.formState.errors.confirmPassword.message}</p>}
+            </div>
+
+            <div>
+              <Label htmlFor="area">Área de Atuação*</Label>
+              <Controller
+                name="area"
+                control={form.control}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value || ''}>
+                    <SelectTrigger id="area">
+                      <SelectValue placeholder="Selecione sua área de atuação" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {areasDeAtuacao.map((areaOption) => (
+                        <SelectItem key={areaOption} value={areaOption}>
+                          {areaOption}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {form.formState.errors.area && <p className="text-sm text-destructive mt-1">{form.formState.errors.area.message}</p>}
+            </div>
+
+            <div>
+              <Label htmlFor="paymentMethodPreference">Preferência de Meio de Pagamento (Assinatura)*</Label>
+              <Controller
+                name="paymentMethodPreference"
+                control={form.control}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value || undefined}>
+                    <SelectTrigger id="paymentMethodPreference">
+                      <SelectValue placeholder="Selecione sua preferência" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentMethodOptions.map((method) => (
+                        <SelectItem key={method} value={method}>
+                          {method}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {form.formState.errors.paymentMethodPreference && <p className="text-sm text-destructive mt-1">{form.formState.errors.paymentMethodPreference.message}</p>}
+            </div>
+
+            <SubmitButton pending={isActionPending} />
+          </form>
+          <div className="mt-6 text-center text-sm text-muted-foreground">
+            Já tem uma conta?{' '}
+            <Link href="/login" className="font-medium text-primary hover:underline">
+              Faça login
+            </Link>
           </div>
-          <SubmitButton pending={isActionPending} />
-        </form>
-        <div className="mt-6 text-center text-sm text-muted-foreground">
-          Já tem uma conta?{' '}
-          <Link href="/login" className="font-medium text-primary hover:underline">
-            Faça login
-          </Link>
-        </div>
-        <div className="mt-2 text-center text-sm">
-          <Link href="/" className="font-medium text-primary hover:underline">
-            &larr; Voltar para a página inicial
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
+          <div className="mt-2 text-center text-sm">
+            <Link href="/" className="font-medium text-primary hover:underline">
+              &larr; Voltar para a página inicial
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={showPostRegistrationAlert} onOpenChange={setShowPostRegistrationAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cadastro Realizado com Sucesso!</AlertDialogTitle>
+            <AlertDialogDescription>
+              {postRegistrationMessage}
+              <br /><br />
+              Lembre-se: após os 30 dias, será necessário realizar o pagamento da assinatura para continuar utilizando todas as funcionalidades.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => {
+              setShowPostRegistrationAlert(false);
+              router.push('/login');
+            }}>
+              Entendido, ir para Login
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

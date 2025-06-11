@@ -4,7 +4,7 @@
 import { useState, useEffect, FormEvent, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send, Info, AlertTriangle as AlertTriangleIcon, Filter, UserCog, Wallet, MessageSquare as MessageSquareIcon, MoreHorizontal, DollarSign as DollarSignIcon } from "lucide-react"; // Added Wallet, MessageSquareIcon, MoreHorizontal, DollarSignIcon
+import { AlertCircle, ArrowRight, BarChart, CalendarCheck, Users, PlusCircle, CheckCircle, Pencil, X as XIcon, Gift, Send, Info, AlertTriangle as AlertTriangleIcon, Filter, UserCog, Wallet, MessageSquare as MessageSquareIcon, MoreHorizontal, DollarSign as DollarSignIcon, CalendarClock } from "lucide-react";
 import {
   ChartContainer,
   ChartTooltip,
@@ -23,6 +23,16 @@ import {
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,14 +60,14 @@ import {
   Unsubscribe
 } from "firebase/firestore";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { paymentMethods, transactionTypes, type PaymentMethod, type TransactionStatus, type TransactionType } from '@/lib/financeiro-data'; // Import paymentMethods for the dialog
+import { paymentMethods, transactionTypes, type PaymentMethod, type TransactionStatus, type TransactionType } from '@/lib/financeiro-data';
 
 
 type PatientForSelect = {
   id: string;
   name: string;
   slug: string;
-  phone?: string; // Added phone for WhatsApp
+  phone?: string;
   hasMonthlyFee?: boolean;
   monthlyFeeAmount?: number;
   monthlyFeeDueDate?: number;
@@ -113,7 +123,6 @@ type MonthlyFeeEntry = {
   transactionId?: string;
 };
 
-// Local state type for the dashboard's monthly payment registration form
 type DashboardMonthlyFeeFormState = {
   description: string;
   amountString: string; 
@@ -145,7 +154,7 @@ const chartConfig = {
 };
 
 type PlanName = 'Gratuito' | 'Essencial' | 'Profissional' | 'Clínica';
-type StatusCobranca = 'ativo' | 'pendente' | 'cancelado' | string;
+type StatusCobranca = 'ativo' | 'pendente' | 'cancelado' | 'trial' | 'trial_ended' | string; // Added new statuses
 
 
 type DashboardFilterType = 'mine' | 'all_clinic';
@@ -202,6 +211,9 @@ export default function DashboardPage() {
   const [todayAppointmentsFilter, setTodayAppointmentsFilter] = useState<DashboardFilterType>('mine');
   const [weeklyAppointmentsFilter, setWeeklyAppointmentsFilter] = useState<DashboardFilterType>('mine');
 
+  const [isCancelTrialConfirmOpen, setIsCancelTrialConfirmOpen] = useState(false);
+  const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
+
 
   const isFreePlan = currentUserData?.plano === 'Gratuito';
   const isProfessionalOrClinicPlan = currentUserData?.plano === 'Profissional' || currentUserData?.plano === 'Clínica';
@@ -233,18 +245,30 @@ export default function DashboardPage() {
             const data = docSnap.data();
             setCurrentUserData({ ...data, uid: user.uid, plano: data.plano || "Gratuito" });
             setBillingStatus(data.statusCobranca || 'ativo');
-             setIsPlanWarningVisible(data.plano === 'Gratuito');
+            setIsPlanWarningVisible(data.plano === 'Gratuito' && data.statusCobranca !== 'trial'); // Show warning only if free and not in trial
+            
+            // Calculate trial days remaining
+            if (data.statusCobranca === 'trial' && data.trialEndsAt) {
+                const endsAtDate = (data.trialEndsAt as Timestamp).toDate();
+                const remaining = differenceInDays(endsAtDate, new Date());
+                setTrialDaysRemaining(remaining > 0 ? remaining : 0);
+            } else {
+                setTrialDaysRemaining(null);
+            }
+
           } else {
             console.warn("User document not found for UID:", user.uid);
             setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
             setBillingStatus('ativo');
             setIsPlanWarningVisible(true);
+            setTrialDaysRemaining(null);
           }
         }, (error) => {
           console.error("Error listening to user document for dashboard:", error);
           setCurrentUserData({ uid: user.uid, plano: "Gratuito" });
           setBillingStatus('ativo');
           setIsPlanWarningVisible(true);
+          setTrialDaysRemaining(null);
           toast({
               title: "Erro ao carregar dados do usuário",
               description: "Não foi possível carregar suas informações em tempo real.",
@@ -268,6 +292,7 @@ export default function DashboardPage() {
         setCurrentUserData(null);
         setBillingStatus(null);
         setIsPlanWarningVisible(false);
+        setTrialDaysRemaining(null);
       }
     });
     return () => {
@@ -825,7 +850,7 @@ export default function DashboardPage() {
 
   const getDaysUntilDue = (dueDate: Date): number | null => {
     if (!clientNow) return null;
-    if (isBefore(startOfDay(dueDate), startOfDay(clientNow))) return 0; // Already past or today but considered overdue
+    if (isBefore(startOfDay(dueDate), startOfDay(clientNow))) return 0; 
     return differenceInDays(startOfDay(dueDate), startOfDay(clientNow));
   };
 
@@ -859,7 +884,7 @@ export default function DashboardPage() {
       }
     } else if (whatsAppMonthlyFeeMsgType === 'overdue') {
       message = `Olá ${patientName}, tudo bem? Identificamos que sua mensalidade de R$${amount.toFixed(2)}, vencida em ${format(dueDate, 'dd/MM/yyyy', { locale: ptBR })}, está em atraso. Por favor, regularize sua situação.`;
-    } else { // custom
+    } else { 
       if (!customWhatsAppMonthlyFeeMsg.trim()) {
         toast({ title: "Mensagem Vazia", description: "Por favor, escreva uma mensagem personalizada.", variant: "warning"});
         return;
@@ -985,6 +1010,25 @@ export default function DashboardPage() {
       default: return 'secondary';
     }
   };
+  
+  const handleCancelTrial = async () => {
+    if (!usuario || !currentUserData) return;
+    try {
+      const userDocRef = doc(db, 'usuarios', usuario.uid);
+      await updateDoc(userDocRef, {
+        statusCobranca: 'cancelado',
+        plano: 'Gratuito', // Optionally downgrade to free plan
+        trialEndsAt: null, // Clear trial end date
+        updatedAt: serverTimestamp()
+      });
+      toast({ title: "Período de Teste Cancelado", description: "Seu período de teste foi cancelado.", variant: "success" });
+      setIsCancelTrialConfirmOpen(false);
+      // Re-fetch user data which will update the UI
+    } catch (error) {
+      console.error("Erro ao cancelar período de teste:", error);
+      toast({ title: "Erro", description: "Não foi possível cancelar o período de teste.", variant: "destructive" });
+    }
+  };
 
 
   return (
@@ -992,6 +1036,55 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
       </div>
+
+      {currentUserData?.statusCobranca === 'trial' && trialDaysRemaining !== null && (
+        <Card className="bg-blue-50 border-blue-300 dark:bg-blue-900/30 dark:border-blue-700 shadow-md">
+          <CardHeader className="flex flex-row items-start space-y-0 pb-2">
+            <CalendarClock className="h-5 w-5 text-blue-600 mr-2 mt-0.5" />
+            <div className="flex-1">
+              <CardTitle className="text-base font-semibold text-blue-700 dark:text-blue-300">
+                Período de Teste Ativo!
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm text-blue-600 dark:text-blue-300/90">
+              {trialDaysRemaining > 0
+                ? `Você tem ${trialDaysRemaining} dia${trialDaysRemaining === 1 ? '' : 's'} restante${trialDaysRemaining === 1 ? '' : 's'} no seu período de teste gratuito.`
+                : 'Seu período de teste gratuito termina hoje!'}
+            </p>
+            <p className="text-xs text-blue-500 dark:text-blue-400">
+              Após o término, será necessário escolher um plano pago para continuar utilizando todas as funcionalidades.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                <Button size="sm" variant="outline" className="border-blue-400 text-blue-600 hover:bg-blue-100 dark:border-blue-600 dark:text-blue-300 dark:hover:bg-blue-800" onClick={() => setIsPlansModalOpen(true)}>
+                    Ver Planos Pagos
+                </Button>
+                <AlertDialog open={isCancelTrialConfirmOpen} onOpenChange={setIsCancelTrialConfirmOpen}>
+                    <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="destructive" className="bg-red-500 hover:bg-red-600 text-white">
+                            <XIcon className="mr-1.5 h-4 w-4" /> Cancelar Período de Teste
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>Cancelar Período de Teste?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Tem certeza que deseja cancelar seu período de teste? Você perderá o acesso às funcionalidades pagas e sua conta será revertida para o plano Gratuito (se aplicável) ou poderá ser suspensa após o término.
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel>Voltar</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleCancelTrial} className="bg-destructive hover:bg-destructive/90">
+                            Sim, Cancelar Teste
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isFreePlan && isPlanWarningVisible && (
         <Card className="bg-accent/20 border-accent shadow-md relative">
@@ -1037,7 +1130,6 @@ export default function DashboardPage() {
             <p className="text-sm text-orange-600 dark:text-orange-300/90">
               Sua assinatura está com o pagamento pendente. Se você já realizou o pagamento, por favor, aguarde até 24 horas para a atualização do status em nosso sistema. Caso contrário, entre em contato com o suporte para regularizar.
             </p>
-            {/* Button removed as requested */}
           </CardContent>
         </Card>
       )}
@@ -1052,10 +1144,29 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-red-600 dark:text-red-300/90">
-              Sua assinatura foi cancelada. Para continuar utilizando todos os recursos do CliniPrática, por favor, escolha um novo plano.
+              Sua assinatura foi cancelada ou seu período de teste foi interrompido. Para continuar utilizando todos os recursos do CliniPrática, por favor, escolha um novo plano.
             </p>
              <Button variant="link" className="p-0 h-auto mt-2 text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200" onClick={() => setIsPlansModalOpen(true)}>
               Ver Planos e Reativar
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {billingStatus === 'trial_ended' && (
+        <Card className="bg-yellow-50 border-yellow-300 dark:bg-yellow-900/30 dark:border-yellow-700 shadow-md">
+          <CardHeader className="flex flex-row items-start space-y-0 pb-2">
+            <AlertTriangleIcon className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+            <div className="flex-1">
+                <CardTitle className="text-base font-semibold text-yellow-700 dark:text-yellow-300">Período de Teste Finalizado</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-yellow-600 dark:text-yellow-300/90">
+              Seu período de teste gratuito terminou. Para continuar acessando todas as funcionalidades do CliniPrática, por favor, escolha um dos nossos planos pagos.
+            </p>
+             <Button variant="default" size="sm" className="mt-3 bg-yellow-500 hover:bg-yellow-600 text-yellow-900" onClick={() => setIsPlansModalOpen(true)}>
+              Escolher Plano
             </Button>
           </CardContent>
         </Card>
@@ -1736,4 +1847,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
