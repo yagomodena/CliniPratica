@@ -7,7 +7,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Loader2, Search, Users, ChevronDown, Edit, CalendarDays } from 'lucide-react';
+import { AlertTriangle, Loader2, Search, Users, ChevronDown, Edit, CalendarDays, Save, X } from 'lucide-react';
 import { auth, db } from '@/firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import { collection, getDocs, query, orderBy, where, getCountFromServer, doc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -20,6 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { useToast } from '@/hooks/use-toast';
 
 const ADMIN_EMAIL = 'yagobmodena1@gmail.com';
@@ -57,6 +59,10 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+
+  const [openTrialDatePopoverForUserId, setOpenTrialDatePopoverForUserId] = useState<string | null>(null);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | undefined>(undefined);
+
 
   const fetchSystemUsers = async () => {
     setIsLoading(true);
@@ -177,6 +183,23 @@ export default function AdminPage() {
       toast({ title: "Erro", description: "Não foi possível atualizar o status de cobrança.", variant: "destructive" });
     }
   };
+
+  const handleUpdateTrialEndDate = async (userId: string, newTrialDate: Date | undefined | null) => {
+    if (!userId) return;
+    try {
+      const userDocRef = doc(db, 'usuarios', userId);
+      await updateDoc(userDocRef, {
+        trialEndsAt: newTrialDate ? Timestamp.fromDate(newTrialDate) : null,
+      });
+      toast({ title: "Sucesso!", description: `Data de término do teste atualizada.` });
+      fetchSystemUsers();
+      setOpenTrialDatePopoverForUserId(null); // Close popover
+    } catch (error) {
+      console.error("Erro ao atualizar data de término do teste:", error);
+      toast({ title: "Erro", description: "Não foi possível atualizar a data de término do teste.", variant: "destructive" });
+    }
+  };
+
 
   if (isLoading) {
     return (
@@ -306,12 +329,86 @@ export default function AdminPage() {
                         </DropdownMenu>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-xs">
-                        {user.trialEndsAt ? (
-                          <span className="flex items-center gap-1">
-                            <CalendarDays className="h-3 w-3 text-muted-foreground" />
-                            {format(user.trialEndsAt.toDate(), 'dd/MM/yy')}
-                          </span>
-                        ) : (user.plano !== 'Gratuito' ? 'Expirado' : 'N/A') }
+                        <Popover
+                          open={openTrialDatePopoverForUserId === user.id}
+                          onOpenChange={(isOpen) => {
+                            if (isOpen) {
+                              setOpenTrialDatePopoverForUserId(user.id);
+                              setSelectedCalendarDate(user.trialEndsAt ? user.trialEndsAt.toDate() : undefined);
+                            } else {
+                              setOpenTrialDatePopoverForUserId(null);
+                              setSelectedCalendarDate(undefined);
+                            }
+                          }}
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              className="h-auto p-0 font-normal hover:bg-transparent hover:text-primary items-center"
+                              disabled={user.plano === 'Gratuito' && !user.trialEndsAt} // Disable if free and no trial ever set
+                            >
+                              {user.trialEndsAt ? (
+                                <span className="flex items-center gap-1">
+                                  <CalendarDays className="h-3 w-3 text-muted-foreground" />
+                                  {format(user.trialEndsAt.toDate(), 'dd/MM/yy')}
+                                  <Edit className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100"/>
+                                </span>
+                              ) : (user.plano !== 'Gratuito' ? 
+                                  <span className="flex items-center gap-1 text-muted-foreground hover:text-primary">
+                                    <CalendarDays className="h-3 w-3" />
+                                    Definir
+                                    <Edit className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100"/>
+                                  </span> 
+                                  : 'N/A')
+                              }
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={selectedCalendarDate}
+                              onSelect={setSelectedCalendarDate}
+                              initialFocus
+                              locale={ptBR}
+                            />
+                            <div className="p-2 border-t flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => {
+                                  if (openTrialDatePopoverForUserId) handleUpdateTrialEndDate(openTrialDatePopoverForUserId, null);
+                                }}
+                                disabled={!selectedCalendarDate && !user.trialEndsAt} // Only allow clear if a date was set
+                              >
+                                <X className="mr-1 h-4 w-4" /> Limpar
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => setOpenTrialDatePopoverForUserId(null)}
+                              >
+                                Cancelar
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                onClick={() => {
+                                  if (openTrialDatePopoverForUserId && selectedCalendarDate) {
+                                    handleUpdateTrialEndDate(openTrialDatePopoverForUserId, selectedCalendarDate);
+                                  } else if (openTrialDatePopoverForUserId && !selectedCalendarDate && user.trialEndsAt) {
+                                     // If no new date is selected but a date was previously set,
+                                     // this means the user might want to keep the old date.
+                                     // If the intent is to clear, the "Limpar" button should be used.
+                                     // For now, "Salvar" without a new selection does nothing or can be disabled.
+                                     // Let's disable if no new date.
+                                  }
+                                }}
+                                disabled={selectedCalendarDate === undefined && user.trialEndsAt === null} // Disable if no date selected and none was set
+                              >
+                                <Save className="mr-1 h-4 w-4" /> Salvar
+                              </Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         {user.criadoEm ? format(user.criadoEm, 'dd/MM/yyyy HH:mm', { locale: ptBR }) : 'N/A'}
