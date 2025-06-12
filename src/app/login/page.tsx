@@ -223,7 +223,7 @@ export default function LoginPage() {
                       Esqueceu sua senha?
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-[425px]">
+                  <DialogContent className="w-[90vw] sm:max-w-[425px]">
                     <DialogHeader>
                       <DialogTitle>Redefinir Senha</DialogTitle>
                       <DialogDescription>
