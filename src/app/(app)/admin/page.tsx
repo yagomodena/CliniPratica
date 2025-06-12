@@ -43,11 +43,11 @@ type SystemUser = {
 
 const billingStatusOptions: Array<SystemUser['statusCobranca']> = ['ativo', 'pendente', 'cancelado', 'trial', 'trial_ended'];
 const billingStatusLabels: Record<string, string> = {
-    ativo: 'Ativo',
-    pendente: 'Pendente',
-    cancelado: 'Cancelado',
-    trial: 'Período de Teste',
-    trial_ended: 'Teste Finalizado',
+  ativo: 'Ativo',
+  pendente: 'Pendente',
+  cancelado: 'Cancelado',
+  trial: 'Período de Teste',
+  trial_ended: 'Teste Finalizado',
 };
 
 
@@ -82,12 +82,12 @@ export default function AdminPage() {
         } else {
           patientQuery = query(patientsRef, where('uid', '==', docSnap.id), where('status', '==', 'Ativo'));
         }
-        
+
         try {
-            const patientCountSnapshot = await getCountFromServer(patientQuery);
-            patientCount = patientCountSnapshot.data().count;
+          const patientCountSnapshot = await getCountFromServer(patientQuery);
+          patientCount = patientCountSnapshot.data().count;
         } catch (countError) {
-            console.error(`Erro ao contar pacientes para ${data.email || docSnap.id}:`, countError);
+          console.error(`Erro ao contar pacientes para ${data.email || docSnap.id}:`, countError);
         }
 
         return {
@@ -105,7 +105,7 @@ export default function AdminPage() {
           patientCount: patientCount,
         };
       });
-      
+
       const usersList = await Promise.all(usersListPromises);
       setSystemUsers(usersList);
 
@@ -126,12 +126,12 @@ export default function AdminPage() {
         } else {
           setIsAuthorized(false);
           setIsLoading(false);
-          router.push('/dashboard'); 
+          router.push('/dashboard');
         }
       } else {
         setIsAuthorized(false);
         setIsLoading(false);
-        router.push('/login'); 
+        router.push('/login');
       }
     });
     return () => unsubscribe();
@@ -177,7 +177,7 @@ export default function AdminPage() {
         statusCobranca: newStatus,
       });
       toast({ title: "Sucesso!", description: `Status de cobrança do usuário atualizado para ${billingStatusLabels[newStatus] || newStatus}.` });
-      fetchSystemUsers(); 
+      fetchSystemUsers();
     } catch (error) {
       console.error("Erro ao atualizar status de cobrança:", error);
       toast({ title: "Erro", description: "Não foi possível atualizar o status de cobrança.", variant: "destructive" });
@@ -246,7 +246,28 @@ export default function AdminPage() {
           ))}
         </CardContent>
       </Card>
-      
+
+      <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle>Pacientes por Plano</CardTitle>
+          <CardDescription>Referência rápida para lembrar a quantidade de pacientes liberadas por plano.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-sm px-3 py-1">Gratuito</Badge>
+            <span className="text-sm text-muted-foreground">Até 10 pacientes</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-sm px-3 py-1">Essencial</Badge>
+            <span className="text-sm text-muted-foreground">Até 50 pacientes</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-sm px-3 py-1">Profissional / Clínica</Badge>
+            <span className="text-sm text-muted-foreground">Pacientes ilimitados</span>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle>Todos os Usuários do Sistema</CardTitle>
@@ -298,7 +319,7 @@ export default function AdminPage() {
                           {user.patientCount !== undefined ? user.patientCount : '-'}
                         </Badge>
                       </TableCell>
-                       <TableCell className="text-xs text-muted-foreground">{user.paymentMethodPreference || 'N/A'}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{user.paymentMethodPreference || 'N/A'}</TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -310,7 +331,7 @@ export default function AdminPage() {
                               ) : (
                                 <Badge variant="secondary">N/A</Badge>
                               )}
-                              <ChevronDown className="ml-1 h-3 w-3 opacity-50"/>
+                              <ChevronDown className="ml-1 h-3 w-3 opacity-50" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start">
@@ -351,15 +372,15 @@ export default function AdminPage() {
                                 <span className="flex items-center gap-1">
                                   <CalendarDays className="h-3 w-3 text-muted-foreground" />
                                   {format(user.trialEndsAt.toDate(), 'dd/MM/yy')}
-                                  <Edit className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100"/>
+                                  <Edit className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100" />
                                 </span>
-                              ) : (user.plano !== 'Gratuito' ? 
-                                  <span className="flex items-center gap-1 text-muted-foreground hover:text-primary">
-                                    <CalendarDays className="h-3 w-3" />
-                                    Definir
-                                    <Edit className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100"/>
-                                  </span> 
-                                  : 'N/A')
+                              ) : (user.plano !== 'Gratuito' ?
+                                <span className="flex items-center gap-1 text-muted-foreground hover:text-primary">
+                                  <CalendarDays className="h-3 w-3" />
+                                  Definir
+                                  <Edit className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100" />
+                                </span>
+                                : 'N/A')
                               }
                             </Button>
                           </PopoverTrigger>
@@ -372,9 +393,9 @@ export default function AdminPage() {
                               locale={ptBR}
                             />
                             <div className="p-2 border-t flex justify-end gap-2">
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => {
                                   if (openTrialDatePopoverForUserId) handleUpdateTrialEndDate(openTrialDatePopoverForUserId, null);
                                 }}
@@ -382,24 +403,24 @@ export default function AdminPage() {
                               >
                                 <X className="mr-1 h-4 w-4" /> Limpar
                               </Button>
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
+                              <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={() => setOpenTrialDatePopoverForUserId(null)}
                               >
                                 Cancelar
                               </Button>
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 onClick={() => {
                                   if (openTrialDatePopoverForUserId && selectedCalendarDate) {
                                     handleUpdateTrialEndDate(openTrialDatePopoverForUserId, selectedCalendarDate);
                                   } else if (openTrialDatePopoverForUserId && !selectedCalendarDate && user.trialEndsAt) {
-                                     // If no new date is selected but a date was previously set,
-                                     // this means the user might want to keep the old date.
-                                     // If the intent is to clear, the "Limpar" button should be used.
-                                     // For now, "Salvar" without a new selection does nothing or can be disabled.
-                                     // Let's disable if no new date.
+                                    // If no new date is selected but a date was previously set,
+                                    // this means the user might want to keep the old date.
+                                    // If the intent is to clear, the "Limpar" button should be used.
+                                    // For now, "Salvar" without a new selection does nothing or can be disabled.
+                                    // Let's disable if no new date.
                                   }
                                 }}
                                 disabled={selectedCalendarDate === undefined && user.trialEndsAt === null} // Disable if no date selected and none was set

@@ -58,7 +58,7 @@ export default function TermosDeUsoPage() {
 
         <h2 className="text-2xl font-semibold mt-6">8. Contato</h2>
         <p>
-          Se você tiver alguma dúvida sobre estes Termos, entre em contato conosco em <a href="mailto:contato@clinipratica.com.br" className="text-primary hover:underline">contato@clinipratica.com.br</a>.
+          Se você tiver alguma dúvida sobre estes Termos, entre em contato conosco em <a href="mailto:clinipratica@gmail.com" className="text-primary hover:underline">clinipratica@gmail.com</a>.
         </p>
       </article>
 

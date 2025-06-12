@@ -58,7 +58,7 @@ export default function PoliticaDePrivacidadePage() {
 
         <h2 className="text-2xl font-semibold mt-6">6. Contato</h2>
         <p>
-          Se você tiver alguma dúvida sobre esta política de privacidade, entre em contato conosco em <a href="mailto:privacidade@clinipratica.com.br" className="text-primary hover:underline">privacidade@clinipratica.com.br</a>.
+          Se você tiver alguma dúvida sobre esta política de privacidade, entre em contato conosco em <a href="mailto:clinipratica@gmail.com" className="text-primary hover:underline">clinipratica@gmail.com</a>.
         </p>
       </article>
 

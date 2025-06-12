@@ -55,7 +55,7 @@ export default function ContatoSuportePage() {
                 <Mail className="h-6 w-6 text-primary mt-1 flex-shrink-0" />
                 <div>
                   <h3 className="font-semibold">Email</h3>
-                  <a href="mailto:suporte@clinipratica.com.br" className="text-muted-foreground hover:text-primary">clinipratica@gmail.com.br</a>
+                  <a href="mailto:clinipratica@gmail.com" className="text-muted-foreground hover:text-primary">clinipratica@gmail.com</a>
                 </div>
               </div>
               <div className="flex items-start space-x-3">
