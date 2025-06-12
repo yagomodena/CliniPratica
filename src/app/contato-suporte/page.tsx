@@ -1,12 +1,33 @@
+
+'use client'; // Adicionado para usar hooks e estado de autenticação
+
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
-import { Mail, Phone, MapPin } from "lucide-react";
+import { Mail, Phone, MapPin, ArrowLeft } from "lucide-react";
+import { auth } from '@/firebase'; // Importar auth do Firebase
+import type { User as FirebaseUser } from 'firebase/auth'; // Importar tipo User do Firebase Auth
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function ContatoSuportePage() {
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setIsLoadingAuth(false);
+    });
+    return () => unsubscribe(); // Limpar o listener ao desmontar
+  }, []);
+
+  const backButtonHref = currentUser ? "/dashboard" : "/";
+  const backButtonText = currentUser ? "Voltar ao Dashboard" : "Voltar para a Página Inicial";
+
   return (
     <div className="container mx-auto px-4 py-16 min-h-screen">
       <header className="mb-12 text-center">
@@ -75,9 +96,14 @@ export default function ContatoSuportePage() {
             </CardContent>
           </Card>
            <div className="text-center md:text-left">
-            <Button asChild variant="outline">
-              <Link href="/dashboard">Voltar ao Dashboard</Link>
-            </Button>
+            {!isLoadingAuth && (
+              <Button asChild variant="outline">
+                <Link href={backButtonHref}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  {backButtonText}
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
       </div>

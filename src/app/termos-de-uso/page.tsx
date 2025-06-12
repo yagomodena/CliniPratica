@@ -1,3 +1,4 @@
+
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
@@ -64,7 +65,7 @@ export default function TermosDeUsoPage() {
 
       <div className="text-center mt-12">
         <Button asChild>
-          <Link href="/dashboard">Voltar ao Dashboard</Link>
+          <Link href="/">Voltar para a Página Inicial</Link>
         </Button>
       </div>
     </div>

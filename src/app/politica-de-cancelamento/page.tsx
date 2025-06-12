@@ -40,7 +40,7 @@ export default function PoliticaDeCancelamentoPage() {
 
       <div className="text-center mt-12">
         <Button asChild>
-          <Link href="/dashboard">Voltar ao Dashboard</Link>
+          <Link href="/">Voltar para a Página Inicial</Link>
         </Button>
       </div>
     </div>
