@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
-import { useForm } from 'react-hook-form';
+// Removed useActionState from react-dom
+import { useForm, useFormStatus } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,15 +17,16 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { contactFormSchema, type ContactFormValues } from '@/lib/schemas';
-import { submitContactForm, type FormState } from '@/actions/contact';
+// submitContactForm and FormState are no longer directly used by this form's action
+// import { submitContactForm, type FormState } from '@/actions/contact';
 
-const initialState: FormState = {
-  message: '',
-  status: 'idle',
-};
+// const initialState: FormState = {
+//   message: '',
+//   status: 'idle',
+// };
 
 function SubmitButton() {
-  const { pending } = useFormStatus();
+  const { pending } = useFormStatus(); // This might not be accurate anymore without a server action
   return (
     <Button type="submit" className="w-full" disabled={pending}>
       {pending ? (
@@ -48,8 +49,9 @@ function SubmitButton() {
 export default function ContatoSuportePage() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Local submitting state
 
-  const [state, formAction] = useFormState(submitContactForm, initialState);
+  // const [state, formAction] = useActionState(submitContactForm, initialState); // Removed useActionState
   const { toast } = useToast();
 
   const form = useForm<ContactFormValues>({
@@ -59,39 +61,33 @@ export default function ContatoSuportePage() {
       email: '',
       subject: '',
       message: '',
-      ...(state.fields || {}), // Pre-fill with previous fields on error
     },
   });
 
-  useEffect(() => {
-    if (state.status === 'success') {
-      toast({
-        title: 'Sucesso!',
-        description: state.message,
-        variant: "success",
-      });
-      form.reset(); // Reset form fields on success
-    } else if (state.status === 'error') {
-      toast({
-        title: 'Erro ao Enviar',
-        description: state.message || 'Por favor, verifique os campos.',
-        variant: 'destructive',
-      });
-      // Set errors from server action if they exist
-      state.issues?.forEach((issue) => {
-        const path = issue.split(':')[0] as keyof ContactFormValues; // Basic parsing
-        const message = issue.split(':')[1] || 'Erro no campo';
-        if (form.getValues(path) !== undefined) {
-          form.setError(path, { type: 'server', message });
-        }
-      });
-      if (state.fields) {
-         // This part is tricky with useFormState, as react-hook-form might not auto-update
-         // from state.fields directly without re-rendering the whole form or using form.setValue
-         // For simplicity, we'll rely on the initial defaultValues from state.fields if an error occurs
-      }
-    }
-  }, [state, toast, form]);
+  // useEffect for handling server action state (no longer needed for direct form submission)
+  // useEffect(() => {
+  //   if (state.status === 'success') {
+  //     toast({
+  //       title: 'Sucesso!',
+  //       description: state.message,
+  //       variant: "success",
+  //     });
+  //     form.reset(); 
+  //   } else if (state.status === 'error') {
+  //     toast({
+  //       title: 'Erro ao Enviar',
+  //       description: state.message || 'Por favor, verifique os campos.',
+  //       variant: 'destructive',
+  //     });
+  //     state.issues?.forEach((issue) => {
+  //       const path = issue.split(':')[0] as keyof ContactFormValues; 
+  //       const message = issue.split(':')[1] || 'Erro no campo';
+  //       if (form.getValues(path) !== undefined) {
+  //         form.setError(path, { type: 'server', message });
+  //       }
+  //     });
+  //   }
+  // }, [state, toast, form]);
 
 
   useEffect(() => {
@@ -101,6 +97,40 @@ export default function ContatoSuportePage() {
     });
     return () => unsubscribe();
   }, []);
+
+  const handleFormSubmit = (data: ContactFormValues) => {
+    setIsSubmitting(true);
+    const { name, email, subject, message } = data;
+    const yourPhoneNumber = "5516988577820"; // Brazil country code + your number without non-digits
+
+    let whatsappMessage = `Nova mensagem de Contato:\n\n`;
+    whatsappMessage += `*Nome:* ${name}\n`;
+    if (email) whatsappMessage += `*Email:* ${email}\n`;
+    if (subject) whatsappMessage += `*Assunto:* ${subject}\n`;
+    whatsappMessage += `*Mensagem:*\n${message}`;
+
+    const whatsappLink = `https://wa.me/${yourPhoneNumber}?text=${encodeURIComponent(whatsappMessage)}`;
+
+    try {
+      window.open(whatsappLink, '_blank');
+      toast({
+        title: "Mensagem Pronta!",
+        description: "Sua mensagem está pronta para ser enviada no WhatsApp.",
+        variant: "success",
+      });
+      form.reset();
+    } catch (error) {
+      console.error("Erro ao abrir link do WhatsApp:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível abrir o WhatsApp. Por favor, tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
 
   const backButtonHref = currentUser ? "/dashboard" : "/";
   const backButtonText = currentUser ? "Voltar ao Dashboard" : "Voltar para a Página Inicial";
@@ -118,15 +148,15 @@ export default function ContatoSuportePage() {
         <Card className="shadow-xl">
           <CardHeader>
             <CardTitle className="text-2xl">Envie uma Mensagem</CardTitle>
-            <CardDescription>Preencha o formulário abaixo e retornaremos o mais breve possível.</CardDescription>
+            <CardDescription>Preencha o formulário abaixo e sua mensagem será direcionada ao nosso WhatsApp.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={formAction} className="space-y-6">
+            {/* Changed form to use react-hook-form's onSubmit */}
+            <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
               <div>
                 <Label htmlFor="name">Nome*</Label>
                 <Input
                   id="name"
-                  name="name"
                   placeholder="Seu nome completo"
                   {...form.register('name')}
                   aria-invalid={form.formState.errors.name ? "true" : "false"}
@@ -140,7 +170,6 @@ export default function ContatoSuportePage() {
                 <Label htmlFor="email">Email*</Label>
                 <Input
                   id="email"
-                  name="email"
                   type="email"
                   placeholder="seu@email.com"
                   {...form.register('email')}
@@ -155,7 +184,6 @@ export default function ContatoSuportePage() {
                 <Label htmlFor="subject">Assunto</Label>
                 <Input
                   id="subject"
-                  name="subject"
                   placeholder="Sobre o que você gostaria de falar?"
                   {...form.register('subject')}
                   aria-invalid={form.formState.errors.subject ? "true" : "false"}
@@ -169,7 +197,6 @@ export default function ContatoSuportePage() {
                 <Label htmlFor="message">Mensagem*</Label>
                 <Textarea
                   id="message"
-                  name="message"
                   placeholder="Digite sua mensagem aqui..."
                   rows={5}
                   {...form.register('message')}
@@ -180,7 +207,22 @@ export default function ContatoSuportePage() {
                   <p className="text-sm text-destructive mt-1">{form.formState.errors.message.message}</p>
                 )}
               </div>
-              <SubmitButton />
+              {/* Use local submitting state for the button */}
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                   <Send className="mr-2 h-4 w-4" /> Enviar Mensagem
+                  </>
+                )}
+              </Button>
             </form>
           </CardContent>
         </Card>
