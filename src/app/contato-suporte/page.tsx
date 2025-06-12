@@ -1,28 +1,105 @@
 
-'use client'; // Adicionado para usar hooks e estado de autenticação
+'use client';
 
 import { useState, useEffect } from 'react';
+import { useFormState, useFormStatus } from 'react-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
-import { Mail, Phone, MapPin, ArrowLeft } from "lucide-react";
-import { auth } from '@/firebase'; // Importar auth do Firebase
-import type { User as FirebaseUser } from 'firebase/auth'; // Importar tipo User do Firebase Auth
+import { Mail, Phone, ArrowLeft, Send } from "lucide-react";
+import { auth } from '@/firebase';
+import type { User as FirebaseUser } from 'firebase/auth';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useToast } from '@/hooks/use-toast';
+import { contactFormSchema, type ContactFormValues } from '@/lib/schemas';
+import { submitContactForm, type FormState } from '@/actions/contact';
+
+const initialState: FormState = {
+  message: '',
+  status: 'idle',
+};
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" className="w-full" disabled={pending}>
+      {pending ? (
+        <>
+          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          Enviando...
+        </>
+      ) : (
+        <>
+         <Send className="mr-2 h-4 w-4" /> Enviar Mensagem
+        </>
+      )}
+    </Button>
+  );
+}
 
 export default function ContatoSuportePage() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+
+  const [state, formAction] = useFormState(submitContactForm, initialState);
+  const { toast } = useToast();
+
+  const form = useForm<ContactFormValues>({
+    resolver: zodResolver(contactFormSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      subject: '',
+      message: '',
+      ...(state.fields || {}), // Pre-fill with previous fields on error
+    },
+  });
+
+  useEffect(() => {
+    if (state.status === 'success') {
+      toast({
+        title: 'Sucesso!',
+        description: state.message,
+        variant: "success",
+      });
+      form.reset(); // Reset form fields on success
+    } else if (state.status === 'error') {
+      toast({
+        title: 'Erro ao Enviar',
+        description: state.message || 'Por favor, verifique os campos.',
+        variant: 'destructive',
+      });
+      // Set errors from server action if they exist
+      state.issues?.forEach((issue) => {
+        const path = issue.split(':')[0] as keyof ContactFormValues; // Basic parsing
+        const message = issue.split(':')[1] || 'Erro no campo';
+        if (form.getValues(path) !== undefined) {
+          form.setError(path, { type: 'server', message });
+        }
+      });
+      if (state.fields) {
+         // This part is tricky with useFormState, as react-hook-form might not auto-update
+         // from state.fields directly without re-rendering the whole form or using form.setValue
+         // For simplicity, we'll rely on the initial defaultValues from state.fields if an error occurs
+      }
+    }
+  }, [state, toast, form]);
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setIsLoadingAuth(false);
     });
-    return () => unsubscribe(); // Limpar o listener ao desmontar
+    return () => unsubscribe();
   }, []);
 
   const backButtonHref = currentUser ? "/dashboard" : "/";
@@ -44,24 +121,66 @@ export default function ContatoSuportePage() {
             <CardDescription>Preencha o formulário abaixo e retornaremos o mais breve possível.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form className="space-y-6">
+            <form action={formAction} className="space-y-6">
               <div>
-                <Label htmlFor="name">Nome</Label>
-                <Input id="name" placeholder="Seu nome completo" />
+                <Label htmlFor="name">Nome*</Label>
+                <Input
+                  id="name"
+                  name="name"
+                  placeholder="Seu nome completo"
+                  {...form.register('name')}
+                  aria-invalid={form.formState.errors.name ? "true" : "false"}
+                  className={form.formState.errors.name ? 'border-destructive' : ''}
+                />
+                {form.formState.errors.name && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.name.message}</p>
+                )}
               </div>
               <div>
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="seu@email.com" />
+                <Label htmlFor="email">Email*</Label>
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="seu@email.com"
+                  {...form.register('email')}
+                  aria-invalid={form.formState.errors.email ? "true" : "false"}
+                  className={form.formState.errors.email ? 'border-destructive' : ''}
+                />
+                {form.formState.errors.email && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.email.message}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="subject">Assunto</Label>
-                <Input id="subject" placeholder="Sobre o que você gostaria de falar?" />
+                <Input
+                  id="subject"
+                  name="subject"
+                  placeholder="Sobre o que você gostaria de falar?"
+                  {...form.register('subject')}
+                  aria-invalid={form.formState.errors.subject ? "true" : "false"}
+                  className={form.formState.errors.subject ? 'border-destructive' : ''}
+                />
+                {form.formState.errors.subject && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.subject.message}</p>
+                )}
               </div>
               <div>
-                <Label htmlFor="message">Mensagem</Label>
-                <Textarea id="message" placeholder="Digite sua mensagem aqui..." rows={5} />
+                <Label htmlFor="message">Mensagem*</Label>
+                <Textarea
+                  id="message"
+                  name="message"
+                  placeholder="Digite sua mensagem aqui..."
+                  rows={5}
+                  {...form.register('message')}
+                  aria-invalid={form.formState.errors.message ? "true" : "false"}
+                  className={form.formState.errors.message ? 'border-destructive' : ''}
+                />
+                {form.formState.errors.message && (
+                  <p className="text-sm text-destructive mt-1">{form.formState.errors.message.message}</p>
+                )}
               </div>
-              <Button type="submit" className="w-full">Enviar Mensagem</Button>
+              <SubmitButton />
             </form>
           </CardContent>
         </Card>
@@ -86,13 +205,6 @@ export default function ContatoSuportePage() {
                   <p className="text-muted-foreground">(16) 98857-7820 (Seg-Sex, 9h-18h)</p>
                 </div>
               </div>
-              {/* <div className="flex items-start space-x-3">
-                <MapPin className="h-6 w-6 text-primary mt-1 flex-shrink-0" />
-                <div>
-                  <h3 className="font-semibold">Endereço</h3>
-                  <p className="text-muted-foreground">Rua Fictícia, 123, Sala 45<br />Cidade Exemplo, Estado</p>
-                </div>
-              </div> */}
             </CardContent>
           </Card>
            <div className="text-center md:text-left">
