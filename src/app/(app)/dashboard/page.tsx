@@ -1594,11 +1594,8 @@ export default function DashboardPage() {
             <CardDescription>Acesse nossa central de ajuda ou entre em contato.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row gap-4">
-            <Button variant="outline" asChild className="w-full sm:w-auto">
+            <Button variant="outline" asChild className="w-full">
               <Link href="/contato-suporte">Central de Ajuda</Link>
-            </Button>
-            <Button asChild className="w-full sm:w-auto">
-              <Link href="/contato-suporte">Falar com Suporte</Link>
             </Button>
           </CardContent>
         </Card>
