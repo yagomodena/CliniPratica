@@ -4,7 +4,8 @@ import { z } from 'zod';
 export const contactFormSchema = z.object({
   name: z.string().min(2, { message: "O nome deve ter pelo menos 2 caracteres." }).max(50, { message: "O nome deve ter no máximo 50 caracteres." }),
   email: z.string().email({ message: "Por favor, insira um email válido." }),
-  area: z.string().min(3, { message: "A área de atuação deve ter pelo menos 3 caracteres." }).max(100, { message: "A área de atuação deve ter no máximo 100 caracteres." }),
+  subject: z.string().min(3, { message: "O assunto deve ter pelo menos 3 caracteres."}).max(100, { message: "O assunto deve ter no máximo 100 caracteres."}).optional().or(z.literal('')),
+  message: z.string().min(10, { message: "A mensagem deve ter pelo menos 10 caracteres." }).max(1000, { message: "A mensagem deve ter no máximo 1000 caracteres." }),
 });
 
 export type ContactFormValues = z.infer<typeof contactFormSchema>;
@@ -39,3 +40,4 @@ export const registrationFormSchema = z.object({
 });
 
 export type RegistrationFormValues = z.infer<typeof registrationFormSchema>;
+
