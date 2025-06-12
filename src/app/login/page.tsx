@@ -311,7 +311,7 @@ export default function LoginPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Conta Suspensa</AlertDialogTitle>
             <AlertDialogDescription>
-              Sua conta foi suspensa devido à assinatura cancelada. Para reativar, por favor, escolha um novo plano ou entre em contato com o suporte.
+              Sua conta foi suspensa devido à assinatura cancelada. Para reativar, por favor, entre em contato com o suporte.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
