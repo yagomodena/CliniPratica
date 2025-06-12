@@ -2,8 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-// Removed useActionState from react-dom
-import { useForm, useFormStatus } from 'react-hook-form';
+import { useForm } from 'react-hook-form'; // Corrected import
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,41 +16,12 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { contactFormSchema, type ContactFormValues } from '@/lib/schemas';
-// submitContactForm and FormState are no longer directly used by this form's action
-// import { submitContactForm, type FormState } from '@/actions/contact';
-
-// const initialState: FormState = {
-//   message: '',
-//   status: 'idle',
-// };
-
-function SubmitButton() {
-  const { pending } = useFormStatus(); // This might not be accurate anymore without a server action
-  return (
-    <Button type="submit" className="w-full" disabled={pending}>
-      {pending ? (
-        <>
-          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          Enviando...
-        </>
-      ) : (
-        <>
-         <Send className="mr-2 h-4 w-4" /> Enviar Mensagem
-        </>
-      )}
-    </Button>
-  );
-}
 
 export default function ContatoSuportePage() {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Local submitting state
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // const [state, formAction] = useActionState(submitContactForm, initialState); // Removed useActionState
   const { toast } = useToast();
 
   const form = useForm<ContactFormValues>({
@@ -63,32 +33,6 @@ export default function ContatoSuportePage() {
       message: '',
     },
   });
-
-  // useEffect for handling server action state (no longer needed for direct form submission)
-  // useEffect(() => {
-  //   if (state.status === 'success') {
-  //     toast({
-  //       title: 'Sucesso!',
-  //       description: state.message,
-  //       variant: "success",
-  //     });
-  //     form.reset(); 
-  //   } else if (state.status === 'error') {
-  //     toast({
-  //       title: 'Erro ao Enviar',
-  //       description: state.message || 'Por favor, verifique os campos.',
-  //       variant: 'destructive',
-  //     });
-  //     state.issues?.forEach((issue) => {
-  //       const path = issue.split(':')[0] as keyof ContactFormValues; 
-  //       const message = issue.split(':')[1] || 'Erro no campo';
-  //       if (form.getValues(path) !== undefined) {
-  //         form.setError(path, { type: 'server', message });
-  //       }
-  //     });
-  //   }
-  // }, [state, toast, form]);
-
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -131,7 +75,6 @@ export default function ContatoSuportePage() {
     }
   };
 
-
   const backButtonHref = currentUser ? "/dashboard" : "/";
   const backButtonText = currentUser ? "Voltar ao Dashboard" : "Voltar para a Página Inicial";
 
@@ -151,7 +94,6 @@ export default function ContatoSuportePage() {
             <CardDescription>Preencha o formulário abaixo e sua mensagem será direcionada ao nosso WhatsApp.</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Changed form to use react-hook-form's onSubmit */}
             <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
               <div>
                 <Label htmlFor="name">Nome*</Label>
@@ -207,7 +149,6 @@ export default function ContatoSuportePage() {
                   <p className="text-sm text-destructive mt-1">{form.formState.errors.message.message}</p>
                 )}
               </div>
-              {/* Use local submitting state for the button */}
               <Button type="submit" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? (
                   <>
