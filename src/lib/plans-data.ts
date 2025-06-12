@@ -33,7 +33,7 @@ export const plans: Plan[] = [
   },
   {
     name: 'Essencial',
-    price: 'R$39,90',
+    price: 'R$49,90',
     priceDetail: '/mês',
     level: 1,
     mercadoPagoPreapprovalPlanId: '2c93808497312f410197317897b2001c',
@@ -48,7 +48,7 @@ export const plans: Plan[] = [
   },
   {
     name: 'Profissional',
-    price: 'R$69,90',
+    price: 'R$89,90',
     priceDetail: '/mês',
     level: 2,
     mercadoPagoPreapprovalPlanId: '2c93808497312f41019731790c2d001d',
@@ -66,7 +66,7 @@ export const plans: Plan[] = [
   },
   {
     name: 'Clínica',
-    price: 'R$99,90',
+    price: 'R$129,90',
     priceDetail: '/mês',
     level: 3,
     mercadoPagoPreapprovalPlanId: '2c938084970fb5df01973179624c0cee',
